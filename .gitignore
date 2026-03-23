@@ -8,3 +8,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .vite/
+vite-dev.out.log
+vite-dev.err.log
+/docs/plans
+/.claude
+/backend/fixtures
