@@ -1,11 +1,4 @@
-import { useState } from 'react'
-
-const navItems = [
-  { id: 'dashboard', icon: '📊', label: 'Дашборд' },
-  { id: 'upload', icon: '📁', label: 'Загрузка HH' },
-  { id: 'errors', icon: '⚠️', label: 'Журнал ошибок' },
-  { id: 'settings', icon: '⚙️', label: 'Настройки' },
-]
+import { studentSections } from '../navigation/sections'
 
 export default function Sidebar({ activeSection, onNavigate }) {
   return (
@@ -16,14 +9,14 @@ export default function Sidebar({ activeSection, onNavigate }) {
       </div>
 
       <nav className="sidebar-nav">
-        {navItems.map((item) => (
+        {studentSections.map((item) => (
           <button
             key={item.id}
             className={`sidebar-item ${activeSection === item.id ? 'active' : ''}`}
             onClick={() => onNavigate(item.id)}
           >
             <span className="sidebar-item-icon">{item.icon}</span>
-            {item.label}
+            {item.navLabel}
           </button>
         ))}
       </nav>

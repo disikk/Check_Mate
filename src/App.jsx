@@ -1,21 +1,47 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import StudentDashboard from './components/StudentDashboard'
+import FtAnalyticsPage from './components/FtAnalyticsPage'
+import UploadHandsPage from './components/UploadHandsPage'
+import SectionPlaceholderPage from './components/SectionPlaceholderPage'
+import { sectionById } from './navigation/sections'
+
+const sectionComponents = {
+  dashboard: StudentDashboard,
+  ftAnalytics: FtAnalyticsPage,
+  upload: UploadHandsPage,
+  errors: () => (
+    <SectionPlaceholderPage
+      eyebrow="Errors"
+      title="Журнал ошибок"
+      description="Следующим шагом сюда можно вынести разбор проблемных рук и поиск по конкретным ситуациям."
+    />
+  ),
+  settings: () => (
+    <SectionPlaceholderPage
+      eyebrow="Settings"
+      title="Настройки"
+      description="Раздел оставлен под настройки профиля, импорта и будущих интеграций."
+    />
+  ),
+}
 
 export default function App() {
-  const [theme, setTheme] = useState('dark')
+  const [theme, setTheme] = useState(
+    () => document.documentElement.getAttribute('data-theme') || 'dark',
+  )
   const [activeSection, setActiveSection] = useState('dashboard')
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+
   const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    document.documentElement.setAttribute('data-theme', next)
+    setTheme((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'))
   }
 
-  // При старте ставим тёмную тему
-  if (!document.documentElement.getAttribute('data-theme')) {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }
+  const activeSectionMeta = sectionById[activeSection] ?? sectionById.dashboard
+  const ActiveSectionComponent = sectionComponents[activeSection] ?? StudentDashboard
 
   return (
     <div className="app-layout">
@@ -23,36 +49,18 @@ export default function App() {
 
       <div className="topbar">
         <div className="topbar-left">
-          <span className="topbar-title">Личный кабинет</span>
-          <span className="topbar-subtitle">Студент</span>
+          <span className="topbar-title">{activeSectionMeta.title}</span>
+          <span className="topbar-subtitle">Студент / {activeSectionMeta.subtitle}</span>
         </div>
         <div className="topbar-right">
           <button className="theme-toggle" onClick={toggleTheme}>
-            {theme === 'dark' ? '☀️' : '🌙'} {theme === 'dark' ? 'Светлая' : 'Тёмная'}
+            {theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
           </button>
         </div>
       </div>
 
       <main className="main-content">
-        {activeSection === 'dashboard' && <StudentDashboard />}
-        {activeSection === 'upload' && (
-          <div className="bento-card" style={{ padding: '40px', textAlign: 'center' }}>
-            <h2 style={{ marginBottom: '8px' }}>Загрузка Hand History</h2>
-            <p style={{ color: 'var(--text-soft)' }}>Скоро здесь будет загрузка файлов</p>
-          </div>
-        )}
-        {activeSection === 'errors' && (
-          <div className="bento-card" style={{ padding: '40px', textAlign: 'center' }}>
-            <h2 style={{ marginBottom: '8px' }}>Журнал ошибок</h2>
-            <p style={{ color: 'var(--text-soft)' }}>Детализированный журнал — в разработке</p>
-          </div>
-        )}
-        {activeSection === 'settings' && (
-          <div className="bento-card" style={{ padding: '40px', textAlign: 'center' }}>
-            <h2 style={{ marginBottom: '8px' }}>Настройки</h2>
-            <p style={{ color: 'var(--text-soft)' }}>Настройки профиля — в разработке</p>
-          </div>
-        )}
+        <ActiveSectionComponent />
       </main>
     </div>
   )
