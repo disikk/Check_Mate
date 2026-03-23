@@ -132,3 +132,6 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current intentional limitation:
   - timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly;
   - boundary KO metrics, exact pot-level KO attribution, and timezone-normalized timestamps are still not persisted yet.
+- Cross-machine continuation:
+  - committed handoff lives in `docs/architecture/2026-03-23-mbr-handoff.md`;
+  - `backend/fixtures`, `docs/plans`, and `.claude` are intentionally local-only and must be copied manually if needed on another machine.
