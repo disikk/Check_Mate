@@ -185,11 +185,7 @@ pub fn import_path(path: &str) -> Result<LocalImportReport> {
         }
         SourceKind::HandHistory => import_hand_history(&mut tx, &context, path, &input)?,
     };
-    materialize_player_hand_features(
-        &mut tx,
-        context.organization_id,
-        context.player_profile_id,
-    )?;
+    materialize_player_hand_features(&mut tx, context.organization_id, context.player_profile_id)?;
 
     tx.commit().context("failed to commit import transaction")?;
     Ok(report)
@@ -422,10 +418,10 @@ fn import_hand_history(
             tournament_id,
             source_file_id,
             fragment_id,
-            &canonical_hand,
+            canonical_hand,
         )?;
-        persist_canonical_hand(tx, source_file_id, fragment_id, hand_id, &canonical_hand)?;
-        let normalized_hand = normalize_hand(&canonical_hand)?;
+        persist_canonical_hand(tx, source_file_id, fragment_id, hand_id, canonical_hand)?;
+        let normalized_hand = normalize_hand(canonical_hand)?;
         persist_normalized_hand(tx, hand_id, &normalized_hand)?;
         let mbr_stage_resolution = mbr_stage_resolutions
             .get(&canonical_hand.header.hand_id)
@@ -435,7 +431,7 @@ fn import_hand_history(
                     canonical_hand.header.hand_id
                 )
             })?;
-        persist_mbr_stage_resolution(tx, hand_id, &mbr_stage_resolution)?;
+        persist_mbr_stage_resolution(tx, hand_id, mbr_stage_resolution)?;
     }
 
     Ok(LocalImportReport {
@@ -718,7 +714,12 @@ fn persist_normalized_hand(
                 amount
             )
             VALUES ($1, $2, $3, $4)",
-            &[&hand_id, &pot_row.pot_no, &pot_row.pot_type, &pot_row.amount],
+            &[
+                &hand_id,
+                &pot_row.pot_no,
+                &pot_row.pot_type,
+                &pot_row.amount,
+            ],
         )?;
     }
 
@@ -749,7 +750,12 @@ fn persist_normalized_hand(
                 share_amount
             )
             VALUES ($1, $2, $3, $4)",
-            &[&hand_id, &winner_row.pot_no, &winner_row.seat_no, &winner_row.share_amount],
+            &[
+                &hand_id,
+                &winner_row.pot_no,
+                &winner_row.seat_no,
+                &winner_row.share_amount,
+            ],
         )?;
     }
 
@@ -762,7 +768,12 @@ fn persist_normalized_hand(
                 reason
             )
             VALUES ($1, $2, $3, $4)",
-            &[&hand_id, &return_row.seat_no, &return_row.amount, &return_row.reason],
+            &[
+                &hand_id,
+                &return_row.seat_no,
+                &return_row.amount,
+                &return_row.reason,
+            ],
         )?;
     }
 
@@ -886,10 +897,7 @@ fn replace_hand_children(
         "DELETE FROM core.hand_pot_contributions WHERE hand_id = $1",
         &[&hand_id],
     )?;
-    tx.execute(
-        "DELETE FROM core.hand_pots WHERE hand_id = $1",
-        &[&hand_id],
-    )?;
+    tx.execute("DELETE FROM core.hand_pots WHERE hand_id = $1", &[&hand_id])?;
     tx.execute(
         "DELETE FROM core.hand_boards WHERE hand_id = $1",
         &[&hand_id],
@@ -1274,7 +1282,7 @@ fn insert_source_file(
                 &file_kind,
                 &sha256,
                 &filename,
-                &(input.as_bytes().len() as i64),
+                &(input.len() as i64),
                 &storage_uri,
             ],
         )?
@@ -1358,6 +1366,44 @@ mod tests {
     const BOUNDARY_RUSH_HAND_ID: &str = "BR1065004819";
     const EARLY_RUSH_HAND_ID: &str = "BR1065004261";
     const MULTI_COLLECT_HAND_ID: &str = "BR1064987148";
+    const FULL_PACK_FIXTURE_PAIRS: &[(&str, &str)] = &[
+        (
+            "GG20260316 - Tournament #271767530 - Mystery Battle Royale 25.txt",
+            "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271767841 - Mystery Battle Royale 25.txt",
+            "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271768265 - Mystery Battle Royale 25.txt",
+            "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271768505 - Mystery Battle Royale 25.txt",
+            "GG20260316-0319 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271768917 - Mystery Battle Royale 25.txt",
+            "GG20260316-0323 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271769484 - Mystery Battle Royale 25.txt",
+            "GG20260316-0338 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271769772 - Mystery Battle Royale 25.txt",
+            "GG20260316-0342 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+            "GG20260316-0344 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271771269 - Mystery Battle Royale 25.txt",
+            "GG20260316-0351 - Mystery Battle Royale 25.txt",
+        ),
+    ];
 
     #[test]
     fn builds_canonical_rows_for_ft_all_in_hand() {
@@ -1445,7 +1491,10 @@ mod tests {
 
         assert_eq!(normalized.eliminations.len(), 1);
         assert_eq!(normalized.eliminations[0].eliminated_seat_no, 3);
-        assert_eq!(normalized.eliminations[0].eliminated_player_name, "f02e54a6");
+        assert_eq!(
+            normalized.eliminations[0].eliminated_player_name,
+            "f02e54a6"
+        );
         assert_eq!(normalized.eliminations[0].resolved_by_pot_no, Some(1));
         assert_eq!(normalized.eliminations[0].ko_involved_winner_count, 1);
 
@@ -1737,7 +1786,10 @@ mod tests {
         assert_eq!(elimination.get::<_, Option<i32>>(2), Some(1));
         assert_eq!(elimination.get::<_, i32>(3), 1);
         assert!(elimination.get::<_, bool>(4));
-        assert_eq!(elimination.get::<_, Option<String>>(5).as_deref(), Some("1.000000"));
+        assert_eq!(
+            elimination.get::<_, Option<String>>(5).as_deref(),
+            Some("1.000000")
+        );
         assert!(!elimination.get::<_, bool>(6));
         assert_eq!(elimination.get::<_, Option<i32>>(7), Some(1));
         assert!(!elimination.get::<_, bool>(8));
@@ -1908,7 +1960,11 @@ mod tests {
                          AND external_hand_id = $3
                    )
                    AND feature_key = 'played_ft_hand'",
-                &[&player_profile_id, &hh_report.source_file_id, &FIRST_FT_HAND_ID],
+                &[
+                    &player_profile_id,
+                    &hh_report.source_file_id,
+                    &FIRST_FT_HAND_ID,
+                ],
             )
             .unwrap();
         assert!(played_ft_hand.get::<_, bool>(0));
@@ -1931,6 +1987,82 @@ mod tests {
         assert!(seed_stats.total_ko >= 1);
     }
 
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn import_local_full_pack_smoke_is_clean_and_idempotent() {
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+
+        for (ts_fixture, hh_fixture) in FULL_PACK_FIXTURE_PAIRS {
+            let ts_path = fixture_path(&format!("../../fixtures/mbr/ts/{ts_fixture}"));
+            let hh_path = fixture_path(&format!("../../fixtures/mbr/hh/{hh_fixture}"));
+
+            import_path(&ts_path).unwrap();
+            import_path(&hh_path).unwrap();
+        }
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let player_profile_id = dev_player_profile_id(&mut client);
+
+        let parse_issue_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM core.parse_issues pi
+                 JOIN import.source_files sf ON sf.id = pi.source_file_id
+                 WHERE sf.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        assert_eq!(parse_issue_count, 0);
+
+        let invariant_mismatch_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.hand_state_resolutions hs
+                 JOIN core.hands h ON h.id = hs.hand_id
+                 WHERE h.player_profile_id = $1
+                   AND (
+                       NOT hs.chip_conservation_ok
+                       OR NOT hs.pot_conservation_ok
+                       OR jsonb_array_length(hs.invariant_errors) > 0
+                   )",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        assert_eq!(invariant_mismatch_count, 0);
+
+        let counts_before = player_hand_row_counts(&mut client, player_profile_id);
+
+        for (_, hh_fixture) in FULL_PACK_FIXTURE_PAIRS {
+            let hh_path = fixture_path(&format!("../../fixtures/mbr/hh/{hh_fixture}"));
+            import_path(&hh_path).unwrap();
+        }
+
+        let mut verify_client = Client::connect(&database_url, NoTls).unwrap();
+        let counts_after = player_hand_row_counts(&mut verify_client, player_profile_id);
+        assert_eq!(counts_after, counts_before);
+
+        let parse_issue_count_after: i64 = verify_client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM core.parse_issues pi
+                 JOIN import.source_files sf ON sf.id = pi.source_file_id
+                 WHERE sf.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        assert_eq!(parse_issue_count_after, 0);
+    }
+
     fn first_ft_hand_text() -> String {
         let content = fs::read_to_string(fixture_path(
             "../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt",
@@ -1944,12 +2076,7 @@ mod tests {
             "../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt",
         ))
         .unwrap();
-        content
-            .split("\n\n")
-            .nth(1)
-            .unwrap()
-            .trim()
-            .to_string()
+        content.split("\n\n").nth(1).unwrap().trim().to_string()
     }
 
     fn all_hands_from_fixture(filename: &str) -> Vec<CanonicalParsedHand> {
@@ -1975,6 +2102,118 @@ mod tests {
     fn apply_sql_file(client: &mut Client, path: &str) {
         let sql = fs::read_to_string(path).unwrap();
         client.batch_execute(&sql).unwrap();
+    }
+
+    fn dev_player_profile_id(client: &mut Client) -> Uuid {
+        client
+            .query_one(
+                "SELECT id
+                 FROM core.player_profiles
+                 WHERE organization_id = (
+                     SELECT id FROM org.organizations WHERE name = $1
+                 )
+                   AND room = 'gg'
+                   AND screen_name = $2",
+                &[&DEV_ORG_NAME, &DEV_PLAYER_NAME],
+            )
+            .unwrap()
+            .get(0)
+    }
+
+    fn player_hand_row_counts(
+        client: &mut Client,
+        player_profile_id: Uuid,
+    ) -> (i64, i64, i64, i64, i64, i64, i64, i64) {
+        let hands: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM core.hands
+                 WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let actions: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM core.hand_actions a
+                 JOIN core.hands h ON h.id = a.hand_id
+                 WHERE h.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let pots: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM core.hand_pots p
+                 JOIN core.hands h ON h.id = p.hand_id
+                 WHERE h.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let contributions: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM core.hand_pot_contributions c
+                 JOIN core.hands h ON h.id = c.hand_id
+                 WHERE h.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let winners: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM core.hand_pot_winners w
+                 JOIN core.hands h ON h.id = w.hand_id
+                 WHERE h.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let returns: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM core.hand_returns r
+                 JOIN core.hands h ON h.id = r.hand_id
+                 WHERE h.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let resolutions: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.hand_state_resolutions hs
+                 JOIN core.hands h ON h.id = hs.hand_id
+                 WHERE h.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let eliminations: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.hand_eliminations e
+                 JOIN core.hands h ON h.id = e.hand_id
+                 WHERE h.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+
+        (
+            hands,
+            actions,
+            pots,
+            contributions,
+            winners,
+            returns,
+            resolutions,
+            eliminations,
+        )
     }
 
     fn reset_dev_player_data(client: &mut Client) {

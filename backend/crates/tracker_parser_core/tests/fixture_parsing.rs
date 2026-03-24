@@ -1,3 +1,5 @@
+use std::{fs, path::PathBuf};
+
 use tracker_parser_core::{
     SourceKind, detect_source_kind,
     models::{ActionType, Street},
@@ -17,6 +19,30 @@ const TS_BUBBLE: &str = include_str!(
 const TS_WINNER: &str = include_str!(
     "../../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 );
+
+const HH_FIXTURE_FILES: &[&str] = &[
+    "GG20260316-0307 - Mystery Battle Royale 25.txt",
+    "GG20260316-0312 - Mystery Battle Royale 25.txt",
+    "GG20260316-0316 - Mystery Battle Royale 25.txt",
+    "GG20260316-0319 - Mystery Battle Royale 25.txt",
+    "GG20260316-0323 - Mystery Battle Royale 25.txt",
+    "GG20260316-0338 - Mystery Battle Royale 25.txt",
+    "GG20260316-0342 - Mystery Battle Royale 25.txt",
+    "GG20260316-0344 - Mystery Battle Royale 25.txt",
+    "GG20260316-0351 - Mystery Battle Royale 25.txt",
+];
+
+const TS_FIXTURE_FILES: &[&str] = &[
+    "GG20260316 - Tournament #271767530 - Mystery Battle Royale 25.txt",
+    "GG20260316 - Tournament #271767841 - Mystery Battle Royale 25.txt",
+    "GG20260316 - Tournament #271768265 - Mystery Battle Royale 25.txt",
+    "GG20260316 - Tournament #271768505 - Mystery Battle Royale 25.txt",
+    "GG20260316 - Tournament #271768917 - Mystery Battle Royale 25.txt",
+    "GG20260316 - Tournament #271769484 - Mystery Battle Royale 25.txt",
+    "GG20260316 - Tournament #271769772 - Mystery Battle Royale 25.txt",
+    "GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+    "GG20260316 - Tournament #271771269 - Mystery Battle Royale 25.txt",
+];
 
 #[test]
 fn detects_fixture_kinds() {
@@ -159,18 +185,24 @@ fn parses_summary_fields_without_false_positive_warnings() {
             "Kh".to_string()
         ]
     );
-    assert!(!hand
-        .parse_warnings
-        .iter()
-        .any(|warning| warning.contains("Dealt to f02e54a6")));
-    assert!(!hand
-        .parse_warnings
-        .iter()
-        .any(|warning| warning.contains("Total pot 3,984")));
-    assert!(!hand
-        .parse_warnings
-        .iter()
-        .any(|warning| warning.contains("Board [7d 2s 8h 2c Kh]")));
+    assert!(
+        !hand
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Dealt to f02e54a6"))
+    );
+    assert!(
+        !hand
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Total pot 3,984"))
+    );
+    assert!(
+        !hand
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Board [7d 2s 8h 2c Kh]"))
+    );
 }
 
 #[test]
@@ -194,4 +226,67 @@ fn accumulates_repeated_collect_lines_for_same_player() {
             .count(),
         2
     );
+}
+
+#[test]
+fn parses_all_committed_tournament_summary_fixtures() {
+    for fixture in TS_FIXTURE_FILES {
+        let raw = read_fixture("ts", fixture);
+        let summary = parse_tournament_summary(&raw)
+            .unwrap_or_else(|error| panic!("fixture `{fixture}` failed to parse: {error}"));
+
+        assert!(
+            summary.tournament_id > 0,
+            "fixture `{fixture}` has no tournament id"
+        );
+        assert!(
+            summary.finish_place >= 1,
+            "fixture `{fixture}` has invalid finish place"
+        );
+        assert!(
+            summary.entrants >= summary.finish_place,
+            "fixture `{fixture}` has finish_place beyond entrants"
+        );
+    }
+}
+
+#[test]
+fn parses_all_committed_hand_history_fixtures_without_unexpected_warnings() {
+    let mut unexpected = Vec::new();
+
+    for fixture in HH_FIXTURE_FILES {
+        let raw = read_fixture("hh", fixture);
+        let hands = split_hand_history(&raw)
+            .unwrap_or_else(|error| panic!("fixture `{fixture}` failed to split: {error}"));
+
+        for hand in hands {
+            let parsed = parse_canonical_hand(&hand.raw_text).unwrap_or_else(|error| {
+                panic!(
+                    "fixture `{fixture}` hand `{}` failed to parse: {error}",
+                    hand.header.hand_id
+                )
+            });
+
+            if !parsed.parse_warnings.is_empty() {
+                unexpected.push(format!(
+                    "{fixture} :: {} :: {:?}",
+                    parsed.header.hand_id, parsed.parse_warnings
+                ));
+            }
+        }
+    }
+
+    assert!(
+        unexpected.is_empty(),
+        "unexpected parser warnings across committed HH fixtures:\n{}",
+        unexpected.join("\n")
+    );
+}
+
+fn read_fixture(kind: &str, filename: &str) -> String {
+    fs::read_to_string(fixture_path(kind, filename)).unwrap()
+}
+
+fn fixture_path(kind: &str, filename: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../fixtures/mbr/{kind}/{filename}"))
 }

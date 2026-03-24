@@ -116,7 +116,9 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `core.hands` is upserted by `(player_profile_id, external_hand_id)`;
   - child canonical rows are replaced for the current hand before re-insert, so repeated local imports stay idempotent at the hand layer.
 - Current normalized persistence behavior:
+  - `normalize_hand` now runs through an internal replay ledger instead of relying on `collect` line order;
   - `normalize_hand` now exposes committed totals, exact final pot graph, return rows, resolved eliminations, and invariant results;
+  - final pot winner allocation is reconstructed from pot eligibility plus aggregate winner totals, so aggregated or reordered `collect` lines on the committed GG corpus no longer force `collect_mapping_amount_mismatch`;
   - `parser_worker import-local` persists the first exact derived row into `derived.hand_state_resolutions`;
   - persisted fields currently include `chip_conservation_ok`, `pot_conservation_ok`, parsed `rake_amount`, `final_stacks`, and `invariant_errors`.
 - Current MBR stage persistence behavior:
@@ -151,8 +153,10 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - this file is inventory-only and intentionally does not yet introduce the new stat taxonomy or renamed stat families.
 - Current reproducibility gate:
   - `backend/fixtures/mbr/hh` and `backend/fixtures/mbr/ts` are now committed sanitized golden fixtures, not local-only artifacts;
+  - `tracker_parser_core` now contains a full-pack HH/TS sweep over the committed `9 HH + 9 TS` GG corpus;
   - canonical local setup is `backend/scripts/bootstrap_backend_dev.sh`;
   - canonical backend verification is `backend/scripts/run_backend_checks.sh`;
+  - backend checks now include an ignored PostgreSQL full-pack import smoke for zero parse issues, zero invariant mismatches, and idempotent hand-child persistence on that committed corpus;
   - GitHub Actions backend gate lives in `.github/workflows/backend-foundation.yml` and is intentionally backend-only.
 - Current intentional limitation:
   - timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly;

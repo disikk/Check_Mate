@@ -4,17 +4,54 @@ use crate::{
     ParserError,
     models::{
         ActionType, CanonicalParsedHand, CertaintyState, FinalPot, HandElimination,
-        HandOutcomeActual, HandReturn, NormalizationInvariants, NormalizedHand,
+        HandOutcomeActual, HandReturn, NormalizationInvariants, NormalizedHand, ParsedHandSeat,
         PlayerNodeState, PlayerStatus, PotContribution, PotSlice, PotWinner,
         ResolutionNodeSnapshot, Street,
     },
 };
+
+#[derive(Debug, Clone)]
+struct ReplayState {
+    ordered_seats: Vec<ParsedHandSeat>,
+    player_order: Vec<String>,
+    starting_stack: BTreeMap<String, i64>,
+    stack_current: BTreeMap<String, i64>,
+    committed_total: BTreeMap<String, i64>,
+    committed_by_street: BTreeMap<String, BTreeMap<String, i64>>,
+    betting_round_contrib: BTreeMap<String, i64>,
+    status: BTreeMap<String, PlayerStatus>,
+    current_street: Street,
+    snapshot: Option<ResolutionNodeSnapshot>,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedPotState {
+    pot_no: u8,
+    amount: i64,
+    is_main: bool,
+    eligible_players: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct PotAllocation {
+    pot_no: u8,
+    shares: Vec<(String, i64)>,
+}
+
+struct SnapshotBuildContext<'a> {
+    ordered_seats: &'a [ParsedHandSeat],
+    stack_current: &'a BTreeMap<String, i64>,
+    committed_total: &'a BTreeMap<String, i64>,
+    committed_by_street: &'a BTreeMap<String, BTreeMap<String, i64>>,
+    status: &'a BTreeMap<String, PlayerStatus>,
+}
 
 pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, ParserError> {
     let hero_name = hand
         .hero_name
         .clone()
         .ok_or(ParserError::MissingLine("hero_name"))?;
+    let warnings = hand.parse_warnings.clone();
 
     let ordered_seats = {
         let mut seats = hand.seats.clone();
@@ -25,182 +62,16 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         .iter()
         .map(|seat| seat.player_name.clone())
         .collect::<Vec<_>>();
-    let starting_stack = ordered_seats
-        .iter()
-        .map(|seat| (seat.player_name.clone(), seat.starting_stack))
-        .collect::<BTreeMap<_, _>>();
     let seat_by_player = ordered_seats
         .iter()
         .map(|seat| (seat.player_name.clone(), seat.seat_no))
         .collect::<BTreeMap<_, _>>();
 
-    let mut stack_current = starting_stack.clone();
-    let mut committed_total = player_order
-        .iter()
-        .map(|player| (player.clone(), 0_i64))
-        .collect::<BTreeMap<_, _>>();
-    let mut committed_by_street = player_order
-        .iter()
-        .map(|player| (player.clone(), empty_committed_by_street()))
-        .collect::<BTreeMap<_, _>>();
-    let mut betting_round_contrib = player_order
-        .iter()
-        .map(|player| (player.clone(), 0_i64))
-        .collect::<BTreeMap<_, _>>();
-    let mut status = player_order
-        .iter()
-        .map(|player| {
-            let player_status = if starting_stack[player] > 0 {
-                PlayerStatus::Live
-            } else {
-                PlayerStatus::Eliminated
-            };
-            (player.clone(), player_status)
-        })
-        .collect::<BTreeMap<_, _>>();
-    let warnings = hand.parse_warnings.clone();
-    let mut invariant_errors = Vec::new();
-    let mut snapshot = None;
-    let mut current_street = Street::Preflop;
-
+    let mut replay = ReplayState::new(ordered_seats.clone());
     for event in &hand.actions {
-        if matches!(event.street, Street::Showdown | Street::Summary) {
-            current_street = event.street;
-        } else if event.street != current_street {
-            current_street = event.street;
-            betting_round_contrib = player_order
-                .iter()
-                .map(|player| (player.clone(), 0_i64))
-                .collect::<BTreeMap<_, _>>();
-        }
-
-        let Some(player_name) = event.player_name.as_ref() else {
-            continue;
-        };
-
-        let mut delta = 0_i64;
-        let mut contributes_to_betting_round = false;
-
-        match event.action_type {
-            ActionType::PostAnte => {
-                delta = event.amount.unwrap_or(0);
-            }
-            ActionType::PostSb | ActionType::PostBb | ActionType::PostDead => {
-                delta = event.amount.unwrap_or(0);
-                contributes_to_betting_round = true;
-            }
-            ActionType::Fold => {
-                if status[player_name] != PlayerStatus::Eliminated {
-                    status.insert(player_name.clone(), PlayerStatus::Folded);
-                }
-            }
-            ActionType::Check => {}
-            ActionType::Call => {
-                delta = event.amount.unwrap_or(0);
-                contributes_to_betting_round = true;
-            }
-            ActionType::Bet => {
-                delta = event.amount.unwrap_or(0);
-                contributes_to_betting_round = true;
-            }
-            ActionType::RaiseTo => {
-                let to_amount = event.amount_from_to_amount()?;
-                let already_contributed = betting_round_contrib[player_name];
-                delta = (to_amount - already_contributed).max(0);
-                contributes_to_betting_round = true;
-            }
-            ActionType::ReturnUncalled => {
-                let refund = event.amount.unwrap_or(0);
-                *stack_current.entry(player_name.clone()).or_default() += refund;
-                *committed_total.entry(player_name.clone()).or_default() -= refund;
-                *committed_by_street
-                    .entry(player_name.clone())
-                    .or_insert_with(empty_committed_by_street)
-                    .entry(street_key(current_street).to_string())
-                    .or_default() -= refund;
-                *betting_round_contrib
-                    .entry(player_name.clone())
-                    .or_default() -= refund;
-            }
-            ActionType::Collect | ActionType::Show | ActionType::Muck => {}
-        }
-
-        if delta > 0 {
-            *stack_current.entry(player_name.clone()).or_default() -= delta;
-            *committed_total.entry(player_name.clone()).or_default() += delta;
-            *committed_by_street
-                .entry(player_name.clone())
-                .or_insert_with(empty_committed_by_street)
-                .entry(street_key(current_street).to_string())
-                .or_default() += delta;
-            if contributes_to_betting_round {
-                *betting_round_contrib
-                    .entry(player_name.clone())
-                    .or_default() += delta;
-            }
-        }
-
-        if status[player_name] != PlayerStatus::Folded
-            && status[player_name] != PlayerStatus::Eliminated
-        {
-            if event.is_all_in || stack_current[player_name] == 0 {
-                status.insert(player_name.clone(), PlayerStatus::AllIn);
-            } else {
-                status.insert(player_name.clone(), PlayerStatus::Live);
-            }
-        }
-
-        if snapshot.is_none() {
-            let contestants = player_order
-                .iter()
-                .filter(|player| {
-                    matches!(
-                        status[player.as_str()],
-                        PlayerStatus::Live | PlayerStatus::AllIn
-                    )
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            let all_in_count = contestants
-                .iter()
-                .filter(|player| status[player.as_str()] == PlayerStatus::AllIn)
-                .count();
-            let live_count = contestants
-                .iter()
-                .filter(|player| status[player.as_str()] == PlayerStatus::Live)
-                .count();
-
-            let betting_closed_with_single_live = all_in_count >= 1
-                && live_count == 1
-                && matches!(event.action_type, ActionType::Call | ActionType::Check);
-            let all_contestants_all_in =
-                contestants.len() >= 2 && all_in_count == contestants.len();
-
-            if contestants.len() >= 2 && (all_contestants_all_in || betting_closed_with_single_live)
-            {
-                snapshot = Some(build_snapshot(
-                    hand,
-                    &hero_name,
-                    event.seq,
-                    current_street,
-                    &ordered_seats,
-                    &stack_current,
-                    &committed_total,
-                    &committed_by_street,
-                    &status,
-                ));
-            }
-        }
+        replay.apply_event(hand, &hero_name, event)?;
     }
 
-    let stacks_after_actual = player_order
-        .iter()
-        .map(|player| {
-            let final_stack = starting_stack[player] - committed_total[player]
-                + hand.collected_amounts.get(player).copied().unwrap_or(0);
-            (player.clone(), final_stack)
-        })
-        .collect::<BTreeMap<_, _>>();
     let final_board_cards = if hand.board_final.is_empty() && !hand.summary_board.is_empty() {
         hand.summary_board.clone()
     } else {
@@ -208,30 +79,53 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
     };
     let rake_amount = hand.summary_rake_amount.unwrap_or(0);
     let returns = build_returns(hand, &seat_by_player)?;
-    let (final_pots, pot_contributions) = build_final_pots(&ordered_seats, &committed_total);
+    let (resolved_pots, pot_contributions) =
+        build_resolved_pots(&ordered_seats, &replay.committed_total, &replay.status);
+    let final_pots = resolved_pots
+        .iter()
+        .map(|pot| FinalPot {
+            pot_no: pot.pot_no,
+            amount: pot.amount,
+            is_main: pot.is_main,
+        })
+        .collect::<Vec<_>>();
     let (pot_winners, winner_mapping_state, winner_mapping_errors) =
-        build_pot_winners(hand, &final_pots, &seat_by_player)?;
-    invariant_errors.extend(winner_mapping_errors);
+        resolve_pot_winners(&resolved_pots, &hand.collected_amounts, &seat_by_player)?;
 
-    let total_committed = committed_total.values().sum::<i64>();
+    let stacks_after_actual = player_order
+        .iter()
+        .map(|player| {
+            let final_stack = replay.starting_stack[player] - replay.committed_total[player]
+                + hand.collected_amounts.get(player).copied().unwrap_or(0);
+            (player.clone(), final_stack)
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let total_committed = replay.committed_total.values().sum::<i64>();
     let total_collected = hand.collected_amounts.values().sum::<i64>();
+    let mut invariant_errors = winner_mapping_errors;
+
     let eliminations = ordered_seats
         .iter()
         .filter_map(|seat| {
-            let final_stack = stacks_after_actual.get(&seat.player_name).copied().unwrap_or(0);
-            (seat.starting_stack > 0 && final_stack == 0)
-                .then(|| build_elimination(
+            let final_stack = stacks_after_actual
+                .get(&seat.player_name)
+                .copied()
+                .unwrap_or(0);
+            (seat.starting_stack > 0 && final_stack == 0).then(|| {
+                build_elimination(
                     hand,
                     seat,
                     &pot_contributions,
                     &final_pots,
                     &pot_winners,
                     winner_mapping_state,
-                ))
+                )
+            })
         })
         .collect::<Vec<_>>();
 
-    let starting_sum = starting_stack.values().sum::<i64>();
+    let starting_sum = replay.starting_stack.values().sum::<i64>();
     let final_sum = stacks_after_actual.values().sum::<i64>();
     let chip_conservation_ok = starting_sum == final_sum;
     if !chip_conservation_ok {
@@ -258,13 +152,13 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
     Ok(NormalizedHand {
         hand_id: hand.header.hand_id.clone(),
         player_order,
-        snapshot,
+        snapshot: replay.snapshot,
         final_pots,
         pot_contributions,
         pot_winners,
         returns,
         actual: HandOutcomeActual {
-            committed_total_by_player: committed_total,
+            committed_total_by_player: replay.committed_total,
             stacks_after_actual,
             winner_collections: hand.collected_amounts.clone(),
             final_board_cards,
@@ -280,6 +174,216 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
     })
 }
 
+impl ReplayState {
+    fn new(ordered_seats: Vec<ParsedHandSeat>) -> Self {
+        let player_order = ordered_seats
+            .iter()
+            .map(|seat| seat.player_name.clone())
+            .collect::<Vec<_>>();
+        let starting_stack = ordered_seats
+            .iter()
+            .map(|seat| (seat.player_name.clone(), seat.starting_stack))
+            .collect::<BTreeMap<_, _>>();
+        let committed_total = player_order
+            .iter()
+            .map(|player| (player.clone(), 0_i64))
+            .collect::<BTreeMap<_, _>>();
+        let committed_by_street = player_order
+            .iter()
+            .map(|player| (player.clone(), empty_committed_by_street()))
+            .collect::<BTreeMap<_, _>>();
+        let betting_round_contrib = player_order
+            .iter()
+            .map(|player| (player.clone(), 0_i64))
+            .collect::<BTreeMap<_, _>>();
+        let status = player_order
+            .iter()
+            .map(|player| {
+                let player_status = if starting_stack[player] > 0 {
+                    PlayerStatus::Live
+                } else {
+                    PlayerStatus::Eliminated
+                };
+                (player.clone(), player_status)
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        Self {
+            ordered_seats,
+            player_order,
+            starting_stack: starting_stack.clone(),
+            stack_current: starting_stack,
+            committed_total,
+            committed_by_street,
+            betting_round_contrib,
+            status,
+            current_street: Street::Preflop,
+            snapshot: None,
+        }
+    }
+
+    fn apply_event(
+        &mut self,
+        hand: &CanonicalParsedHand,
+        hero_name: &str,
+        event: &crate::models::HandActionEvent,
+    ) -> Result<(), ParserError> {
+        self.advance_street_if_needed(event.street);
+
+        let Some(player_name) = event.player_name.as_ref() else {
+            return Ok(());
+        };
+
+        let mut delta = 0_i64;
+        let mut contributes_to_betting_round = false;
+
+        match event.action_type {
+            ActionType::PostAnte => {
+                delta = event.amount.unwrap_or(0);
+            }
+            ActionType::PostSb | ActionType::PostBb | ActionType::PostDead => {
+                delta = event.amount.unwrap_or(0);
+                contributes_to_betting_round = true;
+            }
+            ActionType::Fold => {
+                if self.status[player_name] != PlayerStatus::Eliminated {
+                    self.status
+                        .insert(player_name.clone(), PlayerStatus::Folded);
+                }
+            }
+            ActionType::Check => {}
+            ActionType::Call => {
+                delta = event.amount.unwrap_or(0);
+                contributes_to_betting_round = true;
+            }
+            ActionType::Bet => {
+                delta = event.amount.unwrap_or(0);
+                contributes_to_betting_round = true;
+            }
+            ActionType::RaiseTo => {
+                let to_amount = event.amount_from_to_amount()?;
+                let already_contributed = self.betting_round_contrib[player_name];
+                delta = (to_amount - already_contributed).max(0);
+                contributes_to_betting_round = true;
+            }
+            ActionType::ReturnUncalled => {
+                let refund = event.amount.unwrap_or(0);
+                *self.stack_current.entry(player_name.clone()).or_default() += refund;
+                *self.committed_total.entry(player_name.clone()).or_default() -= refund;
+                *self
+                    .committed_by_street
+                    .entry(player_name.clone())
+                    .or_insert_with(empty_committed_by_street)
+                    .entry(street_key(self.current_street).to_string())
+                    .or_default() -= refund;
+                *self
+                    .betting_round_contrib
+                    .entry(player_name.clone())
+                    .or_default() -= refund;
+            }
+            ActionType::Collect | ActionType::Show | ActionType::Muck => {}
+        }
+
+        if delta > 0 {
+            *self.stack_current.entry(player_name.clone()).or_default() -= delta;
+            *self.committed_total.entry(player_name.clone()).or_default() += delta;
+            *self
+                .committed_by_street
+                .entry(player_name.clone())
+                .or_insert_with(empty_committed_by_street)
+                .entry(street_key(self.current_street).to_string())
+                .or_default() += delta;
+            if contributes_to_betting_round {
+                *self
+                    .betting_round_contrib
+                    .entry(player_name.clone())
+                    .or_default() += delta;
+            }
+        }
+
+        self.update_player_status(player_name, event);
+
+        if self.snapshot.is_none() && self.should_capture_snapshot(event) {
+            self.snapshot = Some(build_snapshot(
+                hand,
+                hero_name,
+                event.seq,
+                self.current_street,
+                SnapshotBuildContext {
+                    ordered_seats: &self.ordered_seats,
+                    stack_current: &self.stack_current,
+                    committed_total: &self.committed_total,
+                    committed_by_street: &self.committed_by_street,
+                    status: &self.status,
+                },
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn advance_street_if_needed(&mut self, event_street: Street) {
+        if matches!(event_street, Street::Showdown | Street::Summary) {
+            self.current_street = event_street;
+            return;
+        }
+
+        if event_street != self.current_street {
+            self.current_street = event_street;
+            self.betting_round_contrib = self
+                .player_order
+                .iter()
+                .map(|player| (player.clone(), 0_i64))
+                .collect::<BTreeMap<_, _>>();
+        }
+    }
+
+    fn update_player_status(&mut self, player_name: &str, event: &crate::models::HandActionEvent) {
+        if self.status[player_name] == PlayerStatus::Folded
+            || self.status[player_name] == PlayerStatus::Eliminated
+        {
+            return;
+        }
+
+        if event.is_all_in || self.stack_current[player_name] == 0 {
+            self.status
+                .insert(player_name.to_string(), PlayerStatus::AllIn);
+        } else {
+            self.status
+                .insert(player_name.to_string(), PlayerStatus::Live);
+        }
+    }
+
+    fn should_capture_snapshot(&self, event: &crate::models::HandActionEvent) -> bool {
+        let contestants = self
+            .player_order
+            .iter()
+            .filter(|player| {
+                matches!(
+                    self.status[player.as_str()],
+                    PlayerStatus::Live | PlayerStatus::AllIn
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let all_in_count = contestants
+            .iter()
+            .filter(|player| self.status[player.as_str()] == PlayerStatus::AllIn)
+            .count();
+        let live_count = contestants
+            .iter()
+            .filter(|player| self.status[player.as_str()] == PlayerStatus::Live)
+            .count();
+
+        let betting_closed_with_single_live = all_in_count >= 1
+            && live_count == 1
+            && matches!(event.action_type, ActionType::Call | ActionType::Check);
+        let all_contestants_all_in = contestants.len() >= 2 && all_in_count == contestants.len();
+
+        contestants.len() >= 2 && (all_contestants_all_in || betting_closed_with_single_live)
+    }
+}
+
 fn build_returns(
     hand: &CanonicalParsedHand,
     seat_by_player: &BTreeMap<String, u8>,
@@ -292,13 +396,12 @@ fn build_returns(
                 .player_name
                 .clone()
                 .ok_or(ParserError::MissingLine("return player_name"))?;
-            let seat_no = seat_by_player
-                .get(&player_name)
-                .copied()
-                .ok_or_else(|| ParserError::InvalidField {
+            let seat_no = seat_by_player.get(&player_name).copied().ok_or_else(|| {
+                ParserError::InvalidField {
                     field: "return_player_name",
                     value: player_name.clone(),
-                })?;
+                }
+            })?;
             Ok(HandReturn {
                 seat_no,
                 player_name,
@@ -309,10 +412,11 @@ fn build_returns(
         .collect()
 }
 
-fn build_final_pots(
-    ordered_seats: &[crate::models::ParsedHandSeat],
+fn build_resolved_pots(
+    ordered_seats: &[ParsedHandSeat],
     committed_total: &BTreeMap<String, i64>,
-) -> (Vec<FinalPot>, Vec<PotContribution>) {
+    status: &BTreeMap<String, PlayerStatus>,
+) -> (Vec<ResolvedPotState>, Vec<PotContribution>) {
     let mut levels = committed_total
         .values()
         .copied()
@@ -342,10 +446,17 @@ fn build_final_pots(
 
         let pot_no = (pots.len() + 1) as u8;
         let amount = increment * contributors.len() as i64;
-        pots.push(FinalPot {
+        let eligible_players = contributors
+            .iter()
+            .filter(|seat| status[seat.player_name.as_str()] != PlayerStatus::Folded)
+            .map(|seat| seat.player_name.clone())
+            .collect::<Vec<_>>();
+
+        pots.push(ResolvedPotState {
             pot_no,
             amount,
             is_main: pots.is_empty(),
+            eligible_players,
         });
         contributions.extend(contributors.into_iter().map(|seat| PotContribution {
             pot_no,
@@ -359,105 +470,293 @@ fn build_final_pots(
     (pots, contributions)
 }
 
-fn build_pot_winners(
-    hand: &CanonicalParsedHand,
-    final_pots: &[FinalPot],
+fn resolve_pot_winners(
+    pots: &[ResolvedPotState],
+    winner_collections: &BTreeMap<String, i64>,
     seat_by_player: &BTreeMap<String, u8>,
 ) -> Result<(Vec<PotWinner>, CertaintyState, Vec<String>), ParserError> {
-    let collect_events = hand
-        .actions
-        .iter()
-        .filter(|event| event.action_type == ActionType::Collect)
-        .collect::<Vec<_>>();
-
-    if final_pots.is_empty() {
-        let state = if collect_events.is_empty() {
-            CertaintyState::Exact
-        } else {
-            CertaintyState::Inconsistent
-        };
-        let errors = if collect_events.is_empty() {
-            Vec::new()
-        } else {
-            vec!["collect_events_without_pots".to_string()]
-        };
-        return Ok((Vec::new(), state, errors));
+    if pots.is_empty() {
+        let has_collections = winner_collections.values().any(|amount| *amount > 0);
+        return Ok((
+            Vec::new(),
+            if has_collections {
+                CertaintyState::Inconsistent
+            } else {
+                CertaintyState::Exact
+            },
+            if has_collections {
+                vec!["collect_events_without_pots".to_string()]
+            } else {
+                Vec::new()
+            },
+        ));
     }
 
+    let mut remaining = winner_collections
+        .iter()
+        .filter(|(_, amount)| **amount > 0)
+        .map(|(player, amount)| (player.clone(), *amount))
+        .collect::<BTreeMap<_, _>>();
+
+    if remaining.is_empty() {
+        return Ok((
+            Vec::new(),
+            CertaintyState::Inconsistent,
+            vec!["pot_winners_missing_collections".to_string()],
+        ));
+    }
+
+    let mut pot_order = pots.to_vec();
+    pot_order.sort_by(|left, right| {
+        right
+            .amount
+            .cmp(&left.amount)
+            .then(
+                left.eligible_players
+                    .len()
+                    .cmp(&right.eligible_players.len()),
+            )
+            .then(left.pot_no.cmp(&right.pot_no))
+    });
+
+    let mut current = Vec::new();
+    let mut solutions = Vec::new();
+    search_pot_allocations(
+        &pot_order,
+        0,
+        &mut remaining,
+        &mut current,
+        &mut solutions,
+        2,
+    );
+
+    let Some(first_solution) = solutions.first().cloned() else {
+        return Ok((
+            Vec::new(),
+            CertaintyState::Inconsistent,
+            vec!["collect_mapping_unsatisfied".to_string()],
+        ));
+    };
+
+    let certainty = if solutions.len() == 1 {
+        CertaintyState::Exact
+    } else {
+        CertaintyState::Uncertain
+    };
+
+    Ok((
+        allocations_to_pot_winners(&first_solution, seat_by_player)?,
+        certainty,
+        Vec::new(),
+    ))
+}
+
+fn search_pot_allocations(
+    pots: &[ResolvedPotState],
+    index: usize,
+    remaining: &mut BTreeMap<String, i64>,
+    current: &mut Vec<PotAllocation>,
+    solutions: &mut Vec<Vec<PotAllocation>>,
+    limit: usize,
+) {
+    if solutions.len() >= limit {
+        return;
+    }
+
+    if index == pots.len() {
+        if remaining.values().all(|amount| *amount == 0) {
+            solutions.push(current.clone());
+        }
+        return;
+    }
+
+    let pot = &pots[index];
+    let candidates = candidate_allocations_for_pot(pot, remaining);
+    for shares in candidates {
+        if !apply_allocation(remaining, &shares) {
+            continue;
+        }
+
+        current.push(PotAllocation {
+            pot_no: pot.pot_no,
+            shares: shares.clone(),
+        });
+        search_pot_allocations(pots, index + 1, remaining, current, solutions, limit);
+        current.pop();
+        revert_allocation(remaining, &shares);
+
+        if solutions.len() >= limit {
+            return;
+        }
+    }
+}
+
+fn candidate_allocations_for_pot(
+    pot: &ResolvedPotState,
+    remaining: &BTreeMap<String, i64>,
+) -> Vec<Vec<(String, i64)>> {
+    let eligible_positive = pot
+        .eligible_players
+        .iter()
+        .filter(|player| remaining.get(player.as_str()).copied().unwrap_or(0) > 0)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if eligible_positive.is_empty() {
+        return Vec::new();
+    }
+
+    let positive_total = eligible_positive
+        .iter()
+        .map(|player| remaining.get(player.as_str()).copied().unwrap_or(0))
+        .sum::<i64>();
+    if positive_total < pot.amount {
+        return Vec::new();
+    }
+
+    let mut candidates = Vec::new();
+
+    for player in &eligible_positive {
+        if remaining.get(player.as_str()).copied().unwrap_or(0) >= pot.amount {
+            candidates.push(vec![(player.clone(), pot.amount)]);
+        }
+    }
+
+    for winner_count in 2..=eligible_positive.len() {
+        if pot.amount < winner_count as i64 {
+            break;
+        }
+
+        let base_share = pot.amount / winner_count as i64;
+        if base_share == 0 {
+            continue;
+        }
+
+        let remainder = (pot.amount % winner_count as i64) as usize;
+        for subset in combinations(&eligible_positive, winner_count) {
+            if remainder == 0 {
+                let shares = subset
+                    .iter()
+                    .map(|player| (player.clone(), base_share))
+                    .collect::<Vec<_>>();
+                if allocation_fits(remaining, &shares) {
+                    candidates.push(shares);
+                }
+                continue;
+            }
+
+            for bonus_receivers in combinations(&subset, remainder) {
+                let shares = subset
+                    .iter()
+                    .map(|player| {
+                        let bonus = if bonus_receivers.contains(player) {
+                            1
+                        } else {
+                            0
+                        };
+                        (player.clone(), base_share + bonus)
+                    })
+                    .collect::<Vec<_>>();
+                if allocation_fits(remaining, &shares) {
+                    candidates.push(shares);
+                }
+            }
+        }
+    }
+
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn allocation_fits(remaining: &BTreeMap<String, i64>, shares: &[(String, i64)]) -> bool {
+    shares.iter().all(|(player, share)| {
+        *share > 0 && remaining.get(player.as_str()).copied().unwrap_or(0) >= *share
+    })
+}
+
+fn apply_allocation(remaining: &mut BTreeMap<String, i64>, shares: &[(String, i64)]) -> bool {
+    if !allocation_fits(remaining, shares) {
+        return false;
+    }
+
+    for (player, share) in shares {
+        *remaining.entry(player.clone()).or_default() -= *share;
+    }
+    true
+}
+
+fn revert_allocation(remaining: &mut BTreeMap<String, i64>, shares: &[(String, i64)]) {
+    for (player, share) in shares {
+        *remaining.entry(player.clone()).or_default() += *share;
+    }
+}
+
+fn combinations(items: &[String], k: usize) -> Vec<Vec<String>> {
+    if k == 0 {
+        return vec![Vec::new()];
+    }
+    if items.len() < k {
+        return Vec::new();
+    }
+
+    let mut result = Vec::new();
+    let mut current = Vec::new();
+    combinations_recursive(items, k, 0, &mut current, &mut result);
+    result
+}
+
+fn combinations_recursive(
+    items: &[String],
+    k: usize,
+    start: usize,
+    current: &mut Vec<String>,
+    result: &mut Vec<Vec<String>>,
+) {
+    if current.len() == k {
+        result.push(current.clone());
+        return;
+    }
+
+    for index in start..items.len() {
+        current.push(items[index].clone());
+        combinations_recursive(items, k, index + 1, current, result);
+        current.pop();
+    }
+}
+
+fn allocations_to_pot_winners(
+    allocations: &[PotAllocation],
+    seat_by_player: &BTreeMap<String, u8>,
+) -> Result<Vec<PotWinner>, ParserError> {
     let mut winners = Vec::new();
-    let mut collect_index = 0usize;
+    let mut ordered_allocations = allocations.to_vec();
+    ordered_allocations.sort_by_key(|allocation| allocation.pot_no);
 
-    for pot in final_pots {
-        let mut pot_total = 0_i64;
-        let mut grouped = Vec::new();
+    for allocation in ordered_allocations {
+        for (player_name, share_amount) in allocation.shares {
+            let seat_no = seat_by_player.get(&player_name).copied().ok_or_else(|| {
+                ParserError::InvalidField {
+                    field: "collect_player_missing_seat",
+                    value: player_name.clone(),
+                }
+            })?;
 
-        while pot_total < pot.amount {
-            let Some(event) = collect_events.get(collect_index) else {
-                return Ok((
-                    Vec::new(),
-                    CertaintyState::Uncertain,
-                    vec![format!(
-                        "collect_mapping_incomplete: pot_no={}, expected_amount={}, matched_amount={pot_total}",
-                        pot.pot_no, pot.amount
-                    )],
-                ));
-            };
-
-            let player_name = event
-                .player_name
-                .clone()
-                .ok_or(ParserError::MissingLine("collect player_name"))?;
-            let share_amount = event.amount.unwrap_or(0);
-            let Some(seat_no) = seat_by_player.get(&player_name).copied() else {
-                return Ok((
-                    Vec::new(),
-                    CertaintyState::Inconsistent,
-                    vec![format!("collect_player_missing_seat: {player_name}")],
-                ));
-            };
-
-            grouped.push(PotWinner {
-                pot_no: pot.pot_no,
+            winners.push(PotWinner {
+                pot_no: allocation.pot_no,
                 seat_no,
                 player_name,
                 share_amount,
             });
-            pot_total += share_amount;
-            collect_index += 1;
         }
-
-        if pot_total != pot.amount {
-            return Ok((
-                Vec::new(),
-                CertaintyState::Inconsistent,
-                vec![format!(
-                    "collect_mapping_amount_mismatch: pot_no={}, expected_amount={}, matched_amount={pot_total}",
-                    pot.pot_no, pot.amount
-                )],
-            ));
-        }
-
-        winners.extend(grouped);
     }
 
-    if collect_index != collect_events.len() {
-        return Ok((
-            Vec::new(),
-            CertaintyState::Inconsistent,
-            vec![format!(
-                "collect_mapping_has_leftovers: matched={}, total={}",
-                collect_index,
-                collect_events.len()
-            )],
-        ));
-    }
-
-    Ok((winners, CertaintyState::Exact, Vec::new()))
+    Ok(winners)
 }
 
 fn build_elimination(
     hand: &CanonicalParsedHand,
-    seat: &crate::models::ParsedHandSeat,
+    seat: &ParsedHandSeat,
     pot_contributions: &[PotContribution],
     final_pots: &[FinalPot],
     pot_winners: &[PotWinner],
@@ -498,7 +797,8 @@ fn build_elimination(
         .filter(|winner| winner.player_name == hand.hero_name.as_deref().unwrap_or_default())
         .map(|winner| winner.share_amount)
         .sum::<i64>();
-    let share_fraction = if winner_mapping_state == CertaintyState::Exact && resolved_pot_amount > 0 {
+    let share_fraction = if winner_mapping_state == CertaintyState::Exact && resolved_pot_amount > 0
+    {
         Some(hero_share as f64 / resolved_pot_amount as f64)
     } else {
         None
@@ -528,13 +828,10 @@ fn build_snapshot(
     hero_name: &str,
     snapshot_event_seq: usize,
     street: Street,
-    ordered_seats: &[crate::models::ParsedHandSeat],
-    stack_current: &BTreeMap<String, i64>,
-    committed_total: &BTreeMap<String, i64>,
-    committed_by_street: &BTreeMap<String, BTreeMap<String, i64>>,
-    status: &BTreeMap<String, PlayerStatus>,
+    context: SnapshotBuildContext<'_>,
 ) -> ResolutionNodeSnapshot {
-    let players = ordered_seats
+    let players = context
+        .ordered_seats
         .iter()
         .map(|seat| {
             let hole_cards = if seat.player_name == hero_name {
@@ -547,10 +844,10 @@ fn build_snapshot(
                 seat_no: seat.seat_no,
                 player_name: seat.player_name.clone(),
                 stack_before_hand: seat.starting_stack,
-                stack_at_snapshot: stack_current[&seat.player_name],
-                committed_total: committed_total[&seat.player_name],
-                committed_by_street: committed_by_street[&seat.player_name].clone(),
-                status: status[&seat.player_name].clone(),
+                stack_at_snapshot: context.stack_current[&seat.player_name],
+                committed_total: context.committed_total[&seat.player_name],
+                committed_by_street: context.committed_by_street[&seat.player_name].clone(),
+                status: context.status[&seat.player_name].clone(),
                 is_hero: seat.player_name == hero_name,
                 hole_cards_known: hole_cards.is_some(),
                 hole_cards,
@@ -558,7 +855,7 @@ fn build_snapshot(
         })
         .collect::<Vec<_>>();
 
-    let pots = build_pots(&players);
+    let pots = build_snapshot_pots(&players);
     let known_board_cards = match street {
         Street::Preflop => Vec::new(),
         Street::Flop => hand.board_final.iter().take(3).cloned().collect(),
@@ -579,7 +876,7 @@ fn build_snapshot(
     }
 }
 
-fn build_pots(players: &[PlayerNodeState]) -> Vec<PotSlice> {
+fn build_snapshot_pots(players: &[PlayerNodeState]) -> Vec<PotSlice> {
     let mut levels = players
         .iter()
         .map(|player| player.committed_total)

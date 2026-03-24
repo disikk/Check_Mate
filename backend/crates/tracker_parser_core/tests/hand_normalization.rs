@@ -1,7 +1,9 @@
+use std::{fs, path::PathBuf};
+
 use tracker_parser_core::{
     models::{CertaintyState, PlayerStatus, Street},
     normalizer::normalize_hand,
-    parsers::hand_history::parse_canonical_hand,
+    parsers::hand_history::{parse_canonical_hand, split_hand_history},
 };
 
 const HH_FT: &str =
@@ -73,6 +75,53 @@ Seat 1: Shorty (small blind) lost
 Seat 2: Hero (big blind) folded before Flop
 Seat 3: Medium showed [Jh Jc] and lost
 Seat 4: BigStack showed [As Ad] and collected (2,600)"#;
+const REORDERED_COLLECT_SIDE_POT_HAND: &str = r#"Poker Hand #BRSIDE2: Tournament #999003, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:10:00
+Table '2' 9-max Seat #1 is the button
+Seat 1: Shorty (500 in chips)
+Seat 2: Hero (1,000 in chips)
+Seat 3: Medium (1,000 in chips)
+Seat 4: BigStack (1,500 in chips)
+Shorty: posts small blind 50
+Hero: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Shorty
+Dealt to Hero [Ac Qc]
+Dealt to Medium
+Dealt to BigStack
+Medium: calls 100
+BigStack: raises 400 to 500
+Shorty: calls 450 and is all-in
+Hero: folds
+Medium: raises 500 to 1,000 and is all-in
+BigStack: calls 500
+*** FLOP *** [2h 7d Tc]
+*** TURN *** [2h 7d Tc] [Js]
+*** RIVER *** [2h 7d Tc Js] [Kd]
+*** SHOWDOWN ***
+Medium: shows [Jh Jc]
+BigStack: shows [As Ad]
+BigStack collected 1,000 from pot
+BigStack collected 400 from pot
+BigStack collected 1,200 from pot
+*** SUMMARY ***
+Total pot 2,600 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2h 7d Tc Js Kd]
+Seat 1: Shorty (small blind) lost
+Seat 2: Hero (big blind) folded before Flop
+Seat 3: Medium showed [Jh Jc] and lost
+Seat 4: BigStack showed [As Ad] and collected (2,600)"#;
+
+const HH_FIXTURE_FILES: &[&str] = &[
+    "GG20260316-0307 - Mystery Battle Royale 25.txt",
+    "GG20260316-0312 - Mystery Battle Royale 25.txt",
+    "GG20260316-0316 - Mystery Battle Royale 25.txt",
+    "GG20260316-0319 - Mystery Battle Royale 25.txt",
+    "GG20260316-0323 - Mystery Battle Royale 25.txt",
+    "GG20260316-0338 - Mystery Battle Royale 25.txt",
+    "GG20260316-0342 - Mystery Battle Royale 25.txt",
+    "GG20260316-0344 - Mystery Battle Royale 25.txt",
+    "GG20260316-0351 - Mystery Battle Royale 25.txt",
+];
 
 #[test]
 fn captures_terminal_all_in_snapshot_with_exact_pot_and_stacks() {
@@ -144,7 +193,10 @@ fn captures_terminal_all_in_snapshot_with_exact_pot_and_stacks() {
     assert_eq!(normalized.pot_winners[0].share_amount, 3_984);
     assert_eq!(normalized.eliminations.len(), 1);
     assert_eq!(normalized.eliminations[0].eliminated_seat_no, 3);
-    assert_eq!(normalized.eliminations[0].eliminated_player_name, "f02e54a6");
+    assert_eq!(
+        normalized.eliminations[0].eliminated_player_name,
+        "f02e54a6"
+    );
     assert_eq!(normalized.eliminations[0].resolved_by_pot_no, Some(1));
     assert_eq!(normalized.eliminations[0].ko_involved_winner_count, 1);
     assert!(normalized.eliminations[0].hero_involved);
@@ -152,7 +204,10 @@ fn captures_terminal_all_in_snapshot_with_exact_pot_and_stacks() {
     assert!(!normalized.eliminations[0].is_split_ko);
     assert_eq!(normalized.eliminations[0].split_n, Some(1));
     assert!(!normalized.eliminations[0].is_sidepot_based);
-    assert_eq!(normalized.eliminations[0].certainty_state, CertaintyState::Exact);
+    assert_eq!(
+        normalized.eliminations[0].certainty_state,
+        CertaintyState::Exact
+    );
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
     assert!(normalized.invariants.invariant_errors.is_empty());
@@ -208,14 +263,20 @@ fn resolves_split_ko_with_exact_hero_share_fraction() {
     assert_eq!(normalized.final_pots[0].amount, 3_000);
     assert_eq!(normalized.pot_winners.len(), 2);
     assert_eq!(normalized.eliminations.len(), 1);
-    assert_eq!(normalized.eliminations[0].eliminated_player_name, "VillainA");
+    assert_eq!(
+        normalized.eliminations[0].eliminated_player_name,
+        "VillainA"
+    );
     assert_eq!(normalized.eliminations[0].resolved_by_pot_no, Some(1));
     assert!(normalized.eliminations[0].hero_involved);
     assert_eq!(normalized.eliminations[0].hero_share_fraction, Some(0.5));
     assert!(normalized.eliminations[0].is_split_ko);
     assert_eq!(normalized.eliminations[0].split_n, Some(2));
     assert!(!normalized.eliminations[0].is_sidepot_based);
-    assert_eq!(normalized.eliminations[0].certainty_state, CertaintyState::Exact);
+    assert_eq!(
+        normalized.eliminations[0].certainty_state,
+        CertaintyState::Exact
+    );
 }
 
 #[test]
@@ -241,4 +302,94 @@ fn resolves_sidepot_ko_without_marking_hero_involved() {
     assert_eq!(medium.split_n, Some(1));
     assert!(medium.is_sidepot_based);
     assert_eq!(medium.certainty_state, CertaintyState::Exact);
+}
+
+#[test]
+fn keeps_full_pack_invariants_green_for_all_committed_hands() {
+    let mut issues = Vec::new();
+
+    for fixture in HH_FIXTURE_FILES {
+        let content = read_hh_fixture(fixture);
+        let hands = split_hand_history(&content)
+            .unwrap_or_else(|error| panic!("fixture `{fixture}` failed to split: {error}"));
+
+        for hand in hands {
+            let parsed = parse_canonical_hand(&hand.raw_text).unwrap_or_else(|error| {
+                panic!(
+                    "fixture `{fixture}` hand `{}` failed to parse: {error}",
+                    hand.header.hand_id
+                )
+            });
+            let normalized = normalize_hand(&parsed).unwrap_or_else(|error| {
+                panic!(
+                    "fixture `{fixture}` hand `{}` failed to normalize: {error}",
+                    parsed.header.hand_id
+                )
+            });
+
+            if !normalized.invariants.chip_conservation_ok
+                || !normalized.invariants.pot_conservation_ok
+                || !normalized.invariants.invariant_errors.is_empty()
+                || normalized
+                    .eliminations
+                    .iter()
+                    .any(|elimination| elimination.certainty_state == CertaintyState::Inconsistent)
+            {
+                issues.push(format!(
+                    "{fixture} :: {} :: chip_ok={} pot_ok={} errors={:?} eliminations={:?}",
+                    parsed.header.hand_id,
+                    normalized.invariants.chip_conservation_ok,
+                    normalized.invariants.pot_conservation_ok,
+                    normalized.invariants.invariant_errors,
+                    normalized
+                        .eliminations
+                        .iter()
+                        .map(|elimination| (
+                            elimination.eliminated_player_name.clone(),
+                            elimination.certainty_state,
+                            elimination.resolved_by_pot_no
+                        ))
+                        .collect::<Vec<_>>()
+                ));
+            }
+        }
+    }
+
+    assert!(
+        issues.is_empty(),
+        "full-pack normalization issues:\n{}",
+        issues.join("\n")
+    );
+}
+
+#[test]
+fn resolves_pot_winners_even_when_collect_lines_are_not_grouped_by_pot() {
+    let hand = parse_canonical_hand(REORDERED_COLLECT_SIDE_POT_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    assert_eq!(normalized.final_pots.len(), 3);
+    assert_eq!(normalized.pot_winners.len(), 3);
+    assert_eq!(
+        normalized
+            .pot_winners
+            .iter()
+            .map(|winner| (winner.pot_no, winner.share_amount))
+            .collect::<Vec<_>>(),
+        vec![(1, 400), (2, 1_200), (3, 1_000)]
+    );
+
+    let medium = normalized
+        .eliminations
+        .iter()
+        .find(|elimination| elimination.eliminated_player_name == "Medium")
+        .unwrap();
+    assert_eq!(medium.resolved_by_pot_no, Some(3));
+    assert_eq!(medium.certainty_state, CertaintyState::Exact);
+}
+
+fn read_hh_fixture(filename: &str) -> String {
+    fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../fixtures/mbr/hh/{filename}")),
+    )
+    .unwrap()
 }

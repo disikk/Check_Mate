@@ -83,7 +83,7 @@ fn parse_args(args: &[String]) -> Result<(WorkerMode, String)> {
 }
 
 fn summarize_path(path: &str) -> Result<WorkerOutput> {
-    let input = fs::read_to_string(&path).with_context(|| format!("failed to read `{path}`"))?;
+    let input = fs::read_to_string(path).with_context(|| format!("failed to read `{path}`"))?;
 
     match detect_source_kind(&input)? {
         SourceKind::TournamentSummary => {

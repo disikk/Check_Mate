@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEFAULT_DATABASE_URL="host=localhost port=5433 user=postgres dbname=check_mate_dev"
+DEFAULT_DATABASE_URL="host=localhost port=5433 user=postgres password=postgres dbname=check_mate_dev"
 CHECK_MATE_DATABASE_URL="${CHECK_MATE_DATABASE_URL:-$DEFAULT_DATABASE_URL}"
 export CHECK_MATE_DATABASE_URL
 
@@ -70,5 +70,6 @@ cd "$BACKEND_DIR"
 run cargo fmt --check
 run cargo clippy --workspace --all-targets -- -D warnings
 run cargo test
+run cargo test -p parser_worker local_import::tests::import_local_full_pack_smoke_is_clean_and_idempotent -- --ignored --exact
 run cargo test -p parser_worker local_import::tests::import_local_persists_canonical_hand_layer_to_postgres -- --ignored --exact
 run cargo test -p parser_worker local_import::tests::import_local_refreshes_analytics_features_and_seed_stats -- --ignored --exact
