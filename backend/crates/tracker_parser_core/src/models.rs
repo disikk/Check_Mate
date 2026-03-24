@@ -96,6 +96,9 @@ pub struct CanonicalParsedHand {
     pub seats: Vec<ParsedHandSeat>,
     pub actions: Vec<HandActionEvent>,
     pub board_final: Vec<String>,
+    pub summary_total_pot: Option<i64>,
+    pub summary_rake_amount: Option<i64>,
+    pub summary_board: Vec<String>,
     pub hero_hole_cards: Option<Vec<String>>,
     pub showdown_hands: BTreeMap<String, Vec<String>>,
     pub collected_amounts: BTreeMap<String, i64>,
@@ -134,6 +137,46 @@ pub struct PotSlice {
     pub is_main: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CertaintyState {
+    Exact,
+    Estimated,
+    Uncertain,
+    Inconsistent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FinalPot {
+    pub pot_no: u8,
+    pub amount: i64,
+    pub is_main: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PotContribution {
+    pub pot_no: u8,
+    pub seat_no: u8,
+    pub player_name: String,
+    pub amount: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PotWinner {
+    pub pot_no: u8,
+    pub seat_no: u8,
+    pub player_name: String,
+    pub share_amount: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandReturn {
+    pub seat_no: u8,
+    pub player_name: String,
+    pub amount: i64,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResolutionNodeSnapshot {
     pub hand_id: String,
@@ -153,14 +196,21 @@ pub struct HandOutcomeActual {
     pub stacks_after_actual: BTreeMap<String, i64>,
     pub winner_collections: BTreeMap<String, i64>,
     pub final_board_cards: Vec<String>,
+    pub rake_amount: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HandElimination {
     pub eliminated_seat_no: u8,
     pub eliminated_player_name: String,
     pub resolved_by_pot_no: Option<u8>,
     pub ko_involved_winner_count: u8,
+    pub hero_involved: bool,
+    pub hero_share_fraction: Option<f64>,
+    pub is_split_ko: bool,
+    pub split_n: Option<u8>,
+    pub is_sidepot_based: bool,
+    pub certainty_state: CertaintyState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -170,11 +220,15 @@ pub struct NormalizationInvariants {
     pub invariant_errors: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NormalizedHand {
     pub hand_id: String,
     pub player_order: Vec<String>,
     pub snapshot: Option<ResolutionNodeSnapshot>,
+    pub final_pots: Vec<FinalPot>,
+    pub pot_contributions: Vec<PotContribution>,
+    pub pot_winners: Vec<PotWinner>,
+    pub returns: Vec<HandReturn>,
     pub actual: HandOutcomeActual,
     pub eliminations: Vec<HandElimination>,
     pub invariants: NormalizationInvariants,

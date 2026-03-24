@@ -112,11 +112,45 @@ struct HandStateResolutionRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct HandPotRow {
+    pot_no: i32,
+    pot_type: String,
+    amount: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HandPotContributionRow {
+    pot_no: i32,
+    seat_no: i32,
+    amount: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HandPotWinnerRow {
+    pot_no: i32,
+    seat_no: i32,
+    share_amount: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HandReturnRow {
+    seat_no: i32,
+    amount: i64,
+    reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct HandEliminationRow {
     eliminated_seat_no: i32,
     eliminated_player_name: String,
     resolved_by_pot_no: Option<i32>,
     ko_involved_winner_count: i32,
+    hero_involved: bool,
+    hero_share_fraction: Option<String>,
+    is_split_ko: bool,
+    split_n: Option<i32>,
+    is_sidepot_based: bool,
+    certainty_state: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -632,6 +666,10 @@ fn persist_normalized_hand(
     normalized_hand: &tracker_parser_core::models::NormalizedHand,
 ) -> Result<()> {
     let row = build_hand_state_resolution(normalized_hand);
+    let pot_rows = build_hand_pot_rows(normalized_hand);
+    let contribution_rows = build_hand_pot_contribution_rows(normalized_hand);
+    let winner_rows = build_hand_pot_winner_rows(normalized_hand);
+    let return_rows = build_hand_return_rows(normalized_hand);
     let elimination_rows = build_hand_elimination_rows(normalized_hand);
     let final_stacks_json = serde_json::to_string(&row.final_stacks)?;
     let invariant_errors_json = serde_json::to_string(&row.invariant_errors)?;
@@ -665,6 +703,63 @@ fn persist_normalized_hand(
         ],
     )?;
 
+    for pot_row in pot_rows {
+        tx.execute(
+            "INSERT INTO core.hand_pots (
+                hand_id,
+                pot_no,
+                pot_type,
+                amount
+            )
+            VALUES ($1, $2, $3, $4)",
+            &[&hand_id, &pot_row.pot_no, &pot_row.pot_type, &pot_row.amount],
+        )?;
+    }
+
+    for contribution_row in contribution_rows {
+        tx.execute(
+            "INSERT INTO core.hand_pot_contributions (
+                hand_id,
+                pot_no,
+                seat_no,
+                amount
+            )
+            VALUES ($1, $2, $3, $4)",
+            &[
+                &hand_id,
+                &contribution_row.pot_no,
+                &contribution_row.seat_no,
+                &contribution_row.amount,
+            ],
+        )?;
+    }
+
+    for winner_row in winner_rows {
+        tx.execute(
+            "INSERT INTO core.hand_pot_winners (
+                hand_id,
+                pot_no,
+                seat_no,
+                share_amount
+            )
+            VALUES ($1, $2, $3, $4)",
+            &[&hand_id, &winner_row.pot_no, &winner_row.seat_no, &winner_row.share_amount],
+        )?;
+    }
+
+    for return_row in return_rows {
+        tx.execute(
+            "INSERT INTO core.hand_returns (
+                hand_id,
+                seat_no,
+                amount,
+                reason
+            )
+            VALUES ($1, $2, $3, $4)",
+            &[&hand_id, &return_row.seat_no, &return_row.amount, &return_row.reason],
+        )?;
+    }
+
     tx.execute(
         "DELETE FROM derived.hand_eliminations WHERE hand_id = $1",
         &[&hand_id],
@@ -677,15 +772,27 @@ fn persist_normalized_hand(
                 eliminated_seat_no,
                 eliminated_player_name,
                 resolved_by_pot_no,
-                ko_involved_winner_count
+                ko_involved_winner_count,
+                hero_involved,
+                hero_share_fraction,
+                is_split_ko,
+                split_n,
+                is_sidepot_based,
+                certainty_state
             )
-            VALUES ($1, $2, $3, $4, $5)",
+            VALUES ($1, $2, $3, $4, $5, $6, ($7::text)::numeric(12,6), $8, $9, $10, $11)",
             &[
                 &hand_id,
                 &elimination_row.eliminated_seat_no,
                 &elimination_row.eliminated_player_name,
                 &elimination_row.resolved_by_pot_no,
                 &elimination_row.ko_involved_winner_count,
+                &elimination_row.hero_involved,
+                &elimination_row.hero_share_fraction,
+                &elimination_row.is_split_ko,
+                &elimination_row.split_n,
+                &elimination_row.is_sidepot_based,
+                &elimination_row.certainty_state,
             ],
         )?;
     }
@@ -762,6 +869,22 @@ fn replace_hand_children(
         &[&hand_id],
     )?;
     tx.execute(
+        "DELETE FROM core.hand_returns WHERE hand_id = $1",
+        &[&hand_id],
+    )?;
+    tx.execute(
+        "DELETE FROM core.hand_pot_winners WHERE hand_id = $1",
+        &[&hand_id],
+    )?;
+    tx.execute(
+        "DELETE FROM core.hand_pot_contributions WHERE hand_id = $1",
+        &[&hand_id],
+    )?;
+    tx.execute(
+        "DELETE FROM core.hand_pots WHERE hand_id = $1",
+        &[&hand_id],
+    )?;
+    tx.execute(
         "DELETE FROM core.hand_boards WHERE hand_id = $1",
         &[&hand_id],
     )?;
@@ -779,10 +902,70 @@ fn build_hand_state_resolution(
         resolution_version: HAND_RESOLUTION_VERSION.to_string(),
         chip_conservation_ok: normalized_hand.invariants.chip_conservation_ok,
         pot_conservation_ok: normalized_hand.invariants.pot_conservation_ok,
-        rake_amount: 0,
+        rake_amount: normalized_hand.actual.rake_amount,
         final_stacks: normalized_hand.actual.stacks_after_actual.clone(),
         invariant_errors: normalized_hand.invariants.invariant_errors.clone(),
     }
+}
+
+fn build_hand_pot_rows(
+    normalized_hand: &tracker_parser_core::models::NormalizedHand,
+) -> Vec<HandPotRow> {
+    normalized_hand
+        .final_pots
+        .iter()
+        .map(|pot| HandPotRow {
+            pot_no: i32::from(pot.pot_no),
+            pot_type: if pot.is_main {
+                "main".to_string()
+            } else {
+                "side".to_string()
+            },
+            amount: pot.amount,
+        })
+        .collect()
+}
+
+fn build_hand_pot_contribution_rows(
+    normalized_hand: &tracker_parser_core::models::NormalizedHand,
+) -> Vec<HandPotContributionRow> {
+    normalized_hand
+        .pot_contributions
+        .iter()
+        .map(|contribution| HandPotContributionRow {
+            pot_no: i32::from(contribution.pot_no),
+            seat_no: i32::from(contribution.seat_no),
+            amount: contribution.amount,
+        })
+        .collect()
+}
+
+fn build_hand_pot_winner_rows(
+    normalized_hand: &tracker_parser_core::models::NormalizedHand,
+) -> Vec<HandPotWinnerRow> {
+    normalized_hand
+        .pot_winners
+        .iter()
+        .map(|winner| HandPotWinnerRow {
+            pot_no: i32::from(winner.pot_no),
+            seat_no: i32::from(winner.seat_no),
+            share_amount: winner.share_amount,
+        })
+        .collect()
+}
+
+fn build_hand_return_rows(
+    normalized_hand: &tracker_parser_core::models::NormalizedHand,
+) -> Vec<HandReturnRow> {
+    normalized_hand
+        .returns
+        .iter()
+        .map(|hand_return| HandReturnRow {
+            seat_no: i32::from(hand_return.seat_no),
+            amount: hand_return.amount,
+            reason: hand_return.reason.clone(),
+        })
+        .collect()
 }
 
 fn build_hand_elimination_rows(
@@ -796,6 +979,14 @@ fn build_hand_elimination_rows(
             eliminated_player_name: elimination.eliminated_player_name.clone(),
             resolved_by_pot_no: elimination.resolved_by_pot_no.map(i32::from),
             ko_involved_winner_count: i32::from(elimination.ko_involved_winner_count),
+            hero_involved: elimination.hero_involved,
+            hero_share_fraction: elimination
+                .hero_share_fraction
+                .map(|fraction| format!("{fraction:.6}")),
+            is_split_ko: elimination.is_split_ko,
+            split_n: elimination.split_n.map(i32::from),
+            is_sidepot_based: elimination.is_sidepot_based,
+            certainty_state: certainty_state_code(elimination.certainty_state).to_string(),
         })
         .collect()
 }
@@ -1030,6 +1221,15 @@ fn action_code(action_type: ActionType) -> &'static str {
     }
 }
 
+fn certainty_state_code(state: tracker_parser_core::models::CertaintyState) -> &'static str {
+    match state {
+        tracker_parser_core::models::CertaintyState::Exact => "exact",
+        tracker_parser_core::models::CertaintyState::Estimated => "estimated",
+        tracker_parser_core::models::CertaintyState::Uncertain => "uncertain",
+        tracker_parser_core::models::CertaintyState::Inconsistent => "inconsistent",
+    }
+}
+
 fn insert_source_file(
     tx: &mut Transaction<'_>,
     context: &DevContext,
@@ -1210,18 +1410,7 @@ mod tests {
             })
         );
 
-        assert!(rows.parse_issues.iter().any(|issue| {
-            issue.code == "unparsed_line" && issue.raw_line.as_deref() == Some("Dealt to f02e54a6")
-        }));
-        assert!(rows.parse_issues.iter().any(|issue| {
-            issue.code == "unparsed_line"
-                && issue.raw_line.as_deref()
-                    == Some("Total pot 3,984 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0")
-        }));
-        assert!(rows.parse_issues.iter().any(|issue| {
-            issue.code == "unparsed_line"
-                && issue.raw_line.as_deref() == Some("Board [7d 2s 8h 2c Kh]")
-        }));
+        assert!(rows.parse_issues.is_empty());
     }
 
     #[test]
@@ -1250,8 +1439,49 @@ mod tests {
         assert_eq!(normalized.eliminations.len(), 1);
         assert_eq!(normalized.eliminations[0].eliminated_seat_no, 3);
         assert_eq!(normalized.eliminations[0].eliminated_player_name, "f02e54a6");
-        assert_eq!(normalized.eliminations[0].resolved_by_pot_no, None);
+        assert_eq!(normalized.eliminations[0].resolved_by_pot_no, Some(1));
         assert_eq!(normalized.eliminations[0].ko_involved_winner_count, 1);
+
+        let rows = build_hand_elimination_rows(&normalized);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].resolved_by_pot_no, Some(1));
+        assert!(rows[0].hero_involved);
+        assert_eq!(rows[0].hero_share_fraction.as_deref(), Some("1.000000"));
+        assert!(!rows[0].is_split_ko);
+        assert_eq!(rows[0].split_n, Some(1));
+        assert!(!rows[0].is_sidepot_based);
+        assert_eq!(rows[0].certainty_state, "exact");
+    }
+
+    #[test]
+    fn builds_pot_and_return_rows_for_ft_hands() {
+        let ft_hand = parse_canonical_hand(&first_ft_hand_text()).unwrap();
+        let ft_normalized = normalize_hand(&ft_hand).unwrap();
+
+        let pot_rows = build_hand_pot_rows(&ft_normalized);
+        let contribution_rows = build_hand_pot_contribution_rows(&ft_normalized);
+        let winner_rows = build_hand_pot_winner_rows(&ft_normalized);
+        let return_rows = build_hand_return_rows(&ft_normalized);
+
+        assert_eq!(pot_rows.len(), 1);
+        assert_eq!(pot_rows[0].pot_no, 1);
+        assert_eq!(pot_rows[0].pot_type, "main");
+        assert_eq!(pot_rows[0].amount, 3_984);
+        assert_eq!(contribution_rows.len(), 2);
+        assert_eq!(winner_rows.len(), 1);
+        assert_eq!(winner_rows[0].pot_no, 1);
+        assert_eq!(winner_rows[0].seat_no, 7);
+        assert_eq!(winner_rows[0].share_amount, 3_984);
+        assert!(return_rows.is_empty());
+
+        let uncalled_hand = parse_canonical_hand(&second_ft_hand_text()).unwrap();
+        let uncalled_normalized = normalize_hand(&uncalled_hand).unwrap();
+        let uncalled_returns = build_hand_return_rows(&uncalled_normalized);
+
+        assert_eq!(uncalled_returns.len(), 1);
+        assert_eq!(uncalled_returns[0].seat_no, 7);
+        assert_eq!(uncalled_returns[0].amount, 15_048);
+        assert_eq!(uncalled_returns[0].reason, "uncalled");
     }
 
     #[test]
@@ -1288,6 +1518,11 @@ mod tests {
     fn import_local_persists_canonical_hand_layer_to_postgres() {
         let database_url = env::var("CHECK_MATE_DATABASE_URL")
             .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
         let ts_path = fixture_path(
             "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
         );
@@ -1352,7 +1587,7 @@ mod tests {
         assert_eq!(hole_cards_count, 2);
         assert_eq!(action_count, 9);
         assert_eq!(showdown_count, 2);
-        assert!(parse_issue_count >= 3);
+        assert_eq!(parse_issue_count, 0);
 
         let board = client
             .query_one(
@@ -1476,7 +1711,13 @@ mod tests {
                     eliminated_seat_no,
                     eliminated_player_name,
                     resolved_by_pot_no,
-                    ko_involved_winner_count
+                    ko_involved_winner_count,
+                    hero_involved,
+                    hero_share_fraction::text,
+                    is_split_ko,
+                    split_n,
+                    is_sidepot_based,
+                    certainty_state
                  FROM derived.hand_eliminations
                  WHERE hand_id = $1",
                 &[&hand_id],
@@ -1485,8 +1726,48 @@ mod tests {
 
         assert_eq!(elimination.get::<_, i32>(0), 3);
         assert_eq!(elimination.get::<_, String>(1), "f02e54a6");
-        assert_eq!(elimination.get::<_, Option<i32>>(2), None);
+        assert_eq!(elimination.get::<_, Option<i32>>(2), Some(1));
         assert_eq!(elimination.get::<_, i32>(3), 1);
+        assert!(elimination.get::<_, bool>(4));
+        assert_eq!(elimination.get::<_, Option<String>>(5).as_deref(), Some("1.000000"));
+        assert!(!elimination.get::<_, bool>(6));
+        assert_eq!(elimination.get::<_, Option<i32>>(7), Some(1));
+        assert!(!elimination.get::<_, bool>(8));
+        assert_eq!(elimination.get::<_, String>(9), "exact");
+
+        let pot_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*) FROM core.hand_pots WHERE hand_id = $1",
+                &[&hand_id],
+            )
+            .unwrap()
+            .get(0);
+        let contribution_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*) FROM core.hand_pot_contributions WHERE hand_id = $1",
+                &[&hand_id],
+            )
+            .unwrap()
+            .get(0);
+        let winner_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*) FROM core.hand_pot_winners WHERE hand_id = $1",
+                &[&hand_id],
+            )
+            .unwrap()
+            .get(0);
+        let return_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*) FROM core.hand_returns WHERE hand_id = $1",
+                &[&hand_id],
+            )
+            .unwrap()
+            .get(0);
+
+        assert_eq!(pot_count, 1);
+        assert_eq!(contribution_count, 2);
+        assert_eq!(winner_count, 1);
+        assert_eq!(return_count, 0);
 
         let multi_collect_hand_id: Uuid = client
             .query_one(
@@ -1542,6 +1823,19 @@ mod tests {
         content.split("\n\n").next().unwrap().trim().to_string()
     }
 
+    fn second_ft_hand_text() -> String {
+        let content = fs::read_to_string(fixture_path(
+            "../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt",
+        ))
+        .unwrap();
+        content
+            .split("\n\n")
+            .nth(1)
+            .unwrap()
+            .trim()
+            .to_string()
+    }
+
     fn all_hands_from_fixture(filename: &str) -> Vec<CanonicalParsedHand> {
         let content =
             fs::read_to_string(fixture_path(&format!("../../fixtures/mbr/hh/{filename}"))).unwrap();
@@ -1560,5 +1854,10 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .into_owned()
+    }
+
+    fn apply_sql_file(client: &mut Client, path: &str) {
+        let sql = fs::read_to_string(path).unwrap();
+        client.batch_execute(&sql).unwrap();
     }
 }

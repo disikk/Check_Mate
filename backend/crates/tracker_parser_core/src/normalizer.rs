@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use crate::{
     ParserError,
     models::{
-        ActionType, CanonicalParsedHand, HandElimination, HandOutcomeActual,
-        NormalizationInvariants, NormalizedHand, PlayerNodeState, PlayerStatus, PotSlice,
+        ActionType, CanonicalParsedHand, CertaintyState, FinalPot, HandElimination,
+        HandOutcomeActual, HandReturn, NormalizationInvariants, NormalizedHand,
+        PlayerNodeState, PlayerStatus, PotContribution, PotSlice, PotWinner,
         ResolutionNodeSnapshot, Street,
     },
 };
@@ -27,6 +28,10 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
     let starting_stack = ordered_seats
         .iter()
         .map(|seat| (seat.player_name.clone(), seat.starting_stack))
+        .collect::<BTreeMap<_, _>>();
+    let seat_by_player = ordered_seats
+        .iter()
+        .map(|seat| (seat.player_name.clone(), seat.seat_no))
         .collect::<BTreeMap<_, _>>();
 
     let mut stack_current = starting_stack.clone();
@@ -196,24 +201,33 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
             (player.clone(), final_stack)
         })
         .collect::<BTreeMap<_, _>>();
+    let final_board_cards = if hand.board_final.is_empty() && !hand.summary_board.is_empty() {
+        hand.summary_board.clone()
+    } else {
+        hand.board_final.clone()
+    };
+    let rake_amount = hand.summary_rake_amount.unwrap_or(0);
+    let returns = build_returns(hand, &seat_by_player)?;
+    let (final_pots, pot_contributions) = build_final_pots(&ordered_seats, &committed_total);
+    let (pot_winners, winner_mapping_state, winner_mapping_errors) =
+        build_pot_winners(hand, &final_pots, &seat_by_player)?;
+    invariant_errors.extend(winner_mapping_errors);
 
     let total_committed = committed_total.values().sum::<i64>();
     let total_collected = hand.collected_amounts.values().sum::<i64>();
-    let ko_involved_winner_count = hand
-        .collected_amounts
-        .values()
-        .filter(|amount| **amount > 0)
-        .count() as u8;
     let eliminations = ordered_seats
         .iter()
         .filter_map(|seat| {
             let final_stack = stacks_after_actual.get(&seat.player_name).copied().unwrap_or(0);
-            (seat.starting_stack > 0 && final_stack == 0).then(|| HandElimination {
-                eliminated_seat_no: seat.seat_no,
-                eliminated_player_name: seat.player_name.clone(),
-                resolved_by_pot_no: None,
-                ko_involved_winner_count,
-            })
+            (seat.starting_stack > 0 && final_stack == 0)
+                .then(|| build_elimination(
+                    hand,
+                    seat,
+                    &pot_contributions,
+                    &final_pots,
+                    &pot_winners,
+                    winner_mapping_state,
+                ))
         })
         .collect::<Vec<_>>();
 
@@ -226,10 +240,18 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         ));
     }
 
-    let pot_conservation_ok = total_committed == total_collected;
+    let pot_conservation_ok = total_committed == total_collected + rake_amount;
     if !pot_conservation_ok {
         invariant_errors.push(format!(
-            "pot_conservation_mismatch: committed_total={total_committed}, collected_total={total_collected}"
+            "pot_conservation_mismatch: committed_total={total_committed}, collected_total={total_collected}, rake_amount={rake_amount}"
+        ));
+    }
+    if let Some(summary_total_pot) = hand.summary_total_pot
+        && summary_total_pot != total_collected + rake_amount
+    {
+        invariant_errors.push(format!(
+            "summary_total_pot_mismatch: summary_total_pot={summary_total_pot}, collected_plus_rake={}",
+            total_collected + rake_amount
         ));
     }
 
@@ -237,11 +259,16 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         hand_id: hand.header.hand_id.clone(),
         player_order,
         snapshot,
+        final_pots,
+        pot_contributions,
+        pot_winners,
+        returns,
         actual: HandOutcomeActual {
             committed_total_by_player: committed_total,
             stacks_after_actual,
             winner_collections: hand.collected_amounts.clone(),
-            final_board_cards: hand.board_final.clone(),
+            final_board_cards,
+            rake_amount,
         },
         eliminations,
         invariants: NormalizationInvariants {
@@ -251,6 +278,249 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         },
         warnings,
     })
+}
+
+fn build_returns(
+    hand: &CanonicalParsedHand,
+    seat_by_player: &BTreeMap<String, u8>,
+) -> Result<Vec<HandReturn>, ParserError> {
+    hand.actions
+        .iter()
+        .filter(|event| event.action_type == ActionType::ReturnUncalled)
+        .map(|event| {
+            let player_name = event
+                .player_name
+                .clone()
+                .ok_or(ParserError::MissingLine("return player_name"))?;
+            let seat_no = seat_by_player
+                .get(&player_name)
+                .copied()
+                .ok_or_else(|| ParserError::InvalidField {
+                    field: "return_player_name",
+                    value: player_name.clone(),
+                })?;
+            Ok(HandReturn {
+                seat_no,
+                player_name,
+                amount: event.amount.unwrap_or(0),
+                reason: "uncalled".to_string(),
+            })
+        })
+        .collect()
+}
+
+fn build_final_pots(
+    ordered_seats: &[crate::models::ParsedHandSeat],
+    committed_total: &BTreeMap<String, i64>,
+) -> (Vec<FinalPot>, Vec<PotContribution>) {
+    let mut levels = committed_total
+        .values()
+        .copied()
+        .filter(|amount| *amount > 0)
+        .collect::<Vec<_>>();
+    levels.sort_unstable();
+    levels.dedup();
+
+    let mut pots = Vec::new();
+    let mut contributions = Vec::new();
+    let mut previous_level = 0_i64;
+
+    for level in levels {
+        let contributors = ordered_seats
+            .iter()
+            .filter(|seat| committed_total.get(&seat.player_name).copied().unwrap_or(0) >= level)
+            .collect::<Vec<_>>();
+        if contributors.is_empty() {
+            continue;
+        }
+
+        let increment = level - previous_level;
+        if increment <= 0 {
+            previous_level = level;
+            continue;
+        }
+
+        let pot_no = (pots.len() + 1) as u8;
+        let amount = increment * contributors.len() as i64;
+        pots.push(FinalPot {
+            pot_no,
+            amount,
+            is_main: pots.is_empty(),
+        });
+        contributions.extend(contributors.into_iter().map(|seat| PotContribution {
+            pot_no,
+            seat_no: seat.seat_no,
+            player_name: seat.player_name.clone(),
+            amount: increment,
+        }));
+        previous_level = level;
+    }
+
+    (pots, contributions)
+}
+
+fn build_pot_winners(
+    hand: &CanonicalParsedHand,
+    final_pots: &[FinalPot],
+    seat_by_player: &BTreeMap<String, u8>,
+) -> Result<(Vec<PotWinner>, CertaintyState, Vec<String>), ParserError> {
+    let collect_events = hand
+        .actions
+        .iter()
+        .filter(|event| event.action_type == ActionType::Collect)
+        .collect::<Vec<_>>();
+
+    if final_pots.is_empty() {
+        let state = if collect_events.is_empty() {
+            CertaintyState::Exact
+        } else {
+            CertaintyState::Inconsistent
+        };
+        let errors = if collect_events.is_empty() {
+            Vec::new()
+        } else {
+            vec!["collect_events_without_pots".to_string()]
+        };
+        return Ok((Vec::new(), state, errors));
+    }
+
+    let mut winners = Vec::new();
+    let mut collect_index = 0usize;
+
+    for pot in final_pots {
+        let mut pot_total = 0_i64;
+        let mut grouped = Vec::new();
+
+        while pot_total < pot.amount {
+            let Some(event) = collect_events.get(collect_index) else {
+                return Ok((
+                    Vec::new(),
+                    CertaintyState::Uncertain,
+                    vec![format!(
+                        "collect_mapping_incomplete: pot_no={}, expected_amount={}, matched_amount={pot_total}",
+                        pot.pot_no, pot.amount
+                    )],
+                ));
+            };
+
+            let player_name = event
+                .player_name
+                .clone()
+                .ok_or(ParserError::MissingLine("collect player_name"))?;
+            let share_amount = event.amount.unwrap_or(0);
+            let Some(seat_no) = seat_by_player.get(&player_name).copied() else {
+                return Ok((
+                    Vec::new(),
+                    CertaintyState::Inconsistent,
+                    vec![format!("collect_player_missing_seat: {player_name}")],
+                ));
+            };
+
+            grouped.push(PotWinner {
+                pot_no: pot.pot_no,
+                seat_no,
+                player_name,
+                share_amount,
+            });
+            pot_total += share_amount;
+            collect_index += 1;
+        }
+
+        if pot_total != pot.amount {
+            return Ok((
+                Vec::new(),
+                CertaintyState::Inconsistent,
+                vec![format!(
+                    "collect_mapping_amount_mismatch: pot_no={}, expected_amount={}, matched_amount={pot_total}",
+                    pot.pot_no, pot.amount
+                )],
+            ));
+        }
+
+        winners.extend(grouped);
+    }
+
+    if collect_index != collect_events.len() {
+        return Ok((
+            Vec::new(),
+            CertaintyState::Inconsistent,
+            vec![format!(
+                "collect_mapping_has_leftovers: matched={}, total={}",
+                collect_index,
+                collect_events.len()
+            )],
+        ));
+    }
+
+    Ok((winners, CertaintyState::Exact, Vec::new()))
+}
+
+fn build_elimination(
+    hand: &CanonicalParsedHand,
+    seat: &crate::models::ParsedHandSeat,
+    pot_contributions: &[PotContribution],
+    final_pots: &[FinalPot],
+    pot_winners: &[PotWinner],
+    winner_mapping_state: CertaintyState,
+) -> HandElimination {
+    let resolved_by_pot_no = pot_contributions
+        .iter()
+        .filter(|contribution| contribution.seat_no == seat.seat_no)
+        .map(|contribution| contribution.pot_no)
+        .max();
+
+    let Some(pot_no) = resolved_by_pot_no else {
+        return HandElimination {
+            eliminated_seat_no: seat.seat_no,
+            eliminated_player_name: seat.player_name.clone(),
+            resolved_by_pot_no: None,
+            ko_involved_winner_count: 0,
+            hero_involved: false,
+            hero_share_fraction: None,
+            is_split_ko: false,
+            split_n: None,
+            is_sidepot_based: false,
+            certainty_state: CertaintyState::Uncertain,
+        };
+    };
+
+    let resolved_winners = pot_winners
+        .iter()
+        .filter(|winner| winner.pot_no == pot_no)
+        .collect::<Vec<_>>();
+    let resolved_pot_amount = final_pots
+        .iter()
+        .find(|pot| pot.pot_no == pot_no)
+        .map(|pot| pot.amount)
+        .unwrap_or(0);
+    let hero_share = resolved_winners
+        .iter()
+        .filter(|winner| winner.player_name == hand.hero_name.as_deref().unwrap_or_default())
+        .map(|winner| winner.share_amount)
+        .sum::<i64>();
+    let share_fraction = if winner_mapping_state == CertaintyState::Exact && resolved_pot_amount > 0 {
+        Some(hero_share as f64 / resolved_pot_amount as f64)
+    } else {
+        None
+    };
+    let split_n = (!resolved_winners.is_empty()).then_some(resolved_winners.len() as u8);
+
+    HandElimination {
+        eliminated_seat_no: seat.seat_no,
+        eliminated_player_name: seat.player_name.clone(),
+        resolved_by_pot_no: Some(pot_no),
+        ko_involved_winner_count: resolved_winners.len() as u8,
+        hero_involved: hero_share > 0,
+        hero_share_fraction: share_fraction,
+        is_split_ko: resolved_winners.len() > 1,
+        split_n,
+        is_sidepot_based: pot_no > 1,
+        certainty_state: if resolved_winners.is_empty() {
+            CertaintyState::Uncertain
+        } else {
+            winner_mapping_state
+        },
+    }
 }
 
 fn build_snapshot(

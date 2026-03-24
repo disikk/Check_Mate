@@ -69,7 +69,8 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Upload pipeline callback-контракт в `mockHandUpload.js` спроектирован под замену на реальный backend — сохранять сигнатуры callbacks при изменениях.
 - FT-раздел повторяет структуру `MBR_Stats`, но намеренно без player selector и aggregate-режима (student-only view).
 - Внутри `Check_Mate` backend-скоуп текущего цикла ограничен только `GG MBR`; Chico для этого проекта не реализуется.
-- В локальной среде Codex сейчас нет `cargo`, `rustc`, `docker` и `psql`, поэтому backend foundation пока состоит из схемы, fixtures и документации; Rust/Postgres runtime будет подключаться отдельно.
+- В локальной среде Codex на этом Mac уже доступны `cargo`, `rustc`, `psql` и отдельный Homebrew `postgresql@16`.
+- Локальный project runtime использует выделенный кластер PostgreSQL 16 на `localhost:5433`, чтобы не конфликтовать с уже существующим системным `PostgreSQL 12` на `5432`.
 
 ## Backend Update (2026-03-23)
 
@@ -82,12 +83,11 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - split raw hand-history files into hands;
   - parse hand headers for tournament identity, blind structure, table size, and button seat.
 - Local PostgreSQL runtime is already usable:
-  - database `check_mate_dev` exists;
+  - dedicated Homebrew `postgresql@16` runs on `localhost:5433`;
+  - database `check_mate_dev` exists inside that cluster;
   - migration `backend/migrations/0001_init_source_of_truth.sql` was applied successfully;
   - seed `backend/seeds/0001_reference_data.sql` was applied successfully.
-- Docker Desktop is installed but is not a current coding blocker for parser foundation:
-  - `VirtualMachinePlatform` and `WSL` are enabled in Windows;
-  - Docker Linux engine is still blocked by disabled BIOS/UEFI virtualization (`AMD-V` / `SVM`).
+- On this Mac, Docker is intentionally not required for the current parser foundation workflow.
 
 ## Canonical Parsing Update (2026-03-23)
 
@@ -96,10 +96,11 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - seats;
   - canonical action vocabulary;
   - final board runout;
+  - summary total/rake/board fields;
   - hero hole cards;
   - showdown hands;
   - collected amounts;
-  - parse warnings for unsupported lines.
+  - parse warnings only for still-unsupported lines.
 - Design reference for the canonical/normalized split is `D:\coding\poker-ev-tracker`:
   - canonical parsed hand/event vocabulary first;
   - deterministic event-replay normalizer second;
@@ -109,14 +110,14 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `import-local` smoke path into PostgreSQL using `CHECK_MATE_DATABASE_URL`.
 - Current local smoke import guarantees:
   - TS -> `import.source_files`, `import.import_jobs`, `import.file_fragments`, `core.tournaments`, `core.tournament_entries`;
-  - HH -> `import.source_files`, `import.import_jobs`, `import.file_fragments`, `core.hands`, `core.hand_seats`, `core.hand_hole_cards`, `core.hand_actions`, `core.hand_boards`, `core.hand_showdowns`, `core.parse_issues`, `derived.hand_state_resolutions`, `derived.mbr_stage_resolution`.
+  - HH -> `import.source_files`, `import.import_jobs`, `import.file_fragments`, `core.hands`, `core.hand_seats`, `core.hand_hole_cards`, `core.hand_actions`, `core.hand_boards`, `core.hand_showdowns`, `core.hand_pots`, `core.hand_pot_contributions`, `core.hand_pot_winners`, `core.hand_returns`, `core.parse_issues`, `derived.hand_state_resolutions`, `derived.hand_eliminations`, `derived.mbr_stage_resolution`.
 - Current persistence behavior:
   - `core.hands` is upserted by `(player_profile_id, external_hand_id)`;
   - child canonical rows are replaced for the current hand before re-insert, so repeated local imports stay idempotent at the hand layer.
 - Current normalized persistence behavior:
-  - `normalize_hand` now exposes committed totals and invariant results;
+  - `normalize_hand` now exposes committed totals, exact final pot graph, return rows, resolved eliminations, and invariant results;
   - `parser_worker import-local` persists the first exact derived row into `derived.hand_state_resolutions`;
-  - persisted fields currently include `chip_conservation_ok`, `pot_conservation_ok`, `rake_amount = 0`, `final_stacks`, and `invariant_errors`.
+  - persisted fields currently include `chip_conservation_ok`, `pot_conservation_ok`, parsed `rake_amount`, `final_stacks`, and `invariant_errors`.
 - Current MBR stage persistence behavior:
   - `derived.mbr_stage_resolution` now persists the exact `played_ft_hand` fact;
   - `ft_table_size` is persisted exactly for 9-max FT hands from the observed seat count;
@@ -125,13 +126,18 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current elimination persistence behavior:
   - `normalize_hand` now derives exact eliminations for players whose starting stack was positive and whose final stack after the hand is zero;
   - `parser_worker import-local` now persists those rows into `derived.hand_eliminations`;
-  - current persisted slice is intentionally conservative: `resolved_by_pot_no`, split KO attribution, hero share fraction, and side-pot KO attribution are not resolved yet.
+  - current persisted slice now includes `resolved_by_pot_no`, `hero_involved`, `hero_share_fraction`, `is_split_ko`, `split_n`, `is_sidepot_based`, and `certainty_state`;
+  - `hero_involved = true` only when Hero receives a positive share of the pot that contains the eliminated player's last chips.
 - Current canonical parser correction:
   - repeated GG `collected ... from pot` lines for the same player are now accumulated instead of overwritten;
   - this was required for exact multi-pot final stacks, pot conservation, and future side-pot/KO derivations.
+- Current stat-layer handoff artifact:
+  - `docs/stat_catalog/mbr_stats_inventory.yml` inventories all 31 legacy `MBR_Stats` modules as a dependency map for future stat-layer redesign;
+  - this file is inventory-only and intentionally does not yet introduce the new stat taxonomy or renamed stat families.
 - Current intentional limitation:
   - timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly;
-  - boundary KO metrics, exact pot-level KO attribution, and timezone-normalized timestamps are still not persisted yet.
+  - boundary KO metrics and timezone-normalized timestamps are still not persisted yet;
+  - `boundary_ko_ev`, `big_ko` redesign, and the new stat-layer schema remain explicitly out of scope for the current phase.
 - Cross-machine continuation:
   - committed handoff lives in `docs/architecture/2026-03-23-mbr-handoff.md`;
   - `backend/fixtures`, `docs/plans`, and `.claude` are intentionally local-only and must be copied manually if needed on another machine.

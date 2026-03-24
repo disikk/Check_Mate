@@ -143,6 +143,37 @@ fn keeps_short_handed_ft_state_inside_nine_max_header() {
 }
 
 #[test]
+fn parses_summary_fields_without_false_positive_warnings() {
+    let first_hand = HH_FT.split("\n\n").next().unwrap();
+    let hand = parse_canonical_hand(first_hand).unwrap();
+
+    assert_eq!(hand.summary_total_pot, Some(3_984));
+    assert_eq!(hand.summary_rake_amount, Some(0));
+    assert_eq!(
+        hand.summary_board,
+        vec![
+            "7d".to_string(),
+            "2s".to_string(),
+            "8h".to_string(),
+            "2c".to_string(),
+            "Kh".to_string()
+        ]
+    );
+    assert!(!hand
+        .parse_warnings
+        .iter()
+        .any(|warning| warning.contains("Dealt to f02e54a6")));
+    assert!(!hand
+        .parse_warnings
+        .iter()
+        .any(|warning| warning.contains("Total pot 3,984")));
+    assert!(!hand
+        .parse_warnings
+        .iter()
+        .any(|warning| warning.contains("Board [7d 2s 8h 2c Kh]")));
+}
+
+#[test]
 fn accumulates_repeated_collect_lines_for_same_player() {
     let hand_text = split_hand_history(HH_FT)
         .unwrap()

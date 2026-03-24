@@ -10,12 +10,14 @@
 - real HH/TS fixtures from MBR exports are the golden parser pack
 - parser architecture: `tracker_parser_core` + `parser_worker`
 
-## Runtime Status (2026-03-23)
+## Runtime Status (2026-03-24)
 
 - `cargo`, `rustc`, `psql`, and PostgreSQL are installed locally
-- local database `check_mate_dev` exists
+- dedicated Homebrew `postgresql@16` runs on `localhost:5433`
+- local database `check_mate_dev` exists in that PostgreSQL 16 cluster
 - migration `0001_init_source_of_truth.sql` and seed `0001_reference_data.sql` were applied successfully
-- Docker Desktop is installed, but Docker Linux engine is still blocked by disabled firmware virtualization (`AMD-V` / `SVM`) on this PC
+- `CHECK_MATE_DATABASE_URL` can point to `host=localhost port=5433 user=postgres dbname=check_mate_dev`
+- Docker is not required for the current parser foundation workflow
 
 ## Layout
 

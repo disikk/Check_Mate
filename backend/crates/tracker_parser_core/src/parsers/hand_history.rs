@@ -97,6 +97,9 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
     let mut seats = Vec::new();
     let mut actions = Vec::new();
     let mut board_final = Vec::new();
+    let mut summary_total_pot = None;
+    let mut summary_rake_amount = None;
+    let mut summary_board = Vec::new();
     let mut hero_hole_cards = None;
     let mut hero_name = None;
     let mut showdown_hands = std::collections::BTreeMap::new();
@@ -127,6 +130,10 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
             continue;
         }
 
+        if parse_hidden_dealt_to_line(line) {
+            continue;
+        }
+
         if let Some((next_street, cards)) = parse_board_transition(line) {
             street = next_street;
             match street {
@@ -144,6 +151,17 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
 
         if line == "*** SUMMARY ***" {
             street = Street::Summary;
+            continue;
+        }
+
+        if let Some((total_pot, rake_amount)) = parse_summary_total_line(line)? {
+            summary_total_pot = Some(total_pot);
+            summary_rake_amount = Some(rake_amount);
+            continue;
+        }
+
+        if let Some(cards) = parse_summary_board_line(line) {
+            summary_board = cards;
             continue;
         }
 
@@ -184,6 +202,9 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
         seats,
         actions,
         board_final,
+        summary_total_pot,
+        summary_rake_amount,
+        summary_board,
         hero_hole_cards,
         showdown_hands,
         collected_amounts,
@@ -249,6 +270,12 @@ fn parse_dealt_to_line(line: &str) -> Option<(String, Vec<String>)> {
     ))
 }
 
+fn parse_hidden_dealt_to_line(line: &str) -> bool {
+    let regex =
+        Regex::new(r"^Dealt to (?P<player_name>.+?)\s*$").expect("hidden dealt-to regex must compile");
+    regex.is_match(line)
+}
+
 fn parse_board_transition(line: &str) -> Option<(Street, Vec<String>)> {
     let flop_regex =
         Regex::new(r"^\*\*\* FLOP \*\*\* \[(?P<cards>[^\]]+)\]$").expect("flop regex must compile");
@@ -269,6 +296,28 @@ fn parse_board_transition(line: &str) -> Option<(Street, Vec<String>)> {
     }
 
     None
+}
+
+fn parse_summary_total_line(line: &str) -> Result<Option<(i64, i64)>, ParserError> {
+    let regex = Regex::new(
+        r"^Total pot (?P<total_pot>[\d,]+) \| Rake (?P<rake_amount>[\d,]+)(?: \| .+)?$",
+    )
+    .expect("summary total regex must compile");
+    let Some(captures) = regex.captures(line) else {
+        return Ok(None);
+    };
+
+    Ok(Some((
+        parse_i64(&captures["total_pot"], "summary_total_pot")?,
+        parse_i64(&captures["rake_amount"], "summary_rake_amount")?,
+    )))
+}
+
+fn parse_summary_board_line(line: &str) -> Option<Vec<String>> {
+    let regex =
+        Regex::new(r"^Board \[(?P<cards>[^\]]+)\]$").expect("summary board regex must compile");
+    let captures = regex.captures(line)?;
+    Some(split_cards(&captures["cards"]))
 }
 
 fn parse_uncalled_return(
