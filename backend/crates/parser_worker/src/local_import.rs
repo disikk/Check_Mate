@@ -6,7 +6,7 @@ use postgres::{Client, NoTls, Transaction};
 use sha2::{Digest, Sha256};
 use tracker_parser_core::{
     SourceKind, detect_source_kind,
-    models::{ActionType, CanonicalParsedHand, Street},
+    models::{ActionType, CanonicalParsedHand, CertaintyState, Street, TournamentSummary},
     normalizer::normalize_hand,
     parsers::{
         hand_history::{parse_canonical_hand, split_hand_history},
@@ -163,9 +163,27 @@ struct MbrStageResolutionRow {
     entered_boundary_zone: bool,
     entered_boundary_zone_state: String,
     ft_table_size: Option<i32>,
+    boundary_ko_ev: Option<String>,
+    boundary_ko_min: Option<String>,
+    boundary_ko_max: Option<String>,
     boundary_ko_method: Option<String>,
     boundary_ko_certainty: Option<String>,
     boundary_ko_state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TournamentEntryEconomics {
+    regular_prize_cents: i64,
+    mystery_money_cents: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct StageHandFact {
+    hand_id: String,
+    played_at: String,
+    max_players: u8,
+    seat_count: usize,
+    exact_hero_boundary_ko_share: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,6 +304,7 @@ fn import_tournament_summary(
     input: &str,
 ) -> Result<LocalImportReport> {
     let summary = parse_tournament_summary(input)?;
+    let tournament_entry_economics = load_tournament_entry_economics(tx, context, &summary)?;
     let source_file_id = insert_source_file(tx, context, path, input, "ts")?;
     let import_job_id = insert_import_job(tx, context.organization_id, source_file_id)?;
     insert_file_fragment(tx, source_file_id, 0, None, "summary", input)?;
@@ -350,7 +369,9 @@ fn import_tournament_summary(
             tournament_id,
             player_profile_id,
             finish_place,
+            regular_prize_money,
             total_payout_money,
+            mystery_money_total,
             is_winner
         )
         VALUES (
@@ -358,18 +379,24 @@ fn import_tournament_summary(
             $2,
             $3,
             ($4::double precision)::numeric(12,2),
-            $5
+            ($5::double precision)::numeric(12,2),
+            ($6::double precision)::numeric(12,2),
+            $7
         )
         ON CONFLICT (tournament_id, player_profile_id)
         DO UPDATE SET
             finish_place = EXCLUDED.finish_place,
+            regular_prize_money = EXCLUDED.regular_prize_money,
             total_payout_money = EXCLUDED.total_payout_money,
+            mystery_money_total = EXCLUDED.mystery_money_total,
             is_winner = EXCLUDED.is_winner",
         &[
             &tournament_id,
             &context.player_profile_id,
             &(summary.finish_place as i32),
+            &cents_to_f64(tournament_entry_economics.regular_prize_cents),
             &cents_to_f64(summary.payout_cents),
+            &cents_to_f64(tournament_entry_economics.mystery_money_cents),
             &(summary.finish_place == 1),
         ],
     )?;
@@ -395,11 +422,13 @@ fn import_hand_history(
         .iter()
         .map(|hand| parse_canonical_hand(&hand.raw_text))
         .collect::<Result<Vec<_>, _>>()?;
+    let normalized_hands = canonical_hands
+        .iter()
+        .map(normalize_hand)
+        .collect::<Result<Vec<_>, _>>()?;
     let first_hand = hands
         .first()
         .ok_or_else(|| anyhow!("hand history contains no parsed hands"))?;
-    let mbr_stage_resolutions =
-        build_mbr_stage_resolutions(context.player_profile_id, &canonical_hands);
 
     let tournament_id: Uuid = tx
         .query_opt(
@@ -424,6 +453,26 @@ fn import_hand_history(
 
     let source_file_id = insert_source_file(tx, context, path, input, "hh")?;
     let import_job_id = insert_import_job(tx, context.organization_id, source_file_id)?;
+    let stage_facts = canonical_hands
+        .iter()
+        .zip(normalized_hands.iter())
+        .map(|(hand, normalized_hand)| StageHandFact {
+            hand_id: hand.header.hand_id.clone(),
+            played_at: hand.header.played_at.clone(),
+            max_players: hand.header.max_players,
+            seat_count: hand.seats.len(),
+            exact_hero_boundary_ko_share: Some(
+                normalized_hand
+                    .eliminations
+                    .iter()
+                    .filter(|elimination| elimination.certainty_state == CertaintyState::Exact)
+                    .map(|elimination| elimination.hero_share_fraction.unwrap_or(0.0))
+                    .sum::<f64>(),
+            ),
+        })
+        .collect::<Vec<_>>();
+    let mbr_stage_resolutions =
+        build_mbr_stage_resolutions_from_facts(context.player_profile_id, &stage_facts);
 
     for (index, hand) in hands.iter().enumerate() {
         let fragment_id = insert_file_fragment(
@@ -444,7 +493,7 @@ fn import_hand_history(
             canonical_hand,
         )?;
         persist_canonical_hand(tx, source_file_id, fragment_id, hand_id, canonical_hand)?;
-        let normalized_hand = normalize_hand(canonical_hand)?;
+        let normalized_hand = &normalized_hands[index];
         persist_normalized_hand(tx, hand_id, &normalized_hand)?;
         let street_strength_rows = build_street_hand_strength_rows(canonical_hand)?;
         persist_street_hand_strength(tx, hand_id, &street_strength_rows)?;
@@ -856,11 +905,20 @@ fn persist_mbr_stage_resolution(
             entered_boundary_zone,
             entered_boundary_zone_state,
             ft_table_size,
+            boundary_ko_ev,
+            boundary_ko_min,
+            boundary_ko_max,
             boundary_ko_method,
             boundary_ko_certainty,
             boundary_ko_state
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7,
+            ($8::text)::numeric(12,6),
+            ($9::text)::numeric(12,6),
+            ($10::text)::numeric(12,6),
+            $11, $12, $13
+        )
         ON CONFLICT (hand_id, player_profile_id)
         DO UPDATE SET
             played_ft_hand = EXCLUDED.played_ft_hand,
@@ -868,6 +926,9 @@ fn persist_mbr_stage_resolution(
             entered_boundary_zone = EXCLUDED.entered_boundary_zone,
             entered_boundary_zone_state = EXCLUDED.entered_boundary_zone_state,
             ft_table_size = EXCLUDED.ft_table_size,
+            boundary_ko_ev = EXCLUDED.boundary_ko_ev,
+            boundary_ko_min = EXCLUDED.boundary_ko_min,
+            boundary_ko_max = EXCLUDED.boundary_ko_max,
             boundary_ko_method = EXCLUDED.boundary_ko_method,
             boundary_ko_certainty = EXCLUDED.boundary_ko_certainty,
             boundary_ko_state = EXCLUDED.boundary_ko_state",
@@ -879,6 +940,9 @@ fn persist_mbr_stage_resolution(
             &row.entered_boundary_zone,
             &row.entered_boundary_zone_state,
             &row.ft_table_size,
+            &row.boundary_ko_ev,
+            &row.boundary_ko_min,
+            &row.boundary_ko_max,
             &row.boundary_ko_method,
             &row.boundary_ko_certainty,
             &row.boundary_ko_state,
@@ -1126,47 +1190,130 @@ fn build_mbr_stage_resolutions(
     player_profile_id: Uuid,
     hands: &[CanonicalParsedHand],
 ) -> BTreeMap<String, MbrStageResolutionRow> {
-    let mut chronological = hands.iter().collect::<Vec<_>>();
-    chronological.sort_by(|left, right| left.header.played_at.cmp(&right.header.played_at));
-
-    let first_ft_index = chronological
+    let facts = hands
         .iter()
-        .position(|hand| hand.header.max_players == 9);
-    let boundary_hand_id = first_ft_index
-        .and_then(|index| index.checked_sub(1))
-        .and_then(|index| chronological.get(index))
-        .filter(|hand| hand.header.max_players == 5)
-        .map(|hand| hand.header.hand_id.clone());
+        .map(|hand| StageHandFact {
+            hand_id: hand.header.hand_id.clone(),
+            played_at: hand.header.played_at.clone(),
+            max_players: hand.header.max_players,
+            seat_count: hand.seats.len(),
+            exact_hero_boundary_ko_share: Some(0.0),
+        })
+        .collect::<Vec<_>>();
 
-    hands
+    build_mbr_stage_resolutions_from_facts(player_profile_id, &facts)
+}
+
+fn build_mbr_stage_resolutions_from_facts(
+    player_profile_id: Uuid,
+    facts: &[StageHandFact],
+) -> BTreeMap<String, MbrStageResolutionRow> {
+    let mut chronological = facts.iter().collect::<Vec<_>>();
+    chronological.sort_by(|left, right| left.played_at.cmp(&right.played_at));
+
+    let first_ft_index = chronological.iter().position(|hand| hand.max_players == 9);
+    let boundary_hand_id = first_ft_index.and_then(|index| {
+        chronological[..index]
+            .iter()
+            .rev()
+            .find(|hand| hand.max_players == 5)
+            .map(|hand| hand.hand_id.clone())
+    });
+
+    facts
         .iter()
-        .map(|hand| {
-            let played_ft_hand = hand.header.max_players == 9;
-            let is_boundary_hand =
-                boundary_hand_id.as_deref() == Some(hand.header.hand_id.as_str());
-
-            let entered_boundary_zone_state = if is_boundary_hand {
-                "estimated".to_string()
-            } else {
-                "exact".to_string()
-            };
+        .map(|fact| {
+            let played_ft_hand = fact.max_players == 9;
+            let is_boundary_hand = boundary_hand_id.as_deref() == Some(fact.hand_id.as_str());
+            let boundary_ko_value = is_boundary_hand.then_some(
+                fact.exact_hero_boundary_ko_share.unwrap_or_default(),
+            );
 
             (
-                hand.header.hand_id.clone(),
+                fact.hand_id.clone(),
                 MbrStageResolutionRow {
                     player_profile_id,
                     played_ft_hand,
                     played_ft_hand_state: "exact".to_string(),
                     entered_boundary_zone: is_boundary_hand,
-                    entered_boundary_zone_state,
-                    ft_table_size: played_ft_hand.then_some(hand.seats.len() as i32),
-                    boundary_ko_method: None,
-                    boundary_ko_certainty: None,
-                    boundary_ko_state: "uncertain".to_string(),
+                    entered_boundary_zone_state: if is_boundary_hand {
+                        "estimated".to_string()
+                    } else {
+                        "exact".to_string()
+                    },
+                    ft_table_size: played_ft_hand.then_some(fact.seat_count as i32),
+                    boundary_ko_ev: boundary_ko_value.map(|value| format!("{value:.6}")),
+                    boundary_ko_min: boundary_ko_value.map(|value| format!("{value:.6}")),
+                    boundary_ko_max: boundary_ko_value.map(|value| format!("{value:.6}")),
+                    boundary_ko_method: is_boundary_hand
+                        .then_some("legacy_pre_ft_candidate_v1".to_string()),
+                    boundary_ko_certainty: is_boundary_hand.then_some("estimated".to_string()),
+                    boundary_ko_state: if is_boundary_hand {
+                        "estimated".to_string()
+                    } else {
+                        "uncertain".to_string()
+                    },
                 },
             )
         })
         .collect()
+}
+
+fn load_tournament_entry_economics(
+    tx: &mut Transaction<'_>,
+    context: &DevContext,
+    summary: &TournamentSummary,
+) -> Result<TournamentEntryEconomics> {
+    let regular_prize_cents: i64 = tx
+        .query_opt(
+            "SELECT COALESCE((prize.regular_prize_money * 100)::bigint, 0::bigint)
+             FROM ref.mbr_buyin_configs config
+             LEFT JOIN ref.mbr_regular_prizes prize
+               ON prize.buyin_config_id = config.id
+              AND prize.finish_place = $5
+             WHERE config.room_id = $1
+               AND config.format_id = $2
+               AND config.buyin_total = ($3::double precision)::numeric(12,2)
+               AND config.currency = $4
+               AND config.max_players = $6",
+            &[
+                &context.room_id,
+                &context.format_id,
+                &cents_to_f64(summary.buy_in_cents + summary.rake_cents + summary.bounty_cents),
+                &"USD",
+                &(summary.finish_place as i32),
+                &(summary.entrants as i32),
+            ],
+        )?
+        .map(|row| row.get(0))
+        .ok_or_else(|| {
+            anyhow!(
+                "missing MBR buy-in config for buyin_total={}, entrants={}",
+                summary.buy_in_cents + summary.rake_cents + summary.bounty_cents,
+                summary.entrants
+            )
+        })?;
+
+    resolve_tournament_entry_economics(summary, regular_prize_cents)
+}
+
+fn resolve_tournament_entry_economics(
+    summary: &TournamentSummary,
+    regular_prize_cents: i64,
+) -> Result<TournamentEntryEconomics> {
+    let mystery_money_cents = summary.payout_cents - regular_prize_cents;
+    if mystery_money_cents < 0 {
+        return Err(anyhow!(
+            "mystery_money_total cannot be negative: payout_cents={}, regular_prize_cents={}",
+            summary.payout_cents,
+            regular_prize_cents
+        ));
+    }
+
+    Ok(TournamentEntryEconomics {
+        regular_prize_cents,
+        mystery_money_cents,
+    })
 }
 
 fn build_canonical_persistence(hand: &CanonicalParsedHand) -> CanonicalHandPersistence {
@@ -1476,7 +1623,10 @@ fn cents_to_f64(cents: i64) -> f64 {
 mod tests {
     use super::*;
     use mbr_stats_runtime::{SeedStatsFilters, query_seed_stats};
-    use std::path::PathBuf;
+    use std::{
+        path::PathBuf,
+        sync::{Mutex, OnceLock},
+    };
 
     const FT_HAND_ID: &str = "BR1064987693";
     const FIRST_FT_HAND_ID: &str = "BR1064986938";
@@ -1521,6 +1671,15 @@ mod tests {
             "GG20260316-0351 - Mystery Battle Royale 25.txt",
         ),
     ];
+
+    fn db_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        static DB_TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+
+        DB_TEST_MUTEX
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap()
+    }
 
     #[test]
     fn builds_canonical_rows_for_ft_all_in_hand() {
@@ -1678,7 +1837,10 @@ mod tests {
         assert!(boundary_row.entered_boundary_zone);
         assert_eq!(boundary_row.entered_boundary_zone_state, "estimated");
         assert_eq!(boundary_row.ft_table_size, None);
-        assert_eq!(boundary_row.boundary_ko_state, "uncertain");
+        assert_eq!(boundary_row.boundary_ko_min.as_deref(), Some("0.000000"));
+        assert_eq!(boundary_row.boundary_ko_ev.as_deref(), Some("0.000000"));
+        assert_eq!(boundary_row.boundary_ko_max.as_deref(), Some("0.000000"));
+        assert_eq!(boundary_row.boundary_ko_state, "estimated");
 
         let early_rush_row = rows.get(EARLY_RUSH_HAND_ID).unwrap();
         assert!(!early_rush_row.played_ft_hand);
@@ -1687,8 +1849,181 @@ mod tests {
     }
 
     #[test]
+    fn resolves_tournament_entry_economics_for_first_place_with_mystery_component() {
+        let summary = tracker_parser_core::models::TournamentSummary {
+            tournament_id: 271770266,
+            tournament_name: "Mystery Battle Royale $25".to_string(),
+            game_name: "Hold'em No Limit".to_string(),
+            buy_in_cents: 1_250,
+            rake_cents: 200,
+            bounty_cents: 1_050,
+            entrants: 18,
+            total_prize_pool_cents: 41_400,
+            started_at: "2026/03/16 10:19:41".to_string(),
+            hero_name: "Hero".to_string(),
+            finish_place: 1,
+            payout_cents: 20_500,
+        };
+        let economics = resolve_tournament_entry_economics(&summary, 10_000).unwrap();
+
+        assert_eq!(economics.regular_prize_cents, 10_000);
+        assert_eq!(economics.mystery_money_cents, 10_500);
+    }
+
+    #[test]
+    fn rejects_negative_mystery_component_for_tournament_entry_economics() {
+        let summary = tracker_parser_core::models::TournamentSummary {
+            tournament_id: 271770266,
+            tournament_name: "Mystery Battle Royale $25".to_string(),
+            game_name: "Hold'em No Limit".to_string(),
+            buy_in_cents: 1_250,
+            rake_cents: 200,
+            bounty_cents: 1_050,
+            entrants: 18,
+            total_prize_pool_cents: 41_400,
+            started_at: "2026/03/16 10:19:41".to_string(),
+            hero_name: "Hero".to_string(),
+            finish_place: 1,
+            payout_cents: 5_000,
+        };
+
+        let error = resolve_tournament_entry_economics(&summary, 10_000).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("mystery_money_total cannot be negative")
+        );
+    }
+
+    #[test]
+    fn builds_boundary_estimate_for_candidate_hand_from_exact_hero_share() {
+        let rows = build_mbr_stage_resolutions_from_facts(
+            Uuid::nil(),
+            &[
+                StageHandFact {
+                    hand_id: "rush-early".to_string(),
+                    played_at: "2026/03/16 10:40:00".to_string(),
+                    max_players: 5,
+                    seat_count: 5,
+                    exact_hero_boundary_ko_share: None,
+                },
+                StageHandFact {
+                    hand_id: "rush-boundary".to_string(),
+                    played_at: "2026/03/16 10:41:00".to_string(),
+                    max_players: 5,
+                    seat_count: 5,
+                    exact_hero_boundary_ko_share: Some(0.5),
+                },
+                StageHandFact {
+                    hand_id: "ft-first".to_string(),
+                    played_at: "2026/03/16 10:42:00".to_string(),
+                    max_players: 9,
+                    seat_count: 7,
+                    exact_hero_boundary_ko_share: None,
+                },
+            ],
+        );
+
+        let boundary = rows.get("rush-boundary").unwrap();
+        assert!(boundary.entered_boundary_zone);
+        assert_eq!(boundary.entered_boundary_zone_state, "estimated");
+        assert_eq!(boundary.boundary_ko_min.as_deref(), Some("0.500000"));
+        assert_eq!(boundary.boundary_ko_ev.as_deref(), Some("0.500000"));
+        assert_eq!(boundary.boundary_ko_max.as_deref(), Some("0.500000"));
+        assert_eq!(
+            boundary.boundary_ko_method.as_deref(),
+            Some("legacy_pre_ft_candidate_v1")
+        );
+        assert_eq!(
+            boundary.boundary_ko_certainty.as_deref(),
+            Some("estimated")
+        );
+        assert_eq!(boundary.boundary_ko_state, "estimated");
+
+        let ft = rows.get("ft-first").unwrap();
+        assert!(ft.played_ft_hand);
+        assert_eq!(ft.ft_table_size, Some(7));
+        assert_eq!(ft.boundary_ko_state, "uncertain");
+        assert!(ft.boundary_ko_ev.is_none());
+    }
+
+    #[test]
+    fn keeps_boundary_fields_unresolved_when_no_final_table_exists() {
+        let rows = build_mbr_stage_resolutions_from_facts(
+            Uuid::nil(),
+            &[
+                StageHandFact {
+                    hand_id: "rush-1".to_string(),
+                    played_at: "2026/03/16 10:40:00".to_string(),
+                    max_players: 5,
+                    seat_count: 5,
+                    exact_hero_boundary_ko_share: Some(1.0),
+                },
+                StageHandFact {
+                    hand_id: "rush-2".to_string(),
+                    played_at: "2026/03/16 10:41:00".to_string(),
+                    max_players: 5,
+                    seat_count: 5,
+                    exact_hero_boundary_ko_share: None,
+                },
+            ],
+        );
+
+        let rush = rows.get("rush-1").unwrap();
+        assert!(!rush.entered_boundary_zone);
+        assert_eq!(rush.entered_boundary_zone_state, "exact");
+        assert_eq!(rush.boundary_ko_state, "uncertain");
+        assert!(rush.boundary_ko_ev.is_none());
+        assert!(rush.boundary_ko_min.is_none());
+        assert!(rush.boundary_ko_max.is_none());
+    }
+
+    #[test]
+    fn selects_last_five_max_before_first_final_table_even_with_intermediate_table_sizes() {
+        let rows = build_mbr_stage_resolutions_from_facts(
+            Uuid::nil(),
+            &[
+                StageHandFact {
+                    hand_id: "rush-5-max".to_string(),
+                    played_at: "2026/03/16 10:40:00".to_string(),
+                    max_players: 5,
+                    seat_count: 5,
+                    exact_hero_boundary_ko_share: Some(0.25),
+                },
+                StageHandFact {
+                    hand_id: "rush-2-max".to_string(),
+                    played_at: "2026/03/16 10:41:00".to_string(),
+                    max_players: 2,
+                    seat_count: 2,
+                    exact_hero_boundary_ko_share: Some(1.0),
+                },
+                StageHandFact {
+                    hand_id: "ft-first".to_string(),
+                    played_at: "2026/03/16 10:42:00".to_string(),
+                    max_players: 9,
+                    seat_count: 8,
+                    exact_hero_boundary_ko_share: None,
+                },
+            ],
+        );
+
+        let boundary = rows.get("rush-5-max").unwrap();
+        assert!(boundary.entered_boundary_zone);
+        assert_eq!(boundary.entered_boundary_zone_state, "estimated");
+        assert_eq!(boundary.boundary_ko_ev.as_deref(), Some("0.250000"));
+        assert_eq!(boundary.boundary_ko_state, "estimated");
+
+        let intermediate = rows.get("rush-2-max").unwrap();
+        assert!(!intermediate.entered_boundary_zone);
+        assert_eq!(intermediate.entered_boundary_zone_state, "exact");
+        assert_eq!(intermediate.boundary_ko_state, "uncertain");
+        assert!(intermediate.boundary_ko_ev.is_none());
+    }
+
+    #[test]
     #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
     fn import_local_persists_canonical_hand_layer_to_postgres() {
+        let _guard = db_test_guard();
         let database_url = env::var("CHECK_MATE_DATABASE_URL")
             .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
         let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
@@ -1696,6 +2031,14 @@ mod tests {
         apply_sql_file(
             &mut setup_client,
             &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
         );
         let ts_path = fixture_path(
             "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
@@ -1828,6 +2171,7 @@ mod tests {
                     entered_boundary_zone,
                     entered_boundary_zone_state,
                     ft_table_size,
+                    boundary_ko_ev::text,
                     boundary_ko_state
                  FROM derived.mbr_stage_resolution
                  WHERE hand_id = $1
@@ -1843,7 +2187,8 @@ mod tests {
         assert!(!mbr_stage.get::<_, bool>(2));
         assert_eq!(mbr_stage.get::<_, String>(3), "exact");
         assert_eq!(mbr_stage.get::<_, Option<i32>>(4), Some(2));
-        assert_eq!(mbr_stage.get::<_, String>(5), "uncertain");
+        assert_eq!(mbr_stage.get::<_, Option<String>>(5), None);
+        assert_eq!(mbr_stage.get::<_, String>(6), "uncertain");
 
         let boundary_hand_id: Uuid = client
             .query_one(
@@ -1863,6 +2208,7 @@ mod tests {
                     entered_boundary_zone,
                     entered_boundary_zone_state,
                     ft_table_size,
+                    boundary_ko_ev::text,
                     boundary_ko_state
                  FROM derived.mbr_stage_resolution
                  WHERE hand_id = $1
@@ -1877,7 +2223,11 @@ mod tests {
         assert!(boundary_stage.get::<_, bool>(1));
         assert_eq!(boundary_stage.get::<_, String>(2), "estimated");
         assert_eq!(boundary_stage.get::<_, Option<i32>>(3), None);
-        assert_eq!(boundary_stage.get::<_, String>(4), "uncertain");
+        assert_eq!(
+            boundary_stage.get::<_, Option<String>>(4).as_deref(),
+            Some("0.000000")
+        );
+        assert_eq!(boundary_stage.get::<_, String>(5), "estimated");
 
         let elimination = client
             .query_one(
@@ -2032,6 +2382,7 @@ mod tests {
     #[test]
     #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
     fn import_local_refreshes_analytics_features_and_seed_stats() {
+        let _guard = db_test_guard();
         let database_url = env::var("CHECK_MATE_DATABASE_URL")
             .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
         let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
@@ -2039,6 +2390,14 @@ mod tests {
         apply_sql_file(
             &mut setup_client,
             &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
         );
 
         let ts_path = fixture_path(
@@ -2069,6 +2428,77 @@ mod tests {
             )
             .unwrap()
             .get(0);
+        let economics = client
+            .query_one(
+                "SELECT
+                    regular_prize_money::text,
+                    total_payout_money::text,
+                    mystery_money_total::text
+                 FROM core.tournament_entries
+                 WHERE tournament_id = $1
+                   AND player_profile_id = $2",
+                &[&ts_report.tournament_id, &player_profile_id],
+            )
+            .unwrap();
+        let buyin_config_count: i64 = client
+            .query_one("SELECT COUNT(*) FROM ref.mbr_buyin_configs", &[])
+            .unwrap()
+            .get(0);
+        let regular_prize_count: i64 = client
+            .query_one("SELECT COUNT(*) FROM ref.mbr_regular_prizes", &[])
+            .unwrap()
+            .get(0);
+        let mystery_envelope_count: i64 = client
+            .query_one("SELECT COUNT(*) FROM ref.mbr_mystery_envelopes", &[])
+            .unwrap()
+            .get(0);
+        let regular_prize_rows = client
+            .query(
+                "SELECT
+                    cfg.buyin_total::text,
+                    prize.finish_place,
+                    prize.regular_prize_money::text
+                 FROM ref.mbr_regular_prizes AS prize
+                 INNER JOIN ref.mbr_buyin_configs AS cfg
+                    ON cfg.id = prize.buyin_config_id
+                 ORDER BY cfg.buyin_total, prize.finish_place",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, String>(0),
+                    row.get::<_, i32>(1),
+                    row.get::<_, String>(2),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mystery_envelope_edges = client
+            .query(
+                "SELECT
+                    cfg.buyin_total::text,
+                    envelope.sort_order,
+                    envelope.payout_money::text,
+                    envelope.frequency_per_100m
+                 FROM ref.mbr_mystery_envelopes AS envelope
+                 INNER JOIN ref.mbr_buyin_configs AS cfg
+                    ON cfg.id = envelope.buyin_config_id
+                 WHERE envelope.sort_order IN (1, 10)
+                 ORDER BY cfg.buyin_total, envelope.sort_order",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, String>(0),
+                    row.get::<_, i32>(1),
+                    row.get::<_, String>(2),
+                    row.get::<_, i64>(3),
+                )
+            })
+            .collect::<Vec<_>>();
 
         let bool_feature_count: i64 = client
             .query_one(
@@ -2098,6 +2528,47 @@ mod tests {
             .unwrap()
             .get(0);
 
+        assert_eq!(economics.get::<_, Option<String>>(0).as_deref(), Some("100.00"));
+        assert_eq!(economics.get::<_, Option<String>>(1).as_deref(), Some("205.00"));
+        assert_eq!(economics.get::<_, Option<String>>(2).as_deref(), Some("105.00"));
+        assert_eq!(buyin_config_count, 5);
+        assert_eq!(regular_prize_count, 15);
+        assert_eq!(mystery_envelope_count, 50);
+        assert_eq!(
+            regular_prize_rows,
+            vec![
+                ("0.25".to_string(), 1, "1.00".to_string()),
+                ("0.25".to_string(), 2, "0.75".to_string()),
+                ("0.25".to_string(), 3, "0.50".to_string()),
+                ("1.00".to_string(), 1, "4.00".to_string()),
+                ("1.00".to_string(), 2, "3.00".to_string()),
+                ("1.00".to_string(), 3, "2.00".to_string()),
+                ("3.00".to_string(), 1, "12.00".to_string()),
+                ("3.00".to_string(), 2, "9.00".to_string()),
+                ("3.00".to_string(), 3, "6.00".to_string()),
+                ("10.00".to_string(), 1, "40.00".to_string()),
+                ("10.00".to_string(), 2, "30.00".to_string()),
+                ("10.00".to_string(), 3, "20.00".to_string()),
+                ("25.00".to_string(), 1, "100.00".to_string()),
+                ("25.00".to_string(), 2, "75.00".to_string()),
+                ("25.00".to_string(), 3, "50.00".to_string()),
+            ]
+        );
+        assert_eq!(
+            mystery_envelope_edges,
+            vec![
+                ("0.25".to_string(), 1, "5000.00".to_string(), 30),
+                ("0.25".to_string(), 10, "0.06".to_string(), 27048920),
+                ("1.00".to_string(), 1, "10000.00".to_string(), 60),
+                ("1.00".to_string(), 10, "0.25".to_string(), 28391080),
+                ("3.00".to_string(), 1, "30000.00".to_string(), 80),
+                ("3.00".to_string(), 10, "0.75".to_string(), 29191040),
+                ("10.00".to_string(), 1, "100000.00".to_string(), 100),
+                ("10.00".to_string(), 10, "2.50".to_string(), 29991000),
+                ("25.00".to_string(), 1, "250000.00".to_string(), 100),
+                ("25.00".to_string(), 10, "6.00".to_string(), 28477360),
+            ]
+        );
         assert!(bool_feature_count > 0);
         assert!(num_feature_count > 0);
         assert!(enum_feature_count > 0);
@@ -2144,6 +2615,7 @@ mod tests {
     #[test]
     #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
     fn import_local_full_pack_smoke_is_clean_and_idempotent() {
+        let _guard = db_test_guard();
         let database_url = env::var("CHECK_MATE_DATABASE_URL")
             .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
         let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
@@ -2151,6 +2623,14 @@ mod tests {
         apply_sql_file(
             &mut setup_client,
             &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
         );
 
         for (ts_fixture, hh_fixture) in FULL_PACK_FIXTURE_PAIRS {

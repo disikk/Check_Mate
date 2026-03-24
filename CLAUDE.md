@@ -127,7 +127,18 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `derived.mbr_stage_resolution` now persists the exact `played_ft_hand` fact;
   - `ft_table_size` is persisted exactly for 9-max FT hands from the observed seat count;
   - the last chronological `5-max` hand before the first chronological `9-max` hand is now persisted as the boundary candidate with `entered_boundary_zone = true` and `entered_boundary_zone_state = estimated`;
-  - `entered_boundary_zone` and `boundary_ko_*` remain intentionally unresolved/uncertain beyond that candidate flag until the dedicated boundary resolver batch is implemented.
+  - boundary v1 now materializes `boundary_ko_min = boundary_ko_ev = boundary_ko_max` from the exact Hero KO share observed on that candidate hand;
+  - boundary v1 persists `boundary_ko_method = legacy_pre_ft_candidate_v1`, `boundary_ko_certainty = estimated`, `boundary_ko_state = estimated`;
+  - non-candidate hands intentionally keep `boundary_ko_* = NULL` with `boundary_ko_state = uncertain`.
+- Current tournament economics behavior:
+  - `backend/migrations/0003_mbr_stage_economics.sql` introduces explicit `ref.mbr_buyin_configs`, `ref.mbr_regular_prizes`, and `ref.mbr_mystery_envelopes`;
+  - `backend/seeds/0001_reference_data.sql` now seeds the currently listed GG Mystery Battle Royale buy-ins `$0.25`, `$1`, `$3`, `$10`, `$25` from the official public payouts tables;
+  - `parser_worker import-local` now resolves `regular_prize_money` from reference tables and materializes both `regular_prize_money` and `mystery_money_total` into `core.tournament_entries`;
+  - `mystery_money_total` is computed as `total_payout_money - regular_prize_money` and negative remainders are rejected as import errors.
+- Current Big KO foundation:
+  - `backend/crates/mbr_stats_runtime/src/big_ko.rs` now provides a pure non-greedy decoder over `mystery_money_total`, exact Hero KO shares, and seeded mystery envelope tiers;
+  - decoder output is typed as `Exact`, `Ambiguous`, `Infeasible`, or `ZeroMystery`;
+  - decoder is deterministic and search-based, with no greedy fallback path.
 - Current elimination persistence behavior:
   - `normalize_hand` now derives exact eliminations for players whose starting stack was positive and whose final stack after the hand is zero;
   - `parser_worker import-local` now persists those rows into `derived.hand_eliminations`;
@@ -173,8 +184,10 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - date-range filters and session filters are still intentionally absent from the runtime query contract because timestamp normalization and session modeling are not exact yet;
   - street-strength v1 intentionally stops at exact descriptors in `derived.street_hand_strength` and does not yet materialize runtime features or nut-policy fields;
   - FT reach and KO averages are currently defined over tournaments with imported HH coverage, not summary-only tournaments;
-  - boundary KO metrics and timezone-normalized timestamps are still not persisted yet;
-  - `boundary_ko_ev`, `big_ko` redesign, and the new stat-layer schema remain explicitly out of scope for the current phase.
+  - boundary KO persistence is currently only boundary v1 point-estimate materialization, not a full uncertainty/range model;
+  - `big_ko` is decoded in a pure runtime helper but is not yet materialized into analytics feature rows or final stat cards;
+  - economics reference data currently covers the buy-ins listed on the official GG public payouts page; adding future buy-ins still requires explicit ref-table updates;
+  - timezone-normalized timestamps and the final stat-layer schema remain explicitly out of scope for the current phase.
 - Cross-machine continuation:
   - committed handoff lives in `docs/architecture/2026-03-23-mbr-handoff.md`;
   - `docs/plans` and `docs/progress` are tracked workflow artifacts in this repo;
