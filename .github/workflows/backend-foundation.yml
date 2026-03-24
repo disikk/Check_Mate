@@ -1,0 +1,57 @@
+name: Backend Foundation
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-foundation.yml"
+      - ".gitignore"
+      - "CLAUDE.md"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-foundation.yml"
+      - ".gitignore"
+      - "CLAUDE.md"
+
+jobs:
+  backend-foundation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CHECK_MATE_DATABASE_URL: host=localhost port=5433 user=postgres dbname=check_mate_ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+
+      - name: Make backend scripts executable
+        run: chmod +x backend/scripts/*.sh
+
+      - name: Bootstrap backend foundation
+        run: bash backend/scripts/bootstrap_backend_dev.sh
+
+      - name: Run backend checks
+        run: bash backend/scripts/run_backend_checks.sh

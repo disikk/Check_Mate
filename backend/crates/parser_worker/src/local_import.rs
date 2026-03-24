@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, Result, anyhow};
+use mbr_stats_runtime::materialize_player_hand_features;
 use postgres::{Client, NoTls, Transaction};
 use sha2::{Digest, Sha256};
 use tracker_parser_core::{
@@ -184,6 +185,11 @@ pub fn import_path(path: &str) -> Result<LocalImportReport> {
         }
         SourceKind::HandHistory => import_hand_history(&mut tx, &context, path, &input)?,
     };
+    materialize_player_hand_features(
+        &mut tx,
+        context.organization_id,
+        context.player_profile_id,
+    )?;
 
     tx.commit().context("failed to commit import transaction")?;
     Ok(report)
@@ -1344,6 +1350,7 @@ fn cents_to_f64(cents: i64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mbr_stats_runtime::{SeedStatsFilters, query_seed_stats};
     use std::path::PathBuf;
 
     const FT_HAND_ID: &str = "BR1064987693";
@@ -1519,6 +1526,7 @@ mod tests {
         let database_url = env::var("CHECK_MATE_DATABASE_URL")
             .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
         let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
         apply_sql_file(
             &mut setup_client,
             &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
@@ -1815,6 +1823,114 @@ mod tests {
         );
     }
 
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn import_local_refreshes_analytics_features_and_seed_stats() {
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+
+        let ts_path = fixture_path(
+            "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        );
+        let hh_path =
+            fixture_path("../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+
+        let ts_report = import_path(&ts_path).unwrap();
+        let hh_report = import_path(&hh_path).unwrap();
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let player_profile_id: Uuid = client
+            .query_one(
+                "SELECT player_profile_id
+                 FROM core.tournaments
+                 WHERE id = $1",
+                &[&ts_report.tournament_id],
+            )
+            .unwrap()
+            .get(0);
+        let organization_id: Uuid = client
+            .query_one(
+                "SELECT organization_id
+                 FROM core.tournaments
+                 WHERE id = $1",
+                &[&ts_report.tournament_id],
+            )
+            .unwrap()
+            .get(0);
+
+        let bool_feature_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM analytics.player_hand_bool_features
+                 WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let num_feature_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM analytics.player_hand_num_features
+                 WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let enum_feature_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM analytics.player_hand_enum_features
+                 WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+
+        assert!(bool_feature_count > 0);
+        assert!(num_feature_count > 0);
+        assert!(enum_feature_count > 0);
+
+        let played_ft_hand = client
+            .query_one(
+                "SELECT value
+                 FROM analytics.player_hand_bool_features
+                 WHERE player_profile_id = $1
+                   AND hand_id = (
+                       SELECT id
+                       FROM core.hands
+                       WHERE source_file_id = $2
+                         AND external_hand_id = $3
+                   )
+                   AND feature_key = 'played_ft_hand'",
+                &[&player_profile_id, &hh_report.source_file_id, &FIRST_FT_HAND_ID],
+            )
+            .unwrap();
+        assert!(played_ft_hand.get::<_, bool>(0));
+
+        let seed_stats = query_seed_stats(
+            &mut client,
+            SeedStatsFilters {
+                organization_id,
+                player_profile_id,
+                buyin_total_cents: Some(vec![2_500]),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(seed_stats.coverage.summary_tournament_count, 1);
+        assert_eq!(seed_stats.coverage.hand_tournament_count, 1);
+        assert_eq!(seed_stats.roi_pct, Some(720.0));
+        assert_eq!(seed_stats.avg_finish_place, Some(1.0));
+        assert_eq!(seed_stats.final_table_reach_percent, Some(100.0));
+        assert!(seed_stats.total_ko >= 1);
+    }
+
     fn first_ft_hand_text() -> String {
         let content = fs::read_to_string(fixture_path(
             "../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt",
@@ -1859,5 +1975,203 @@ mod tests {
     fn apply_sql_file(client: &mut Client, path: &str) {
         let sql = fs::read_to_string(path).unwrap();
         client.batch_execute(&sql).unwrap();
+    }
+
+    fn reset_dev_player_data(client: &mut Client) {
+        let player_profile_id = client
+            .query_opt(
+                "SELECT id
+                 FROM core.player_profiles
+                 WHERE organization_id = (
+                     SELECT id FROM org.organizations WHERE name = $1
+                 )
+                   AND room = 'gg'
+                   AND screen_name = $2",
+                &[&DEV_ORG_NAME, &DEV_PLAYER_NAME],
+            )
+            .unwrap()
+            .map(|row| row.get::<_, Uuid>(0));
+
+        let Some(player_profile_id) = player_profile_id else {
+            return;
+        };
+
+        client
+            .execute(
+                "DELETE FROM analytics.player_hand_bool_features WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM analytics.player_hand_num_features WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM analytics.player_hand_enum_features WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM derived.mbr_stage_resolution
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM derived.hand_eliminations
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM derived.hand_state_resolutions
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.parse_issues
+                 WHERE source_file_id IN (
+                     SELECT id FROM import.source_files WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hand_returns
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hand_pot_winners
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hand_pot_contributions
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hand_pots
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hand_showdowns
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hand_hole_cards
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hand_actions
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hand_boards
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hand_seats
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.hands WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.tournament_entries WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.tournaments WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM import.file_fragments
+                 WHERE source_file_id IN (
+                     SELECT id FROM import.source_files WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM import.import_jobs
+                 WHERE source_file_id IN (
+                     SELECT id FROM import.source_files WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM import.source_files WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap();
     }
 }

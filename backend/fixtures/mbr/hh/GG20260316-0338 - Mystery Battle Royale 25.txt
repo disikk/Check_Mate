@@ -1,0 +1,1645 @@
+Poker Hand #BR1064995351: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level9(150/300(60)) - 2026/03/16 10:59:00
+Table '2' 9-max Seat #4 is the button
+Seat 1: b3d4c459 (3,688 in chips)
+Seat 2: 3cc5252d (790 in chips)
+Seat 3: 9b70214f (2,004 in chips)
+Seat 4: Hero (702 in chips)
+Seat 7: ae7eda73 (7,932 in chips)
+Seat 8: 4efe6eca (2,884 in chips)
+4efe6eca: posts the ante 60
+b3d4c459: posts the ante 60
+ae7eda73: posts the ante 60
+9b70214f: posts the ante 60
+3cc5252d: posts the ante 60
+Hero: posts the ante 60
+ae7eda73: posts small blind 150
+4efe6eca: posts big blind 300
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+Dealt to Hero [Qh Kh]
+Dealt to ae7eda73 
+Dealt to 4efe6eca 
+b3d4c459: folds
+3cc5252d: folds
+9b70214f: folds
+Hero: raises 300 to 600
+ae7eda73: calls 450
+4efe6eca: folds
+*** FLOP *** [Ks 2d 8s]
+ae7eda73: bets 7,272 and is all-in
+Hero: calls 42 and is all-in
+Uncalled bet (7,230) returned to ae7eda73
+ae7eda73: shows [2s 6c] (a pair of Twos)
+Hero: shows [Qh Kh] (a pair of Kings)
+*** TURN *** [Ks 2d 8s] [6s]
+*** RIVER *** [Ks 2d 8s 6s] [9c]
+*** SHOWDOWN ***
+ae7eda73 collected 1,944 from pot
+*** SUMMARY ***
+Total pot 1,944 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Ks 2d 8s 6s 9c]
+Seat 1: b3d4c459 folded before Flop
+Seat 2: 3cc5252d folded before Flop
+Seat 3: 9b70214f folded before Flop
+Seat 4: Hero (button) showed [Qh Kh] and lost with a pair of Kings
+Seat 7: ae7eda73 (small blind) showed [2s 6c] and won (1,944) with two pair, Sixes and Twos
+Seat 8: 4efe6eca (big blind) folded before Flop
+
+
+Poker Hand #BR1064995318: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level9(150/300(60)) - 2026/03/16 10:58:33
+Table '2' 9-max Seat #3 is the button
+Seat 1: b3d4c459 (4,348 in chips)
+Seat 2: 3cc5252d (850 in chips)
+Seat 3: 9b70214f (2,064 in chips)
+Seat 4: Hero (912 in chips)
+Seat 7: ae7eda73 (6,882 in chips)
+Seat 8: 4efe6eca (2,944 in chips)
+4efe6eca: posts the ante 60
+b3d4c459: posts the ante 60
+ae7eda73: posts the ante 60
+9b70214f: posts the ante 60
+3cc5252d: posts the ante 60
+Hero: posts the ante 60
+Hero: posts small blind 150
+ae7eda73: posts big blind 300
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+Dealt to Hero [Kh 5d]
+Dealt to ae7eda73 
+Dealt to 4efe6eca 
+4efe6eca: folds
+b3d4c459: raises 300 to 600
+3cc5252d: folds
+9b70214f: folds
+Hero: folds
+ae7eda73: raises 6,222 to 6,822 and is all-in
+b3d4c459: folds
+Uncalled bet (6,222) returned to ae7eda73
+*** SHOWDOWN ***
+ae7eda73 collected 1,710 from pot
+*** SUMMARY ***
+Total pot 1,710 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: b3d4c459 folded before Flop
+Seat 2: 3cc5252d folded before Flop
+Seat 3: 9b70214f (button) folded before Flop
+Seat 4: Hero (small blind) folded before Flop
+Seat 7: ae7eda73 (big blind) collected (1,710)
+Seat 8: 4efe6eca folded before Flop
+
+
+Poker Hand #BR1064995250: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level9(150/300(60)) - 2026/03/16 10:57:34
+Table '2' 9-max Seat #2 is the button
+Seat 1: b3d4c459 (4,408 in chips)
+Seat 2: 3cc5252d (910 in chips)
+Seat 3: 9b70214f (2,274 in chips)
+Seat 4: Hero (1,272 in chips)
+Seat 7: ae7eda73 (4,288 in chips)
+Seat 8: 4efe6eca (3,004 in chips)
+Seat 9: 6b07acd9 (1,844 in chips)
+6b07acd9: posts the ante 60
+4efe6eca: posts the ante 60
+b3d4c459: posts the ante 60
+ae7eda73: posts the ante 60
+9b70214f: posts the ante 60
+3cc5252d: posts the ante 60
+Hero: posts the ante 60
+9b70214f: posts small blind 150
+Hero: posts big blind 300
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+Dealt to Hero [5s 5d]
+Dealt to ae7eda73 
+Dealt to 4efe6eca 
+Dealt to 6b07acd9 
+ae7eda73: raises 3,928 to 4,228 and is all-in
+4efe6eca: folds
+6b07acd9: calls 1,784 and is all-in
+b3d4c459: folds
+3cc5252d: folds
+9b70214f: folds
+Hero: folds
+Uncalled bet (2,444) returned to ae7eda73
+ae7eda73: shows [Ah Kc]
+6b07acd9: shows [7c Ad]
+*** FLOP *** [4s 3h Kh]
+*** TURN *** [4s 3h Kh] [4c]
+*** RIVER *** [4s 3h Kh 4c] [Th]
+*** SHOWDOWN ***
+ae7eda73 collected 4,438 from pot
+*** SUMMARY ***
+Total pot 4,438 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [4s 3h Kh 4c Th]
+Seat 1: b3d4c459 folded before Flop
+Seat 2: 3cc5252d (button) folded before Flop
+Seat 3: 9b70214f (small blind) folded before Flop
+Seat 4: Hero (big blind) folded before Flop
+Seat 7: ae7eda73 showed [Ah Kc] and won (4,438) with two pair, Kings and Fours
+Seat 8: 4efe6eca folded before Flop
+Seat 9: 6b07acd9 showed [7c Ad] and lost with a pair of Fours
+
+
+Poker Hand #BR1064995184: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level8(100/200(40)) - 2026/03/16 10:56:36
+Table '2' 9-max Seat #1 is the button
+Seat 1: b3d4c459 (2,968 in chips)
+Seat 2: 3cc5252d (1,050 in chips)
+Seat 3: 9b70214f (2,514 in chips)
+Seat 4: Hero (1,512 in chips)
+Seat 7: ae7eda73 (5,028 in chips)
+Seat 8: 4efe6eca (3,044 in chips)
+Seat 9: 6b07acd9 (1,884 in chips)
+6b07acd9: posts the ante 40
+4efe6eca: posts the ante 40
+b3d4c459: posts the ante 40
+ae7eda73: posts the ante 40
+9b70214f: posts the ante 40
+3cc5252d: posts the ante 40
+Hero: posts the ante 40
+3cc5252d: posts small blind 100
+9b70214f: posts big blind 200
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+Dealt to Hero [4s 4d]
+Dealt to ae7eda73 
+Dealt to 4efe6eca 
+Dealt to 6b07acd9 
+Hero: calls 200
+ae7eda73: calls 200
+4efe6eca: folds
+6b07acd9: folds
+b3d4c459: calls 200
+3cc5252d: folds
+9b70214f: checks
+*** FLOP *** [As Kd Ad]
+9b70214f: checks
+Hero: checks
+ae7eda73: bets 500
+b3d4c459: calls 500
+9b70214f: folds
+Hero: folds
+*** TURN *** [As Kd Ad] [Qd]
+ae7eda73: checks
+b3d4c459: bets 720
+ae7eda73: folds
+Uncalled bet (720) returned to b3d4c459
+*** SHOWDOWN ***
+b3d4c459 collected 2,180 from pot
+*** SUMMARY ***
+Total pot 2,180 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [As Kd Ad Qd]
+Seat 1: b3d4c459 (button) won (2,180)
+Seat 2: 3cc5252d (small blind) folded before Flop
+Seat 3: 9b70214f (big blind) folded on the Flop
+Seat 4: Hero folded on the Flop
+Seat 7: ae7eda73 folded on the Turn
+Seat 8: 4efe6eca folded before Flop
+Seat 9: 6b07acd9 folded before Flop
+
+
+Poker Hand #BR1064995117: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level8(100/200(40)) - 2026/03/16 10:55:29
+Table '2' 9-max Seat #9 is the button
+Seat 1: b3d4c459 (3,108 in chips)
+Seat 2: 3cc5252d (1,290 in chips)
+Seat 3: 9b70214f (3,206 in chips)
+Seat 4: Hero (1,552 in chips)
+Seat 7: ae7eda73 (5,068 in chips)
+Seat 8: 4efe6eca (3,084 in chips)
+Seat 9: 6b07acd9 (692 in chips)
+6b07acd9: posts the ante 40
+4efe6eca: posts the ante 40
+b3d4c459: posts the ante 40
+ae7eda73: posts the ante 40
+9b70214f: posts the ante 40
+3cc5252d: posts the ante 40
+Hero: posts the ante 40
+b3d4c459: posts small blind 100
+3cc5252d: posts big blind 200
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+Dealt to Hero [3h 7h]
+Dealt to ae7eda73 
+Dealt to 4efe6eca 
+Dealt to 6b07acd9 
+9b70214f: raises 200 to 400
+Hero: folds
+ae7eda73: folds
+4efe6eca: folds
+6b07acd9: raises 252 to 652 and is all-in
+b3d4c459: folds
+3cc5252d: folds
+9b70214f: calls 252
+6b07acd9: shows [Tc Kc]
+9b70214f: shows [Qh Td]
+*** FLOP *** [Ac As 6d]
+*** TURN *** [Ac As 6d] [Js]
+*** RIVER *** [Ac As 6d Js] [5s]
+*** SHOWDOWN ***
+6b07acd9 collected 1,884 from pot
+*** SUMMARY ***
+Total pot 1,884 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Ac As 6d Js 5s]
+Seat 1: b3d4c459 (small blind) folded before Flop
+Seat 2: 3cc5252d (big blind) folded before Flop
+Seat 3: 9b70214f showed [Qh Td] and lost with a pair of Aces
+Seat 4: Hero folded before Flop
+Seat 7: ae7eda73 folded before Flop
+Seat 8: 4efe6eca folded before Flop
+Seat 9: 6b07acd9 (button) showed [Tc Kc] and won (1,884) with a pair of Aces
+
+
+Poker Hand #BR1064995026: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level7(75/150(30)) - 2026/03/16 10:54:05
+Table '2' 9-max Seat #8 is the button
+Seat 1: b3d4c459 (3,288 in chips)
+Seat 2: 3cc5252d (1,320 in chips)
+Seat 3: 9b70214f (3,236 in chips)
+Seat 4: Hero (1,582 in chips)
+Seat 5: cc0f54d3 (124 in chips)
+Seat 6: a39e011e (1,546 in chips)
+Seat 7: ae7eda73 (1,523 in chips)
+Seat 8: 4efe6eca (4,584 in chips)
+Seat 9: 6b07acd9 (797 in chips)
+cc0f54d3: posts the ante 30
+6b07acd9: posts the ante 30
+4efe6eca: posts the ante 30
+b3d4c459: posts the ante 30
+a39e011e: posts the ante 30
+ae7eda73: posts the ante 30
+9b70214f: posts the ante 30
+3cc5252d: posts the ante 30
+Hero: posts the ante 30
+6b07acd9: posts small blind 75
+b3d4c459: posts big blind 150
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+Dealt to Hero [2c 5s]
+Dealt to cc0f54d3 
+Dealt to a39e011e 
+Dealt to ae7eda73 
+Dealt to 4efe6eca 
+Dealt to 6b07acd9 
+3cc5252d: folds
+9b70214f: folds
+Hero: folds
+cc0f54d3: calls 94 and is all-in
+a39e011e: raises 1,366 to 1,516 and is all-in
+ae7eda73: calls 1,493 and is all-in
+4efe6eca: raises 3,038 to 4,554 and is all-in
+6b07acd9: folds
+b3d4c459: folds
+Uncalled bet (3,038) returned to 4efe6eca
+4efe6eca: shows [Ac 8d]
+cc0f54d3: shows [Qc 4h]
+a39e011e: shows [Js Kh]
+ae7eda73: shows [Ah Th]
+*** FLOP *** [2h 6h 3d]
+*** TURN *** [2h 6h 3d] [As]
+*** RIVER *** [2h 6h 3d As] [Ks]
+*** SHOWDOWN ***
+ae7eda73 collected 815 from pot
+ae7eda73 collected 4,253 from pot
+4efe6eca collected 46 from pot
+*** SUMMARY ***
+Total pot 5,114 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2h 6h 3d As Ks]
+Seat 1: b3d4c459 (big blind) folded before Flop
+Seat 2: 3cc5252d folded before Flop
+Seat 3: 9b70214f folded before Flop
+Seat 4: Hero folded before Flop
+Seat 5: cc0f54d3 showed [Qc 4h] and lost with Ace high
+Seat 6: a39e011e showed [Js Kh] and lost with a pair of Kings
+Seat 7: ae7eda73 showed [Ah Th] and won (5,068) with a pair of Aces
+Seat 8: 4efe6eca (button) showed [Ac 8d] and won (46) with a pair of Aces
+Seat 9: 6b07acd9 (small blind) folded before Flop
+
+
+Poker Hand #BR1064994965: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level7(75/150(30)) - 2026/03/16 10:53:03
+Table '2' 9-max Seat #7 is the button
+Seat 1: b3d4c459 (3,318 in chips)
+Seat 2: 3cc5252d (1,350 in chips)
+Seat 3: 9b70214f (3,266 in chips)
+Seat 4: Hero (1,612 in chips)
+Seat 5: cc0f54d3 (1,530 in chips)
+Seat 6: a39e011e (1,576 in chips)
+Seat 7: ae7eda73 (1,553 in chips)
+Seat 8: 4efe6eca (1,468 in chips)
+Seat 9: 6b07acd9 (2,327 in chips)
+cc0f54d3: posts the ante 30
+6b07acd9: posts the ante 30
+4efe6eca: posts the ante 30
+b3d4c459: posts the ante 30
+a39e011e: posts the ante 30
+ae7eda73: posts the ante 30
+9b70214f: posts the ante 30
+3cc5252d: posts the ante 30
+Hero: posts the ante 30
+4efe6eca: posts small blind 75
+6b07acd9: posts big blind 150
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+Dealt to Hero [7s Ts]
+Dealt to cc0f54d3 
+Dealt to a39e011e 
+Dealt to ae7eda73 
+Dealt to 4efe6eca 
+Dealt to 6b07acd9 
+b3d4c459: folds
+3cc5252d: folds
+9b70214f: folds
+Hero: folds
+cc0f54d3: raises 1,350 to 1,500 and is all-in
+a39e011e: folds
+ae7eda73: folds
+4efe6eca: calls 1,363 and is all-in
+6b07acd9: calls 1,350
+cc0f54d3: shows [Jh Ac]
+4efe6eca: shows [5d 5h]
+6b07acd9: shows [9s 6d]
+*** FLOP *** [Td 3d 2c]
+*** TURN *** [Td 3d 2c] [7c]
+*** RIVER *** [Td 3d 2c 7c] [Qc]
+*** SHOWDOWN ***
+4efe6eca collected 4,584 from pot
+cc0f54d3 collected 124 from pot
+*** SUMMARY ***
+Total pot 4,708 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Td 3d 2c 7c Qc]
+Seat 1: b3d4c459 folded before Flop
+Seat 2: 3cc5252d folded before Flop
+Seat 3: 9b70214f folded before Flop
+Seat 4: Hero folded before Flop
+Seat 5: cc0f54d3 showed [Jh Ac] and won (124) with Ace high
+Seat 6: a39e011e folded before Flop
+Seat 7: ae7eda73 (button) folded before Flop
+Seat 8: 4efe6eca (small blind) showed [5d 5h] and won (4,584) with a pair of Fives
+Seat 9: 6b07acd9 (big blind) showed [9s 6d] and lost with Queen high
+
+
+Poker Hand #BR1064994901: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level7(75/150(30)) - 2026/03/16 10:51:53
+Table '2' 9-max Seat #6 is the button
+Seat 1: b3d4c459 (3,348 in chips)
+Seat 2: 3cc5252d (1,380 in chips)
+Seat 3: 9b70214f (1,453 in chips)
+Seat 4: Hero (1,642 in chips)
+Seat 5: cc0f54d3 (1,560 in chips)
+Seat 6: a39e011e (1,606 in chips)
+Seat 7: ae7eda73 (3,006 in chips)
+Seat 8: 4efe6eca (1,648 in chips)
+Seat 9: 6b07acd9 (2,357 in chips)
+cc0f54d3: posts the ante 30
+6b07acd9: posts the ante 30
+4efe6eca: posts the ante 30
+b3d4c459: posts the ante 30
+a39e011e: posts the ante 30
+ae7eda73: posts the ante 30
+9b70214f: posts the ante 30
+3cc5252d: posts the ante 30
+Hero: posts the ante 30
+ae7eda73: posts small blind 75
+4efe6eca: posts big blind 150
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+Dealt to Hero [3d Tc]
+Dealt to cc0f54d3 
+Dealt to a39e011e 
+Dealt to ae7eda73 
+Dealt to 4efe6eca 
+Dealt to 6b07acd9 
+6b07acd9: folds
+b3d4c459: folds
+3cc5252d: folds
+9b70214f: raises 1,273 to 1,423 and is all-in
+Hero: folds
+cc0f54d3: folds
+a39e011e: folds
+ae7eda73: raises 1,553 to 2,976 and is all-in
+4efe6eca: folds
+Uncalled bet (1,553) returned to ae7eda73
+ae7eda73: shows [Kc 2c]
+9b70214f: shows [8s Ah]
+*** FLOP *** [7d Qh 6d]
+*** TURN *** [7d Qh 6d] [4c]
+*** RIVER *** [7d Qh 6d 4c] [Th]
+*** SHOWDOWN ***
+9b70214f collected 3,266 from pot
+*** SUMMARY ***
+Total pot 3,266 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [7d Qh 6d 4c Th]
+Seat 1: b3d4c459 folded before Flop
+Seat 2: 3cc5252d folded before Flop
+Seat 3: 9b70214f showed [8s Ah] and won (3,266) with Ace high
+Seat 4: Hero folded before Flop
+Seat 5: cc0f54d3 folded before Flop
+Seat 6: a39e011e (button) folded before Flop
+Seat 7: ae7eda73 (small blind) showed [Kc 2c] and lost with King high
+Seat 8: 4efe6eca (big blind) folded before Flop
+Seat 9: 6b07acd9 folded before Flop
+
+
+Poker Hand #BR1064994843: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level6(60/120(24)) - 2026/03/16 10:50:41
+Table '2' 9-max Seat #5 is the button
+Seat 1: b3d4c459 (3,372 in chips)
+Seat 2: 3cc5252d (1,404 in chips)
+Seat 3: 9b70214f (1,477 in chips)
+Seat 4: Hero (1,666 in chips)
+Seat 5: cc0f54d3 (1,584 in chips)
+Seat 6: a39e011e (1,690 in chips)
+Seat 7: ae7eda73 (2,214 in chips)
+Seat 8: 4efe6eca (1,672 in chips)
+Seat 9: 6b07acd9 (2,921 in chips)
+cc0f54d3: posts the ante 24
+6b07acd9: posts the ante 24
+4efe6eca: posts the ante 24
+b3d4c459: posts the ante 24
+a39e011e: posts the ante 24
+ae7eda73: posts the ante 24
+9b70214f: posts the ante 24
+3cc5252d: posts the ante 24
+Hero: posts the ante 24
+a39e011e: posts small blind 60
+ae7eda73: posts big blind 120
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+Dealt to Hero [3s Ac]
+Dealt to cc0f54d3 
+Dealt to a39e011e 
+Dealt to ae7eda73 
+Dealt to 4efe6eca 
+Dealt to 6b07acd9 
+4efe6eca: folds
+6b07acd9: calls 120
+b3d4c459: folds
+3cc5252d: folds
+9b70214f: folds
+Hero: folds
+cc0f54d3: folds
+a39e011e: folds
+ae7eda73: checks
+*** FLOP *** [9s 6d 5d]
+ae7eda73: checks
+6b07acd9: bets 120
+ae7eda73: raises 300 to 420
+6b07acd9: calls 300
+*** TURN *** [9s 6d 5d] [7c]
+ae7eda73: bets 678
+6b07acd9: folds
+Uncalled bet (678) returned to ae7eda73
+*** SHOWDOWN ***
+ae7eda73 collected 1,356 from pot
+*** SUMMARY ***
+Total pot 1,356 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [9s 6d 5d 7c]
+Seat 1: b3d4c459 folded before Flop
+Seat 2: 3cc5252d folded before Flop
+Seat 3: 9b70214f folded before Flop
+Seat 4: Hero folded before Flop
+Seat 5: cc0f54d3 (button) folded before Flop
+Seat 6: a39e011e (small blind) folded before Flop
+Seat 7: ae7eda73 (big blind) won (1,356)
+Seat 8: 4efe6eca folded before Flop
+Seat 9: 6b07acd9 folded on the Turn
+
+
+Poker Hand #BR1065021973: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level5(50/100(20)) - 2026/03/16 10:47:29
+Table '82' 5-max Seat #1 is the button
+Seat 1: 4efe6eca (1,752 in chips)
+Seat 2: b6f2dca2 (401 in chips)
+Seat 3: 3cc5252d (1,812 in chips)
+Seat 4: d431b788 (408 in chips)
+Seat 5: Hero (1,252 in chips)
+4efe6eca: posts the ante 20
+3cc5252d: posts the ante 20
+b6f2dca2: posts the ante 20
+Hero: posts the ante 20
+d431b788: posts the ante 20
+b6f2dca2: posts small blind 50
+3cc5252d: posts big blind 100
+*** HOLE CARDS ***
+Dealt to 4efe6eca 
+Dealt to b6f2dca2 
+Dealt to 3cc5252d 
+Dealt to d431b788 
+Dealt to Hero [9c 9d]
+d431b788: raises 150 to 250
+Hero: calls 250
+4efe6eca: folds
+b6f2dca2: raises 131 to 381 and is all-in
+3cc5252d: calls 281
+d431b788: calls 131
+Hero: calls 131
+*** FLOP *** [8d Ac 2d]
+3cc5252d: checks
+d431b788: bets 7 and is all-in
+Hero: calls 7
+3cc5252d: calls 7
+*** TURN *** [8d Ac 2d] [3h]
+3cc5252d: checks
+Hero: checks
+*** RIVER *** [8d Ac 2d 3h] [3s]
+3cc5252d: checks
+Hero: checks
+b6f2dca2: shows [Jc Qs] (a pair of Threes)
+3cc5252d: shows [Th Jh] (a pair of Threes)
+d431b788: shows [9h 9s] (two pair, Nines and Threes)
+Hero: shows [9c 9d] (two pair, Nines and Threes)
+*** SHOWDOWN ***
+Hero collected 812 from pot
+d431b788 collected 812 from pot
+Hero collected 10 from pot
+d431b788 collected 11 from pot
+*** SUMMARY ***
+Total pot 1,645 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [8d Ac 2d 3h 3s]
+Seat 1: 4efe6eca (button) folded before Flop
+Seat 2: b6f2dca2 (small blind) showed [Jc Qs] and lost with a pair of Threes
+Seat 3: 3cc5252d (big blind) showed [Th Jh] and lost with a pair of Threes
+Seat 4: d431b788 showed [9h 9s] and won (823) with two pair, Nines and Threes
+Seat 5: Hero showed [9c 9d] and won (822) with two pair, Nines and Threes
+
+
+Poker Hand #BR1065021967: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level5(50/100(20)) - 2026/03/16 10:47:20
+Table '81' 5-max Seat #1 is the button
+Seat 1: d431b788 (428 in chips)
+Seat 2: 9b70214f (994 in chips)
+Seat 3: a39e011e (1,880 in chips)
+Seat 4: 3cc5252d (1,832 in chips)
+Seat 5: Hero (1,272 in chips)
+a39e011e: posts the ante 20
+9b70214f: posts the ante 20
+3cc5252d: posts the ante 20
+Hero: posts the ante 20
+d431b788: posts the ante 20
+9b70214f: posts small blind 50
+a39e011e: posts big blind 100
+*** HOLE CARDS ***
+Dealt to d431b788 
+Dealt to 9b70214f 
+Dealt to a39e011e 
+Dealt to 3cc5252d 
+Dealt to Hero [Qd 3h]
+3cc5252d: folds
+Hero: folds
+d431b788: folds
+9b70214f: calls 50
+a39e011e: checks
+*** FLOP *** [Qs Ad Ks]
+9b70214f: checks
+a39e011e: checks
+*** TURN *** [Qs Ad Ks] [Qh]
+9b70214f: checks
+a39e011e: checks
+*** RIVER *** [Qs Ad Ks Qh] [9d]
+9b70214f: checks
+a39e011e: checks
+9b70214f: shows [Ah Ac] (a full house, Aces full of Queens)
+a39e011e: shows [Tc Kd] (two pair, Kings and Queens)
+*** SHOWDOWN ***
+9b70214f collected 300 from pot
+*** SUMMARY ***
+Total pot 300 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Qs Ad Ks Qh 9d]
+Seat 1: d431b788 (button) folded before Flop
+Seat 2: 9b70214f (small blind) showed [Ah Ac] and won (300) with a full house, Aces full of Queens
+Seat 3: a39e011e (big blind) showed [Tc Kd] and lost with two pair, Kings and Queens
+Seat 4: 3cc5252d folded before Flop
+Seat 5: Hero folded before Flop
+
+
+Poker Hand #BR1065021950: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level5(50/100(20)) - 2026/03/16 10:47:03
+Table '79' 5-max Seat #1 is the button
+Seat 1: 9b70214f (1,034 in chips)
+Seat 2: b3d4c459 (1,942 in chips)
+Seat 3: ef91e164 (530 in chips)
+Seat 4: Hero (1,292 in chips)
+Seat 5: cc0f54d3 (1,564 in chips)
+cc0f54d3: posts the ante 20
+b3d4c459: posts the ante 20
+9b70214f: posts the ante 20
+ef91e164: posts the ante 20
+Hero: posts the ante 20
+b3d4c459: posts small blind 50
+ef91e164: posts big blind 100
+*** HOLE CARDS ***
+Dealt to 9b70214f 
+Dealt to b3d4c459 
+Dealt to ef91e164 
+Dealt to Hero [3d 5c]
+Dealt to cc0f54d3 
+Hero: folds
+cc0f54d3: folds
+9b70214f: folds
+b3d4c459: raises 300 to 400
+ef91e164: raises 110 to 510 and is all-in
+b3d4c459: calls 110
+ef91e164: shows [8d 8s]
+b3d4c459: shows [Qd Ks]
+*** FLOP *** [Th 9c Tc]
+*** TURN *** [Th 9c Tc] [6h]
+*** RIVER *** [Th 9c Tc 6h] [Kd]
+*** SHOWDOWN ***
+b3d4c459 collected 1,120 from pot
+*** SUMMARY ***
+Total pot 1,120 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Th 9c Tc 6h Kd]
+Seat 1: 9b70214f (button) folded before Flop
+Seat 2: b3d4c459 (small blind) showed [Qd Ks] and won (1,120) with two pair, Kings and Tens
+Seat 3: ef91e164 (big blind) showed [8d 8s] and lost with two pair, Tens and Eights
+Seat 4: Hero folded before Flop
+Seat 5: cc0f54d3 folded before Flop
+
+
+Poker Hand #BR1065021921: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level5(50/100(20)) - 2026/03/16 10:46:32
+Table '76' 5-max Seat #1 is the button
+Seat 1: ef91e164 (620 in chips)
+Seat 2: ae7eda73 (1,042 in chips)
+Seat 3: Hero (1,412 in chips)
+Seat 4: 3cc5252d (1,622 in chips)
+Seat 5: 9b70214f (1,124 in chips)
+ae7eda73: posts the ante 20
+9b70214f: posts the ante 20
+3cc5252d: posts the ante 20
+ef91e164: posts the ante 20
+Hero: posts the ante 20
+ae7eda73: posts small blind 50
+Hero: posts big blind 100
+*** HOLE CARDS ***
+Dealt to ef91e164 
+Dealt to ae7eda73 
+Dealt to Hero [7h 5d]
+Dealt to 3cc5252d 
+Dealt to 9b70214f 
+3cc5252d: raises 1,502 to 1,602 and is all-in
+9b70214f: folds
+ef91e164: folds
+ae7eda73: folds
+Hero: folds
+Uncalled bet (1,502) returned to 3cc5252d
+*** SHOWDOWN ***
+3cc5252d collected 350 from pot
+*** SUMMARY ***
+Total pot 350 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: ef91e164 (button) folded before Flop
+Seat 2: ae7eda73 (small blind) folded before Flop
+Seat 3: Hero (big blind) folded before Flop
+Seat 4: 3cc5252d collected (350)
+Seat 5: 9b70214f folded before Flop
+
+
+Poker Hand #BR1065021903: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level4(40/80(16)) - 2026/03/16 10:46:11
+Table '73' 5-max Seat #1 is the button
+Seat 1: Hero (1,428 in chips)
+Seat 2: fb793936 (1,726 in chips)
+Seat 3: 6b07acd9 (2,179 in chips)
+Seat 4: ae7eda73 (1,074 in chips)
+Seat 5: d431b788 (620 in chips)
+6b07acd9: posts the ante 16
+ae7eda73: posts the ante 16
+fb793936: posts the ante 16
+Hero: posts the ante 16
+d431b788: posts the ante 16
+fb793936: posts small blind 40
+6b07acd9: posts big blind 80
+*** HOLE CARDS ***
+Dealt to Hero [Js 3d]
+Dealt to fb793936 
+Dealt to 6b07acd9 
+Dealt to ae7eda73 
+Dealt to d431b788 
+ae7eda73: folds
+d431b788: folds
+Hero: folds
+fb793936: calls 40
+6b07acd9: raises 2,083 to 2,163 and is all-in
+fb793936: calls 1,630 and is all-in
+Uncalled bet (453) returned to 6b07acd9
+6b07acd9: shows [Kh 2h]
+fb793936: shows [Ah 9s]
+*** FLOP *** [3h Tc 5d]
+*** TURN *** [3h Tc 5d] [7d]
+*** RIVER *** [3h Tc 5d 7d] [Ks]
+*** SHOWDOWN ***
+6b07acd9 collected 3,500 from pot
+*** SUMMARY ***
+Total pot 3,500 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [3h Tc 5d 7d Ks]
+Seat 1: Hero (button) folded before Flop
+Seat 2: fb793936 (small blind) showed [Ah 9s] and lost with Ace high
+Seat 3: 6b07acd9 (big blind) showed [Kh 2h] and won (3,500) with a pair of Kings
+Seat 4: ae7eda73 folded before Flop
+Seat 5: d431b788 folded before Flop
+
+
+Poker Hand #BR1065021891: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level4(40/80(16)) - 2026/03/16 10:46:00
+Table '72' 5-max Seat #1 is the button
+Seat 1: 4efe6eca (1,774 in chips)
+Seat 2: b6f2dca2 (633 in chips)
+Seat 3: 3cc5252d (1,888 in chips)
+Seat 4: ef91e164 (266 in chips)
+Seat 5: Hero (1,444 in chips)
+4efe6eca: posts the ante 16
+3cc5252d: posts the ante 16
+b6f2dca2: posts the ante 16
+ef91e164: posts the ante 16
+Hero: posts the ante 16
+b6f2dca2: posts small blind 40
+3cc5252d: posts big blind 80
+*** HOLE CARDS ***
+Dealt to 4efe6eca 
+Dealt to b6f2dca2 
+Dealt to 3cc5252d 
+Dealt to ef91e164 
+Dealt to Hero [3s 8c]
+ef91e164: raises 170 to 250 and is all-in
+Hero: folds
+4efe6eca: folds
+b6f2dca2: folds
+3cc5252d: calls 170
+ef91e164: shows [Tc Qs]
+3cc5252d: shows [8s Jc]
+*** FLOP *** [Jh Ah Ac]
+*** TURN *** [Jh Ah Ac] [Kc]
+*** RIVER *** [Jh Ah Ac Kc] [2h]
+*** SHOWDOWN ***
+ef91e164 collected 620 from pot
+*** SUMMARY ***
+Total pot 620 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Jh Ah Ac Kc 2h]
+Seat 1: 4efe6eca (button) folded before Flop
+Seat 2: b6f2dca2 (small blind) folded before Flop
+Seat 3: 3cc5252d (big blind) showed [8s Jc] and lost with two pair, Aces and Jacks
+Seat 4: ef91e164 showed [Tc Qs] and won (620) with a straight, Ace to Ten
+Seat 5: Hero folded before Flop
+
+
+Poker Hand #BR1065021860: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level4(40/80(16)) - 2026/03/16 10:45:27
+Table '68' 5-max Seat #1 is the button
+Seat 1: 9b70214f (1,452 in chips)
+Seat 2: Hero (698 in chips)
+Seat 3: b6f2dca2 (1,331 in chips)
+Seat 4: b3d4c459 (1,326 in chips)
+Seat 5: fb793936 (1,774 in chips)
+b3d4c459: posts the ante 16
+fb793936: posts the ante 16
+9b70214f: posts the ante 16
+b6f2dca2: posts the ante 16
+Hero: posts the ante 16
+Hero: posts small blind 40
+b6f2dca2: posts big blind 80
+*** HOLE CARDS ***
+Dealt to 9b70214f 
+Dealt to Hero [7h 8h]
+Dealt to b6f2dca2 
+Dealt to b3d4c459 
+Dealt to fb793936 
+b3d4c459: folds
+fb793936: folds
+9b70214f: folds
+Hero: raises 602 to 682 and is all-in
+b6f2dca2: calls 602
+Hero: shows [7h 8h]
+b6f2dca2: shows [3d Ks]
+*** FLOP *** [9s Jd 7c]
+*** TURN *** [9s Jd 7c] [2h]
+*** RIVER *** [9s Jd 7c 2h] [9c]
+*** SHOWDOWN ***
+Hero collected 1,444 from pot
+*** SUMMARY ***
+Total pot 1,444 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [9s Jd 7c 2h 9c]
+Seat 1: 9b70214f (button) folded before Flop
+Seat 2: Hero (small blind) showed [7h 8h] and won (1,444) with two pair, Nines and Sevens
+Seat 3: b6f2dca2 (big blind) showed [3d Ks] and lost with a pair of Nines
+Seat 4: b3d4c459 folded before Flop
+Seat 5: fb793936 folded before Flop
+
+
+Poker Hand #BR1065021848: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level4(40/80(16)) - 2026/03/16 10:45:17
+Table '67' 5-max Seat #1 is the button
+Seat 1: d431b788 (266 in chips)
+Seat 2: 3cc5252d (1,760 in chips)
+Seat 3: ef91e164 (532 in chips)
+Seat 4: Hero (714 in chips)
+Seat 5: ae0bff91 (524 in chips)
+ae0bff91: posts the ante 16
+3cc5252d: posts the ante 16
+ef91e164: posts the ante 16
+Hero: posts the ante 16
+d431b788: posts the ante 16
+3cc5252d: posts small blind 40
+ef91e164: posts big blind 80
+*** HOLE CARDS ***
+Dealt to d431b788 
+Dealt to 3cc5252d 
+Dealt to ef91e164 
+Dealt to Hero [Jd 6d]
+Dealt to ae0bff91 
+Hero: folds
+ae0bff91: folds
+d431b788: raises 120 to 200
+3cc5252d: folds
+ef91e164: calls 120
+*** FLOP *** [Jc 4d Js]
+ef91e164: checks
+d431b788: bets 50 and is all-in
+ef91e164: calls 50
+d431b788: shows [2d 2s] (two pair, Jacks and Twos)
+ef91e164: shows [9c 6c] (a pair of Jacks)
+*** TURN *** [Jc 4d Js] [8d]
+*** RIVER *** [Jc 4d Js 8d] [7d]
+*** SHOWDOWN ***
+d431b788 collected 620 from pot
+*** SUMMARY ***
+Total pot 620 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Jc 4d Js 8d 7d]
+Seat 1: d431b788 (button) showed [2d 2s] and won (620) with two pair, Jacks and Twos
+Seat 2: 3cc5252d (small blind) folded before Flop
+Seat 3: ef91e164 (big blind) showed [9c 6c] and lost with a pair of Jacks
+Seat 4: Hero folded before Flop
+Seat 5: ae0bff91 folded before Flop
+
+
+Poker Hand #BR1065021822: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level4(40/80(16)) - 2026/03/16 10:44:58
+Table '63' 5-max Seat #1 is the button
+Seat 1: cc0f54d3 (1,324 in chips)
+Seat 2: b3d4c459 (1,494 in chips)
+Seat 3: 9b70214f (1,564 in chips)
+Seat 4: fb793936 (1,886 in chips)
+Seat 5: Hero (530 in chips)
+cc0f54d3: posts the ante 16
+b3d4c459: posts the ante 16
+fb793936: posts the ante 16
+9b70214f: posts the ante 16
+Hero: posts the ante 16
+b3d4c459: posts small blind 40
+9b70214f: posts big blind 80
+*** HOLE CARDS ***
+Dealt to cc0f54d3 
+Dealt to b3d4c459 
+Dealt to 9b70214f 
+Dealt to fb793936 
+Dealt to Hero [Ac 2c]
+fb793936: folds
+Hero: raises 434 to 514 and is all-in
+cc0f54d3: folds
+b3d4c459: folds
+9b70214f: folds
+Uncalled bet (434) returned to Hero
+*** SHOWDOWN ***
+Hero collected 280 from pot
+*** SUMMARY ***
+Total pot 280 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: cc0f54d3 (button) folded before Flop
+Seat 2: b3d4c459 (small blind) folded before Flop
+Seat 3: 9b70214f (big blind) folded before Flop
+Seat 4: fb793936 folded before Flop
+Seat 5: Hero collected (280)
+
+
+Poker Hand #BR1065021807: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level4(40/80(16)) - 2026/03/16 10:44:44
+Table '60' 5-max Seat #1 is the button
+Seat 1: Hero (546 in chips)
+Seat 2: d431b788 (338 in chips)
+Seat 3: ae7eda73 (1,338 in chips)
+Seat 4: b6f2dca2 (1,163 in chips)
+Seat 5: ef91e164 (636 in chips)
+ae7eda73: posts the ante 16
+b6f2dca2: posts the ante 16
+ef91e164: posts the ante 16
+Hero: posts the ante 16
+d431b788: posts the ante 16
+d431b788: posts small blind 40
+ae7eda73: posts big blind 80
+*** HOLE CARDS ***
+Dealt to Hero [9d 3s]
+Dealt to d431b788 
+Dealt to ae7eda73 
+Dealt to b6f2dca2 
+Dealt to ef91e164 
+b6f2dca2: raises 1,067 to 1,147 and is all-in
+ef91e164: folds
+Hero: folds
+d431b788: folds
+ae7eda73: folds
+Uncalled bet (1,067) returned to b6f2dca2
+*** SHOWDOWN ***
+b6f2dca2 collected 280 from pot
+*** SUMMARY ***
+Total pot 280 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Hero (button) folded before Flop
+Seat 2: d431b788 (small blind) folded before Flop
+Seat 3: ae7eda73 (big blind) folded before Flop
+Seat 4: b6f2dca2 collected (280)
+Seat 5: ef91e164 folded before Flop
+
+
+Poker Hand #BR1065021778: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level3(30/60(12)) - 2026/03/16 10:44:21
+Table '56' 5-max Seat #1 is the button
+Seat 1: cc0f54d3 (1,504 in chips)
+Seat 2: Hero (588 in chips)
+Seat 3: ef91e164 (590 in chips)
+Seat 4: fb793936 (1,770 in chips)
+Seat 5: 9b70214f (1,688 in chips)
+cc0f54d3: posts the ante 12
+fb793936: posts the ante 12
+9b70214f: posts the ante 12
+ef91e164: posts the ante 12
+Hero: posts the ante 12
+Hero: posts small blind 30
+ef91e164: posts big blind 60
+*** HOLE CARDS ***
+Dealt to cc0f54d3 
+Dealt to Hero [5s Th]
+Dealt to ef91e164 
+Dealt to fb793936 
+Dealt to 9b70214f 
+fb793936: folds
+9b70214f: folds
+cc0f54d3: folds
+Hero: folds
+Uncalled bet (30) returned to ef91e164
+*** SHOWDOWN ***
+ef91e164 collected 120 from pot
+*** SUMMARY ***
+Total pot 120 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: cc0f54d3 (button) folded before Flop
+Seat 2: Hero (small blind) folded before Flop
+Seat 3: ef91e164 (big blind) collected (120)
+Seat 4: fb793936 folded before Flop
+Seat 5: 9b70214f folded before Flop
+
+
+Poker Hand #BR1065021755: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level3(30/60(12)) - 2026/03/16 10:44:01
+Table '53' 5-max Seat #1 is the button
+Seat 1: ef91e164 (644 in chips)
+Seat 2: 9b70214f (1,742 in chips)
+Seat 3: Hero (660 in chips)
+Seat 4: 9761da2e (416 in chips)
+Seat 5: a39e011e (1,204 in chips)
+a39e011e: posts the ante 12
+9761da2e: posts the ante 12
+9b70214f: posts the ante 12
+ef91e164: posts the ante 12
+Hero: posts the ante 12
+9b70214f: posts small blind 30
+Hero: posts big blind 60
+*** HOLE CARDS ***
+Dealt to ef91e164 
+Dealt to 9b70214f 
+Dealt to Hero [Tc Kd]
+Dealt to 9761da2e 
+Dealt to a39e011e 
+9761da2e: raises 344 to 404 and is all-in
+a39e011e: raises 788 to 1,192 and is all-in
+ef91e164: folds
+9b70214f: folds
+Hero: folds
+Uncalled bet (788) returned to a39e011e
+a39e011e: shows [Td Th]
+9761da2e: shows [Qh Ks]
+*** FLOP *** [As 2s Ad]
+*** TURN *** [As 2s Ad] [7s]
+*** RIVER *** [As 2s Ad 7s] [8d]
+*** SHOWDOWN ***
+a39e011e collected 958 from pot
+*** SUMMARY ***
+Total pot 958 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [As 2s Ad 7s 8d]
+Seat 1: ef91e164 (button) folded before Flop
+Seat 2: 9b70214f (small blind) folded before Flop
+Seat 3: Hero (big blind) folded before Flop
+Seat 4: 9761da2e showed [Qh Ks] and lost with a pair of Aces
+Seat 5: a39e011e showed [Td Th] and won (958) with two pair, Aces and Tens
+
+
+Poker Hand #BR1065021745: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level3(30/60(12)) - 2026/03/16 10:43:55
+Table '52' 5-max Seat #1 is the button
+Seat 1: 3cc5252d (1,764 in chips)
+Seat 2: cc0f54d3 (1,570 in chips)
+Seat 3: b3d4c459 (1,097 in chips)
+Seat 4: Hero (672 in chips)
+Seat 5: 6b07acd9 (2,358 in chips)
+cc0f54d3: posts the ante 12
+6b07acd9: posts the ante 12
+b3d4c459: posts the ante 12
+3cc5252d: posts the ante 12
+Hero: posts the ante 12
+cc0f54d3: posts small blind 30
+b3d4c459: posts big blind 60
+*** HOLE CARDS ***
+Dealt to 3cc5252d 
+Dealt to cc0f54d3 
+Dealt to b3d4c459 
+Dealt to Hero [8d Qh]
+Dealt to 6b07acd9 
+Hero: folds
+6b07acd9: raises 60 to 120
+3cc5252d: folds
+cc0f54d3: folds
+b3d4c459: calls 60
+*** FLOP *** [7c 5h 5c]
+b3d4c459: checks
+6b07acd9: bets 83
+b3d4c459: raises 164 to 247
+6b07acd9: calls 164
+*** TURN *** [7c 5h 5c] [3h]
+b3d4c459: bets 272
+6b07acd9: folds
+Uncalled bet (272) returned to b3d4c459
+*** SHOWDOWN ***
+b3d4c459 collected 824 from pot
+*** SUMMARY ***
+Total pot 824 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [7c 5h 5c 3h]
+Seat 1: 3cc5252d (button) folded before Flop
+Seat 2: cc0f54d3 (small blind) folded before Flop
+Seat 3: b3d4c459 (big blind) won (824)
+Seat 4: Hero folded before Flop
+Seat 5: 6b07acd9 folded on the Turn
+
+
+Poker Hand #BR1065021700: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level3(30/60(12)) - 2026/03/16 10:43:15
+Table '45' 5-max Seat #1 is the button
+Seat 1: ae7eda73 (674 in chips)
+Seat 2: fb793936 (1,884 in chips)
+Seat 3: Hero (744 in chips)
+Seat 4: a39e011e (566 in chips)
+Seat 5: d431b788 (810 in chips)
+a39e011e: posts the ante 12
+ae7eda73: posts the ante 12
+fb793936: posts the ante 12
+Hero: posts the ante 12
+d431b788: posts the ante 12
+fb793936: posts small blind 30
+Hero: posts big blind 60
+*** HOLE CARDS ***
+Dealt to ae7eda73 
+Dealt to fb793936 
+Dealt to Hero [Jd 2d]
+Dealt to a39e011e 
+Dealt to d431b788 
+a39e011e: folds
+d431b788: raises 600 to 660
+ae7eda73: raises 2 to 662 and is all-in
+fb793936: folds
+Hero: folds
+d431b788: calls 2
+ae7eda73: shows [Ad Kh]
+d431b788: shows [Kc Tc]
+*** FLOP *** [Js 2s 4s]
+*** TURN *** [Js 2s 4s] [3s]
+*** RIVER *** [Js 2s 4s 3s] [8d]
+*** SHOWDOWN ***
+ae7eda73 collected 1,474 from pot
+*** SUMMARY ***
+Total pot 1,474 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Js 2s 4s 3s 8d]
+Seat 1: ae7eda73 (button) showed [Ad Kh] and won (1,474) with Ace high
+Seat 2: fb793936 (small blind) folded before Flop
+Seat 3: Hero (big blind) folded before Flop
+Seat 4: a39e011e folded before Flop
+Seat 5: d431b788 showed [Kc Tc] and lost with King high
+
+
+Poker Hand #BR1065021680: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level3(30/60(12)) - 2026/03/16 10:43:00
+Table '42' 5-max Seat #1 is the button
+Seat 1: fb793936 (1,896 in chips)
+Seat 2: Hero (786 in chips)
+Seat 3: ae0bff91 (832 in chips)
+Seat 4: 4efe6eca (1,220 in chips)
+Seat 5: b6f2dca2 (867 in chips)
+4efe6eca: posts the ante 12
+ae0bff91: posts the ante 12
+fb793936: posts the ante 12
+b6f2dca2: posts the ante 12
+Hero: posts the ante 12
+Hero: posts small blind 30
+ae0bff91: posts big blind 60
+*** HOLE CARDS ***
+Dealt to fb793936 
+Dealt to Hero [Td 6c]
+Dealt to ae0bff91 
+Dealt to 4efe6eca 
+Dealt to b6f2dca2 
+4efe6eca: folds
+b6f2dca2: raises 795 to 855 and is all-in
+fb793936: folds
+Hero: folds
+ae0bff91: folds
+Uncalled bet (795) returned to b6f2dca2
+*** SHOWDOWN ***
+b6f2dca2 collected 210 from pot
+*** SUMMARY ***
+Total pot 210 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: fb793936 (button) folded before Flop
+Seat 2: Hero (small blind) folded before Flop
+Seat 3: ae0bff91 (big blind) folded before Flop
+Seat 4: 4efe6eca folded before Flop
+Seat 5: b6f2dca2 collected (210)
+
+
+Poker Hand #BR1065021653: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level3(30/60(12)) - 2026/03/16 10:42:40
+Table '39' 5-max Seat #1 is the button
+Seat 1: 4efe6eca (1,232 in chips)
+Seat 2: d431b788 (864 in chips)
+Seat 3: cc0f54d3 (1,330 in chips)
+Seat 4: Hero (798 in chips)
+Seat 5: ae0bff91 (844 in chips)
+cc0f54d3: posts the ante 12
+4efe6eca: posts the ante 12
+ae0bff91: posts the ante 12
+Hero: posts the ante 12
+d431b788: posts the ante 12
+d431b788: posts small blind 30
+cc0f54d3: posts big blind 60
+*** HOLE CARDS ***
+Dealt to 4efe6eca 
+Dealt to d431b788 
+Dealt to cc0f54d3 
+Dealt to Hero [9s 8s]
+Dealt to ae0bff91 
+Hero: folds
+ae0bff91: folds
+4efe6eca: folds
+d431b788: folds
+Uncalled bet (30) returned to cc0f54d3
+*** SHOWDOWN ***
+cc0f54d3 collected 120 from pot
+*** SUMMARY ***
+Total pot 120 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: 4efe6eca (button) folded before Flop
+Seat 2: d431b788 (small blind) folded before Flop
+Seat 3: cc0f54d3 (big blind) collected (120)
+Seat 4: Hero folded before Flop
+Seat 5: ae0bff91 folded before Flop
+
+
+Poker Hand #BR1065021633: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level3(30/60(12)) - 2026/03/16 10:42:27
+Table '36' 5-max Seat #1 is the button
+Seat 1: Hero (810 in chips)
+Seat 2: 9b70214f (1,184 in chips)
+Seat 3: d431b788 (936 in chips)
+Seat 4: b3d4c459 (725 in chips)
+Seat 5: ef91e164 (1,064 in chips)
+b3d4c459: posts the ante 12
+9b70214f: posts the ante 12
+ef91e164: posts the ante 12
+Hero: posts the ante 12
+d431b788: posts the ante 12
+9b70214f: posts small blind 30
+d431b788: posts big blind 60
+*** HOLE CARDS ***
+Dealt to Hero [2s Jd]
+Dealt to 9b70214f 
+Dealt to d431b788 
+Dealt to b3d4c459 
+Dealt to ef91e164 
+b3d4c459: folds
+ef91e164: raises 60 to 120
+Hero: folds
+9b70214f: folds
+d431b788: folds
+Uncalled bet (60) returned to ef91e164
+*** SHOWDOWN ***
+ef91e164 collected 210 from pot
+*** SUMMARY ***
+Total pot 210 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Hero (button) folded before Flop
+Seat 2: 9b70214f (small blind) folded before Flop
+Seat 3: d431b788 (big blind) folded before Flop
+Seat 4: b3d4c459 folded before Flop
+Seat 5: ef91e164 collected (210)
+
+
+Poker Hand #BR1065021610: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level2(20/40(8)) - 2026/03/16 10:42:05
+Table '34' 5-max Seat #1 is the button
+Seat 1: 9761da2e (1,078 in chips)
+Seat 2: ef91e164 (1,100 in chips)
+Seat 3: Hero (858 in chips)
+Seat 4: b3d4c459 (741 in chips)
+Seat 5: cc0f54d3 (1,390 in chips)
+cc0f54d3: posts the ante 8
+b3d4c459: posts the ante 8
+9761da2e: posts the ante 8
+ef91e164: posts the ante 8
+Hero: posts the ante 8
+ef91e164: posts small blind 20
+Hero: posts big blind 40
+*** HOLE CARDS ***
+Dealt to 9761da2e 
+Dealt to ef91e164 
+Dealt to Hero [Jd 3h]
+Dealt to b3d4c459 
+Dealt to cc0f54d3 
+b3d4c459: folds
+cc0f54d3: calls 40
+9761da2e: raises 180 to 220
+ef91e164: folds
+Hero: folds
+cc0f54d3: folds
+Uncalled bet (180) returned to 9761da2e
+*** SHOWDOWN ***
+9761da2e collected 180 from pot
+*** SUMMARY ***
+Total pot 180 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: 9761da2e (button) collected (180)
+Seat 2: ef91e164 (small blind) folded before Flop
+Seat 3: Hero (big blind) folded before Flop
+Seat 4: b3d4c459 folded before Flop
+Seat 5: cc0f54d3 folded before Flop
+
+
+Poker Hand #BR1065021587: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level2(20/40(8)) - 2026/03/16 10:41:48
+Table '32' 5-max Seat #1 is the button
+Seat 1: Hero (866 in chips)
+Seat 2: b6f2dca2 (795 in chips)
+Seat 3: 9761da2e (1,126 in chips)
+Seat 4: d431b788 (952 in chips)
+Seat 5: cc0f54d3 (1,298 in chips)
+cc0f54d3: posts the ante 8
+9761da2e: posts the ante 8
+b6f2dca2: posts the ante 8
+Hero: posts the ante 8
+d431b788: posts the ante 8
+b6f2dca2: posts small blind 20
+9761da2e: posts big blind 40
+*** HOLE CARDS ***
+Dealt to Hero [5d 7d]
+Dealt to b6f2dca2 
+Dealt to 9761da2e 
+Dealt to d431b788 
+Dealt to cc0f54d3 
+d431b788: folds
+cc0f54d3: raises 80 to 120
+Hero: folds
+b6f2dca2: folds
+9761da2e: folds
+Uncalled bet (80) returned to cc0f54d3
+*** SHOWDOWN ***
+cc0f54d3 collected 140 from pot
+*** SUMMARY ***
+Total pot 140 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Hero (button) folded before Flop
+Seat 2: b6f2dca2 (small blind) folded before Flop
+Seat 3: 9761da2e (big blind) folded before Flop
+Seat 4: d431b788 folded before Flop
+Seat 5: cc0f54d3 collected (140)
+
+
+Poker Hand #BR1065021513: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level2(20/40(8)) - 2026/03/16 10:40:55
+Table '25' 5-max Seat #1 is the button
+Seat 1: d431b788 (1,044 in chips)
+Seat 2: Hero (954 in chips)
+Seat 3: 9761da2e (1,014 in chips)
+Seat 4: 9b70214f (1,644 in chips)
+Seat 5: 1c0f85ad (30 in chips)
+9761da2e: posts the ante 8
+1c0f85ad: posts the ante 8
+9b70214f: posts the ante 8
+Hero: posts the ante 8
+d431b788: posts the ante 8
+Hero: posts small blind 20
+9761da2e: posts big blind 40
+*** HOLE CARDS ***
+Dealt to d431b788 
+Dealt to Hero [Tc 2s]
+Dealt to 9761da2e 
+Dealt to 9b70214f 
+Dealt to 1c0f85ad 
+9b70214f: folds
+1c0f85ad: folds
+d431b788: folds
+Hero: calls 20
+9761da2e: checks
+*** FLOP *** [2d 7h 9d]
+Hero: bets 40
+9761da2e: calls 40
+*** TURN *** [2d 7h 9d] [6d]
+Hero: checks
+9761da2e: bets 100
+Hero: folds
+Uncalled bet (100) returned to 9761da2e
+*** SHOWDOWN ***
+9761da2e collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2d 7h 9d 6d]
+Seat 1: d431b788 (button) folded before Flop
+Seat 2: Hero (small blind) folded on the Turn
+Seat 3: 9761da2e (big blind) won (200)
+Seat 4: 9b70214f folded before Flop
+Seat 5: 1c0f85ad folded before Flop
+
+
+Poker Hand #BR1065021494: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level2(20/40(8)) - 2026/03/16 10:40:43
+Table '24' 5-max Seat #1 is the button
+Seat 1: ae0bff91 (918 in chips)
+Seat 2: a39e011e (838 in chips)
+Seat 3: fb793936 (1,002 in chips)
+Seat 4: Hero (962 in chips)
+Seat 5: 4efe6eca (1,146 in chips)
+4efe6eca: posts the ante 8
+ae0bff91: posts the ante 8
+a39e011e: posts the ante 8
+fb793936: posts the ante 8
+Hero: posts the ante 8
+a39e011e: posts small blind 20
+fb793936: posts big blind 40
+*** HOLE CARDS ***
+Dealt to ae0bff91 
+Dealt to a39e011e 
+Dealt to fb793936 
+Dealt to Hero [3h Ks]
+Dealt to 4efe6eca 
+Hero: folds
+4efe6eca: raises 40 to 80
+ae0bff91: folds
+a39e011e: calls 60
+fb793936: calls 40
+*** FLOP *** [Ah 4h 2s]
+a39e011e: checks
+fb793936: checks
+4efe6eca: bets 93
+a39e011e: folds
+fb793936: folds
+Uncalled bet (93) returned to 4efe6eca
+*** SHOWDOWN ***
+4efe6eca collected 280 from pot
+*** SUMMARY ***
+Total pot 280 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Ah 4h 2s]
+Seat 1: ae0bff91 (button) folded before Flop
+Seat 2: a39e011e (small blind) folded on the Flop
+Seat 3: fb793936 (big blind) folded on the Flop
+Seat 4: Hero folded before Flop
+Seat 5: 4efe6eca won (280)
+
+
+Poker Hand #BR1065021476: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level2(20/40(8)) - 2026/03/16 10:40:29
+Table '22' 5-max Seat #1 is the button
+Seat 1: fb793936 (1,010 in chips)
+Seat 2: 88f37512 (914 in chips)
+Seat 3: ef91e164 (1,276 in chips)
+Seat 4: d431b788 (1,060 in chips)
+Seat 5: Hero (970 in chips)
+88f37512: posts the ante 8
+fb793936: posts the ante 8
+ef91e164: posts the ante 8
+Hero: posts the ante 8
+d431b788: posts the ante 8
+88f37512: posts small blind 20
+ef91e164: posts big blind 40
+*** HOLE CARDS ***
+Dealt to fb793936 
+Dealt to 88f37512 
+Dealt to ef91e164 
+Dealt to d431b788 
+Dealt to Hero [4c 3h]
+d431b788: folds
+Hero: folds
+fb793936: folds
+88f37512: calls 20
+ef91e164: checks
+*** FLOP *** [Ts 6h Js]
+88f37512: checks
+ef91e164: checks
+*** TURN *** [Ts 6h Js] [5h]
+88f37512: bets 120
+ef91e164: calls 120
+*** RIVER *** [Ts 6h Js 5h] [7c]
+88f37512: checks
+ef91e164: checks
+88f37512: shows [Tc Ad] (a pair of Tens)
+ef91e164: shows [3s 9s] (Jack high)
+*** SHOWDOWN ***
+88f37512 collected 360 from pot
+*** SUMMARY ***
+Total pot 360 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Ts 6h Js 5h 7c]
+Seat 1: fb793936 (button) folded before Flop
+Seat 2: 88f37512 (small blind) showed [Tc Ad] and won (360) with a pair of Tens
+Seat 3: ef91e164 (big blind) showed [3s 9s] and lost with Jack high
+Seat 4: d431b788 folded before Flop
+Seat 5: Hero folded before Flop
+
+
+Poker Hand #BR1065021467: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level1(10/20(4)) - 2026/03/16 10:40:22
+Table '21' 5-max Seat #1 is the button
+Seat 1: b3d4c459 (639 in chips)
+Seat 2: 6b07acd9 (1,174 in chips)
+Seat 3: cc0f54d3 (1,266 in chips)
+Seat 4: Hero (974 in chips)
+Seat 5: d431b788 (1,064 in chips)
+cc0f54d3: posts the ante 4
+6b07acd9: posts the ante 4
+b3d4c459: posts the ante 4
+Hero: posts the ante 4
+d431b788: posts the ante 4
+6b07acd9: posts small blind 10
+cc0f54d3: posts big blind 20
+*** HOLE CARDS ***
+Dealt to b3d4c459 
+Dealt to 6b07acd9 
+Dealt to cc0f54d3 
+Dealt to Hero [Js 3c]
+Dealt to d431b788 
+Hero: folds
+d431b788: folds
+b3d4c459: raises 20 to 40
+6b07acd9: calls 30
+cc0f54d3: calls 20
+*** FLOP *** [8s 9c 8d]
+6b07acd9: bets 35
+cc0f54d3: folds
+b3d4c459: folds
+Uncalled bet (35) returned to 6b07acd9
+*** SHOWDOWN ***
+6b07acd9 collected 140 from pot
+*** SUMMARY ***
+Total pot 140 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [8s 9c 8d]
+Seat 1: b3d4c459 (button) folded on the Flop
+Seat 2: 6b07acd9 (small blind) won (140)
+Seat 3: cc0f54d3 (big blind) folded on the Flop
+Seat 4: Hero folded before Flop
+Seat 5: d431b788 folded before Flop
+
+
+Poker Hand #BR1065021441: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level1(10/20(4)) - 2026/03/16 10:40:02
+Table '18' 5-max Seat #1 is the button
+Seat 1: 9761da2e (1,062 in chips)
+Seat 2: cc0f54d3 (1,290 in chips)
+Seat 3: Hero (938 in chips)
+Seat 4: 3cc5252d (930 in chips)
+Seat 5: a39e011e (874 in chips)
+cc0f54d3: posts the ante 4
+9761da2e: posts the ante 4
+a39e011e: posts the ante 4
+3cc5252d: posts the ante 4
+Hero: posts the ante 4
+cc0f54d3: posts small blind 10
+Hero: posts big blind 20
+*** HOLE CARDS ***
+Dealt to 9761da2e 
+Dealt to cc0f54d3 
+Dealt to Hero [As 9d]
+Dealt to 3cc5252d 
+Dealt to a39e011e 
+3cc5252d: folds
+a39e011e: folds
+9761da2e: folds
+cc0f54d3: calls 10
+Hero: raises 70 to 90
+cc0f54d3: folds
+Uncalled bet (70) returned to Hero
+*** SHOWDOWN ***
+Hero collected 60 from pot
+*** SUMMARY ***
+Total pot 60 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: 9761da2e (button) folded before Flop
+Seat 2: cc0f54d3 (small blind) folded before Flop
+Seat 3: Hero (big blind) collected (60)
+Seat 4: 3cc5252d folded before Flop
+Seat 5: a39e011e folded before Flop
+
+
+Poker Hand #BR1065021362: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level1(10/20(4)) - 2026/03/16 10:38:58
+Table '8' 5-max Seat #1 is the button
+Seat 1: 1c0f85ad (958 in chips)
+Seat 2: e26b5983 (1,018 in chips)
+Seat 3: 4efe6eca (986 in chips)
+Seat 4: ae7eda73 (978 in chips)
+Seat 5: Hero (982 in chips)
+4efe6eca: posts the ante 4
+ae7eda73: posts the ante 4
+1c0f85ad: posts the ante 4
+Hero: posts the ante 4
+e26b5983: posts the ante 4
+e26b5983: posts small blind 10
+4efe6eca: posts big blind 20
+*** HOLE CARDS ***
+Dealt to 1c0f85ad 
+Dealt to e26b5983 
+Dealt to 4efe6eca 
+Dealt to ae7eda73 
+Dealt to Hero [Ah 5d]
+ae7eda73: folds
+Hero: raises 20 to 40
+1c0f85ad: raises 98 to 138
+e26b5983: folds
+4efe6eca: calls 118
+Hero: folds
+*** FLOP *** [Js Ac 3h]
+4efe6eca: checks
+1c0f85ad: checks
+*** TURN *** [Js Ac 3h] [3c]
+4efe6eca: bets 173
+1c0f85ad: folds
+Uncalled bet (173) returned to 4efe6eca
+*** SHOWDOWN ***
+4efe6eca collected 346 from pot
+*** SUMMARY ***
+Total pot 346 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Js Ac 3h 3c]
+Seat 1: 1c0f85ad (button) folded on the Turn
+Seat 2: e26b5983 (small blind) folded before Flop
+Seat 3: 4efe6eca (big blind) won (346)
+Seat 4: ae7eda73 folded before Flop
+Seat 5: Hero folded before Flop
+
+
+Poker Hand #BR1065021341: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level1(10/20(4)) - 2026/03/16 10:38:43
+Table '6' 5-max Seat #1 is the button
+Seat 1: 9b70214f (976 in chips)
+Seat 2: Hero (996 in chips)
+Seat 3: ef91e164 (1,046 in chips)
+Seat 4: 88f37512 (986 in chips)
+Seat 5: 9761da2e (978 in chips)
+88f37512: posts the ante 4
+9761da2e: posts the ante 4
+9b70214f: posts the ante 4
+ef91e164: posts the ante 4
+Hero: posts the ante 4
+Hero: posts small blind 10
+ef91e164: posts big blind 20
+*** HOLE CARDS ***
+Dealt to 9b70214f 
+Dealt to Hero [Ad 4s]
+Dealt to ef91e164 
+Dealt to 88f37512 
+Dealt to 9761da2e 
+88f37512: folds
+9761da2e: raises 20 to 40
+9b70214f: calls 40
+Hero: folds
+ef91e164: raises 150 to 190
+9761da2e: folds
+9b70214f: calls 150
+*** FLOP *** [Jd 7d 8c]
+ef91e164: bets 225
+9b70214f: folds
+Uncalled bet (225) returned to ef91e164
+*** SHOWDOWN ***
+ef91e164 collected 450 from pot
+*** SUMMARY ***
+Total pot 450 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [Jd 7d 8c]
+Seat 1: 9b70214f (button) folded on the Flop
+Seat 2: Hero (small blind) folded before Flop
+Seat 3: ef91e164 (big blind) won (450)
+Seat 4: 88f37512 folded before Flop
+Seat 5: 9761da2e folded before Flop
+
+
+Poker Hand #BR1065021308: Tournament #271769484, Mystery Battle Royale $25 Hold'em No Limit - Level1(10/20(4)) - 2026/03/16 10:38:27
+Table '2' 5-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: 9761da2e (1,000 in chips)
+Seat 3: e26b5983 (1,000 in chips)
+Seat 4: ef91e164 (1,000 in chips)
+Seat 5: ae0bff91 (1,000 in chips)
+ae0bff91: posts the ante 4
+9761da2e: posts the ante 4
+ef91e164: posts the ante 4
+Hero: posts the ante 4
+e26b5983: posts the ante 4
+9761da2e: posts small blind 10
+e26b5983: posts big blind 20
+*** HOLE CARDS ***
+Dealt to Hero [6s Qc]
+Dealt to 9761da2e 
+Dealt to e26b5983 
+Dealt to ef91e164 
+Dealt to ae0bff91 
+ef91e164: raises 30 to 50
+ae0bff91: folds
+Hero: folds
+9761da2e: folds
+e26b5983: folds
+Uncalled bet (30) returned to ef91e164
+*** SHOWDOWN ***
+ef91e164 collected 70 from pot
+*** SUMMARY ***
+Total pot 70 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Hero (button) folded before Flop
+Seat 2: 9761da2e (small blind) folded before Flop
+Seat 3: e26b5983 (big blind) folded before Flop
+Seat 4: ef91e164 collected (70)
+Seat 5: ae0bff91 folded before Flop
+
+

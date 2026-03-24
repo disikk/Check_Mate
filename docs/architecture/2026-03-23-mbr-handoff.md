@@ -125,7 +125,7 @@ Only after that should `boundary_ko_ev` be implemented from the formula in `mbr_
 
 These are intentionally ignored:
 
-- `backend/fixtures`
+- `backend/fixtures` is now repo-tracked as the committed sanitized golden GG MBR pack
 - `docs/plans`
 - `.claude`
 

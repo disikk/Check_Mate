@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/mbr_stats_runtime",
   "crates/parser_worker",
   "crates/tracker_parser_core",
 ]

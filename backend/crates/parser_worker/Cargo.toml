@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
+mbr_stats_runtime = { path = "../mbr_stats_runtime" }
 postgres = { version = "0.19.12", features = ["with-uuid-1"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"

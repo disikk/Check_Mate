@@ -110,7 +110,8 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `import-local` smoke path into PostgreSQL using `CHECK_MATE_DATABASE_URL`.
 - Current local smoke import guarantees:
   - TS -> `import.source_files`, `import.import_jobs`, `import.file_fragments`, `core.tournaments`, `core.tournament_entries`;
-  - HH -> `import.source_files`, `import.import_jobs`, `import.file_fragments`, `core.hands`, `core.hand_seats`, `core.hand_hole_cards`, `core.hand_actions`, `core.hand_boards`, `core.hand_showdowns`, `core.hand_pots`, `core.hand_pot_contributions`, `core.hand_pot_winners`, `core.hand_returns`, `core.parse_issues`, `derived.hand_state_resolutions`, `derived.hand_eliminations`, `derived.mbr_stage_resolution`.
+  - HH -> `import.source_files`, `import.import_jobs`, `import.file_fragments`, `core.hands`, `core.hand_seats`, `core.hand_hole_cards`, `core.hand_actions`, `core.hand_boards`, `core.hand_showdowns`, `core.hand_pots`, `core.hand_pot_contributions`, `core.hand_pot_winners`, `core.hand_returns`, `core.parse_issues`, `derived.hand_state_resolutions`, `derived.hand_eliminations`, `derived.mbr_stage_resolution`;
+  - post-import runtime refresh -> `analytics.player_hand_bool_features`, `analytics.player_hand_num_features`, `analytics.player_hand_enum_features` for the current dev player and runtime version.
 - Current persistence behavior:
   - `core.hands` is upserted by `(player_profile_id, external_hand_id)`;
   - child canonical rows are replaced for the current hand before re-insert, so repeated local imports stay idempotent at the hand layer.
@@ -131,13 +132,34 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current canonical parser correction:
   - repeated GG `collected ... from pot` lines for the same player are now accumulated instead of overwritten;
   - this was required for exact multi-pot final stacks, pot conservation, and future side-pot/KO derivations.
+- Current stat runtime foundation:
+  - `backend/crates/mbr_stats_runtime` now owns the first backend-only stat runtime slice;
+  - `FEATURE_VERSION = mbr_runtime_v1`;
+  - `parser_worker import-local` now calls the runtime materializer inside the same PostgreSQL transaction after TS/HH persistence and full-refreshes analytics features for the affected `player_profile_id`;
+  - the runtime materializes dense per-hand features for every imported hand:
+    - bool: `played_ft_hand`, `has_exact_ko`, `has_split_ko`, `has_sidepot_ko`;
+    - num: `ft_table_size`, `hero_exact_ko_count`, `hero_split_ko_count`, `hero_sidepot_ko_count`;
+    - enum: `ft_stage_bucket` with `not_ft`, `ft_7_9`, `ft_5_6`, `ft_3_4`, `ft_2_3`;
+  - `played_ft_hand` is materialized only from `derived.mbr_stage_resolution.played_ft_hand = true` with `played_ft_hand_state = exact`;
+  - KO features are materialized only from `derived.hand_eliminations` rows where `hero_involved = true` and `certainty_state = exact`; split/sidepot subsets count eliminated players, not winner shares;
+  - the runtime query library currently exposes only seed exact-safe aggregates:
+    - `roi_pct`, `avg_finish_place` from tournament-summary coverage;
+    - `final_table_reach_percent`, `total_ko`, `avg_ko_per_tournament` from hand-covered tournament coverage;
+    - `SeedStatSnapshot` always carries both `summary_tournament_count` and `hand_tournament_count` so callers can see the coverage basis explicitly.
 - Current stat-layer handoff artifact:
   - `docs/stat_catalog/mbr_stats_inventory.yml` inventories all 31 legacy `MBR_Stats` modules as a dependency map for future stat-layer redesign;
   - this file is inventory-only and intentionally does not yet introduce the new stat taxonomy or renamed stat families.
+- Current reproducibility gate:
+  - `backend/fixtures/mbr/hh` and `backend/fixtures/mbr/ts` are now committed sanitized golden fixtures, not local-only artifacts;
+  - canonical local setup is `backend/scripts/bootstrap_backend_dev.sh`;
+  - canonical backend verification is `backend/scripts/run_backend_checks.sh`;
+  - GitHub Actions backend gate lives in `.github/workflows/backend-foundation.yml` and is intentionally backend-only.
 - Current intentional limitation:
   - timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly;
+  - date-range filters and session filters are still intentionally absent from the runtime query contract because timestamp normalization and session modeling are not exact yet;
+  - FT reach and KO averages are currently defined over tournaments with imported HH coverage, not summary-only tournaments;
   - boundary KO metrics and timezone-normalized timestamps are still not persisted yet;
   - `boundary_ko_ev`, `big_ko` redesign, and the new stat-layer schema remain explicitly out of scope for the current phase.
 - Cross-machine continuation:
   - committed handoff lives in `docs/architecture/2026-03-23-mbr-handoff.md`;
-  - `backend/fixtures`, `docs/plans`, and `.claude` are intentionally local-only and must be copied manually if needed on another machine.
+  - `docs/plans` and `.claude` are intentionally local-only and must be copied manually if needed on another machine.
