@@ -151,8 +151,14 @@ pub(crate) fn build_feature_rows(facts: &[HandFeatureFacts]) -> Vec<Materialized
                 "ft_table_size".to_string(),
                 fact.ft_table_size.unwrap_or_default() as f64,
             );
-            num_values.insert("hero_exact_ko_count".to_string(), fact.exact_ko_count as f64);
-            num_values.insert("hero_split_ko_count".to_string(), fact.split_ko_count as f64);
+            num_values.insert(
+                "hero_exact_ko_count".to_string(),
+                fact.exact_ko_count as f64,
+            );
+            num_values.insert(
+                "hero_split_ko_count".to_string(),
+                fact.split_ko_count as f64,
+            );
             num_values.insert(
                 "hero_sidepot_ko_count".to_string(),
                 fact.sidepot_ko_count as f64,

@@ -271,8 +271,8 @@ fn parse_dealt_to_line(line: &str) -> Option<(String, Vec<String>)> {
 }
 
 fn parse_hidden_dealt_to_line(line: &str) -> bool {
-    let regex =
-        Regex::new(r"^Dealt to (?P<player_name>.+?)\s*$").expect("hidden dealt-to regex must compile");
+    let regex = Regex::new(r"^Dealt to (?P<player_name>.+?)\s*$")
+        .expect("hidden dealt-to regex must compile");
     regex.is_match(line)
 }
 
@@ -299,10 +299,9 @@ fn parse_board_transition(line: &str) -> Option<(Street, Vec<String>)> {
 }
 
 fn parse_summary_total_line(line: &str) -> Result<Option<(i64, i64)>, ParserError> {
-    let regex = Regex::new(
-        r"^Total pot (?P<total_pot>[\d,]+) \| Rake (?P<rake_amount>[\d,]+)(?: \| .+)?$",
-    )
-    .expect("summary total regex must compile");
+    let regex =
+        Regex::new(r"^Total pot (?P<total_pot>[\d,]+) \| Rake (?P<rake_amount>[\d,]+)(?: \| .+)?$")
+            .expect("summary total regex must compile");
     let Some(captures) = regex.captures(line) else {
         return Ok(None);
     };

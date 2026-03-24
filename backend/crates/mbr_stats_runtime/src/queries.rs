@@ -43,11 +43,8 @@ pub fn query_seed_stats(
         .buyin_total_cents
         .as_ref()
         .map(|values| values.iter().copied().collect::<BTreeSet<_>>());
-    let summary_facts = load_summary_tournament_facts(
-        client,
-        filters.organization_id,
-        filters.player_profile_id,
-    )?;
+    let summary_facts =
+        load_summary_tournament_facts(client, filters.organization_id, filters.player_profile_id)?;
     let filtered_summary_facts = summary_facts
         .iter()
         .copied()
@@ -198,8 +195,7 @@ pub(crate) fn build_seed_stat_snapshot(accumulator: SeedStatAccumulator) -> Seed
         None
     } else {
         Some(
-            accumulator.tournaments_with_ft_reach as f64
-                / accumulator.hand_tournament_count as f64
+            accumulator.tournaments_with_ft_reach as f64 / accumulator.hand_tournament_count as f64
                 * 100.0,
         )
     };

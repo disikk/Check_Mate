@@ -1,4 +1,3 @@
-.DS_Store
 node_modules/
 dist/
 .env
@@ -10,5 +9,8 @@ pnpm-debug.log*
 .vite/
 vite-dev.out.log
 vite-dev.err.log
-/docs/plans
+.DS_Store
+__MACOSX/
+backend/target/
+backend/.env
 /.claude

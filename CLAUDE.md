@@ -69,10 +69,11 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Upload pipeline callback-контракт в `mockHandUpload.js` спроектирован под замену на реальный backend — сохранять сигнатуры callbacks при изменениях.
 - FT-раздел повторяет структуру `MBR_Stats`, но намеренно без player selector и aggregate-режима (student-only view).
 - Внутри `Check_Mate` backend-скоуп текущего цикла ограничен только `GG MBR`; Chico для этого проекта не реализуется.
-- В локальной среде Codex на этом Mac уже доступны `cargo`, `rustc`, `psql` и отдельный Homebrew `postgresql@16`.
-- Локальный project runtime использует выделенный кластер PostgreSQL 16 на `localhost:5433`, чтобы не конфликтовать с уже существующим системным `PostgreSQL 12` на `5432`.
+- Канонический onboarding path теперь Docker-first: root `docker-compose.yml`, root `scripts/` и `Makefile`.
+- Канонический локальный DB contract для repo-level setup: `CHECK_MATE_DATABASE_URL="host=localhost port=5432 user=postgres password=postgres dbname=check_mate_dev"`.
+- Legacy Homebrew `postgresql@16` на `localhost:5433` может оставаться как maintainer fallback на этом Mac, но не считается основным first-run path.
 
-## Backend Update (2026-03-23)
+## Backend Update (2026-03-24)
 
 - `backend/` now contains a Rust workspace with:
   - `crates/tracker_parser_core` for GG MBR parsing;
@@ -82,12 +83,13 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - parse tournament summaries;
   - split raw hand-history files into hands;
   - parse hand headers for tournament identity, blind structure, table size, and button seat.
-- Local PostgreSQL runtime is already usable:
-  - dedicated Homebrew `postgresql@16` runs on `localhost:5433`;
-  - database `check_mate_dev` exists inside that cluster;
-  - migration `backend/migrations/0001_init_source_of_truth.sql` was applied successfully;
-  - seed `backend/seeds/0001_reference_data.sql` was applied successfully.
-- On this Mac, Docker is intentionally not required for the current parser foundation workflow.
+- Local reproducible runtime is now expected from the project root:
+  - `cp .env.example .env`;
+  - `bash scripts/db_up.sh`;
+  - `bash scripts/db_bootstrap.sh`;
+  - `bash scripts/backend_test.sh`.
+- Docker-first onboarding is the canonical path for this repository.
+- A local Homebrew PostgreSQL 16 cluster can still be used for maintainer-only debugging on this Mac, but it is secondary to the root Docker flow.
 
 ## Canonical Parsing Update (2026-03-23)
 
@@ -154,8 +156,10 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current reproducibility gate:
   - `backend/fixtures/mbr/hh` and `backend/fixtures/mbr/ts` are now committed sanitized golden fixtures, not local-only artifacts;
   - `tracker_parser_core` now contains a full-pack HH/TS sweep over the committed `9 HH + 9 TS` GG corpus;
-  - canonical local setup is `backend/scripts/bootstrap_backend_dev.sh`;
-  - canonical backend verification is `backend/scripts/run_backend_checks.sh`;
+  - canonical repo-level setup is `bash scripts/db_up.sh` + `bash scripts/db_bootstrap.sh`;
+  - `bash scripts/db_bootstrap.sh` now also re-syncs the PostgreSQL role password to the current `.env` contract so reused Docker volumes do not keep stale auth state;
+  - canonical repo-level backend verification is `bash scripts/backend_test.sh`;
+  - `backend/scripts/bootstrap_backend_dev.sh` and `backend/scripts/run_backend_checks.sh` remain backend-focused helper gates;
   - backend checks now include an ignored PostgreSQL full-pack import smoke for zero parse issues, zero invariant mismatches, and idempotent hand-child persistence on that committed corpus;
   - GitHub Actions backend gate lives in `.github/workflows/backend-foundation.yml` and is intentionally backend-only.
 - Current intentional limitation:
@@ -166,4 +170,5 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `boundary_ko_ev`, `big_ko` redesign, and the new stat-layer schema remain explicitly out of scope for the current phase.
 - Cross-machine continuation:
   - committed handoff lives in `docs/architecture/2026-03-23-mbr-handoff.md`;
-  - `docs/plans` and `.claude` are intentionally local-only and must be copied manually if needed on another machine.
+  - `docs/plans` and `docs/progress` are tracked workflow artifacts in this repo;
+  - `.claude` remains intentionally local-only.

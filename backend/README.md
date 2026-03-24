@@ -12,15 +12,15 @@
 
 ## Runtime Status (2026-03-24)
 
-- `cargo`, `rustc`, `psql`, and PostgreSQL are installed locally
-- dedicated Homebrew `postgresql@16` runs on `localhost:5433`
-- local database `check_mate_dev` exists in that PostgreSQL 16 cluster
-- migrations `0001_init_source_of_truth.sql`, `0002_exact_pot_ko_core.sql`, and seed `0001_reference_data.sql` were applied successfully
-- `CHECK_MATE_DATABASE_URL` can point to `host=localhost port=5433 user=postgres dbname=check_mate_dev`
-- Docker is not required for the current parser foundation workflow
-- canonical local entrypoints now live in:
+- canonical repo-level onboarding is Docker-first from the project root
+- root entrypoints are `docker-compose.yml`, `scripts/`, and `Makefile`
+- canonical DB contract is `CHECK_MATE_DATABASE_URL="host=localhost port=5432 user=postgres password=postgres dbname=check_mate_dev"`
+- migrations `0001_init_source_of_truth.sql`, `0002_exact_pot_ko_core.sql`, and seed `0001_reference_data.sql` are applied by `bash scripts/db_bootstrap.sh`
+- `bash scripts/db_bootstrap.sh` also re-syncs the PostgreSQL role password to `.env`, so reused Docker volumes do not keep stale auth credentials
+- backend-specific entrypoints remain:
   - `backend/scripts/bootstrap_backend_dev.sh`
   - `backend/scripts/run_backend_checks.sh`
+- a legacy local Homebrew PostgreSQL 16 cluster may still exist on `localhost:5433` as a maintainer fallback on this Mac, but it is not the canonical first-run path
 - GitHub Actions backend gate now lives in `.github/workflows/backend-foundation.yml`
 
 ## Layout
@@ -90,8 +90,9 @@ Hand-child persistence is intentionally idempotent:
 ## Testing
 
 - `cargo test` covers fixture parsing and first normalizer invariants
-- `bash backend/scripts/bootstrap_backend_dev.sh` is the canonical local bootstrap
-- `bash backend/scripts/run_backend_checks.sh` is the canonical backend gate
+- `bash scripts/db_bootstrap.sh` is the canonical repo bootstrap
+- `bash scripts/backend_test.sh` is the canonical root backend smoke gate
+- `bash backend/scripts/bootstrap_backend_dev.sh` and `bash backend/scripts/run_backend_checks.sh` remain backend-focused helper gates
 - `parser_worker` has:
   - a unit test for canonical hand -> persistence row mapping
   - a unit test for normalized hand -> `hand_state_resolutions` mapping
@@ -123,3 +124,9 @@ cargo run -p parser_worker -- import-local "fixtures/mbr/hh/GG20260316-0344 - My
 ```
 
 `import-local` expects `CHECK_MATE_DATABASE_URL` in the environment.
+
+For a generic local setup, use the Docker PostgreSQL from the project root and export:
+
+```bash
+export CHECK_MATE_DATABASE_URL="host=localhost port=5432 user=postgres password=postgres dbname=check_mate_dev"
+```
