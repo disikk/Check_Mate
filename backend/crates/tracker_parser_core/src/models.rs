@@ -146,6 +146,17 @@ pub enum CertaintyState {
     Inconsistent,
 }
 
+impl CertaintyState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Estimated => "estimated",
+            Self::Uncertain => "uncertain",
+            Self::Inconsistent => "inconsistent",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FinalPot {
     pub pot_no: u8,

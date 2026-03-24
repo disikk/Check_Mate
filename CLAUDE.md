@@ -133,6 +133,12 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `parser_worker import-local` now persists those rows into `derived.hand_eliminations`;
   - current persisted slice now includes `resolved_by_pot_no`, `hero_involved`, `hero_share_fraction`, `is_split_ko`, `split_n`, `is_sidepot_based`, and `certainty_state`;
   - `hero_involved = true` only when Hero receives a positive share of the pot that contains the eliminated player's last chips.
+- Current street-strength persistence behavior:
+  - `tracker_parser_core` now exposes a pure `street_strength` evaluator over `CanonicalParsedHand`;
+  - `parser_worker import-local` now persists exact `flop` / `turn` / `river` descriptors into `derived.street_hand_strength`;
+  - v1 materializes rows for Hero and for opponents whose hole cards are exact-known by showdown, and showdown-known opponents are backfilled across all reached streets;
+  - v1 persists `best_hand_class`, `best_hand_rank_value`, `pair_strength`, draw flags, `has_overcards`, `has_air`, and `has_missed_draw_by_river` under `descriptor_version = gg_mbr_street_strength_v1`;
+  - `is_nut_hand` and `is_nut_draw` remain intentionally `NULL` until a dedicated nut-policy batch is specified.
 - Current canonical parser correction:
   - repeated GG `collected ... from pot` lines for the same player are now accumulated instead of overwritten;
   - this was required for exact multi-pot final stacks, pot conservation, and future side-pot/KO derivations.
@@ -165,6 +171,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current intentional limitation:
   - timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly;
   - date-range filters and session filters are still intentionally absent from the runtime query contract because timestamp normalization and session modeling are not exact yet;
+  - street-strength v1 intentionally stops at exact descriptors in `derived.street_hand_strength` and does not yet materialize runtime features or nut-policy fields;
   - FT reach and KO averages are currently defined over tournaments with imported HH coverage, not summary-only tournaments;
   - boundary KO metrics and timezone-normalized timestamps are still not persisted yet;
   - `boundary_ko_ev`, `big_ko` redesign, and the new stat-layer schema remain explicitly out of scope for the current phase.

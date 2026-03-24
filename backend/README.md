@@ -76,6 +76,7 @@
 - `core.parse_issues`
 - `derived.hand_state_resolutions`
 - `derived.hand_eliminations`
+- `derived.street_hand_strength`
 - `derived.mbr_stage_resolution`
 - `analytics.player_hand_bool_features`
 - `analytics.player_hand_num_features`
@@ -85,6 +86,7 @@ Hand-child persistence is intentionally idempotent:
 
 - `core.hands` is upserted by `(player_profile_id, external_hand_id)`
 - child rows are replaced for the current hand before re-insert
+- `derived.street_hand_strength` rows are replaced for the current `hand_id + descriptor_version` before re-insert
 - post-import runtime features are full-refreshed for the current `player_profile_id` and `mbr_runtime_v1`
 
 ## Testing
@@ -98,6 +100,7 @@ Hand-child persistence is intentionally idempotent:
   - a unit test for normalized hand -> `hand_state_resolutions` mapping
   - a unit test for exact elimination extraction on an FT all-in hand
   - a unit test for FT/rush `mbr_stage_resolution` mapping
+  - a dedicated parser-core test suite for exact `street_hand_strength` descriptors
   - a regression test for repeated `collect` lines by the same player
   - an ignored integration test for real PostgreSQL writes
   - an ignored integration test for analytics refresh and seed runtime queries
@@ -107,6 +110,7 @@ Hand-child persistence is intentionally idempotent:
 - hand/tournament timestamps are still stored as `NULL` until GG MBR timezone normalization is specified exactly
 - `derived.mbr_stage_resolution` now persists the exact `played_ft_hand` slice, exact `ft_table_size`, and the estimated last-rush boundary candidate hand
 - `derived.hand_eliminations` now persists exact pot-specific KO attribution including `resolved_by_pot_no`, `hero_involved`, `hero_share_fraction`, `is_split_ko`, `split_n`, `is_sidepot_based`, and `certainty_state`
+- `derived.street_hand_strength` now persists exact street-level descriptors for Hero and showdown-known opponents, but `is_nut_hand` / `is_nut_draw` remain intentionally `NULL` in v1
 - `mbr_stats_runtime` currently exposes only seed exact-safe stats and still intentionally excludes session/date filters
 - boundary-zone and boundary-KO fields are still intentionally unresolved/uncertain beyond the boundary-candidate flag
 - server FT stats and AST/filter engine come later in the plan

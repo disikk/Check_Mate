@@ -12,6 +12,7 @@ use tracker_parser_core::{
         hand_history::{parse_canonical_hand, split_hand_history},
         tournament_summary::parse_tournament_summary,
     },
+    street_strength::{STREET_HAND_STRENGTH_VERSION, evaluate_street_hand_strength},
 };
 use uuid::Uuid;
 
@@ -165,6 +166,28 @@ struct MbrStageResolutionRow {
     boundary_ko_method: Option<String>,
     boundary_ko_certainty: Option<String>,
     boundary_ko_state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StreetHandStrengthRow {
+    seat_no: i32,
+    street: String,
+    best_hand_class: String,
+    best_hand_rank_value: i64,
+    pair_strength: String,
+    is_nut_hand: Option<bool>,
+    is_nut_draw: Option<bool>,
+    has_flush_draw: bool,
+    has_backdoor_flush_draw: bool,
+    has_open_ended: bool,
+    has_gutshot: bool,
+    has_double_gutshot: bool,
+    has_pair_plus_draw: bool,
+    has_overcards: bool,
+    has_air: bool,
+    has_missed_draw_by_river: bool,
+    descriptor_version: String,
+    certainty_state: String,
 }
 
 pub fn import_path(path: &str) -> Result<LocalImportReport> {
@@ -423,6 +446,8 @@ fn import_hand_history(
         persist_canonical_hand(tx, source_file_id, fragment_id, hand_id, canonical_hand)?;
         let normalized_hand = normalize_hand(canonical_hand)?;
         persist_normalized_hand(tx, hand_id, &normalized_hand)?;
+        let street_strength_rows = build_street_hand_strength_rows(canonical_hand)?;
+        persist_street_hand_strength(tx, hand_id, &street_strength_rows)?;
         let mbr_stage_resolution = mbr_stage_resolutions
             .get(&canonical_hand.header.hand_id)
             .ok_or_else(|| {
@@ -863,6 +888,72 @@ fn persist_mbr_stage_resolution(
     Ok(())
 }
 
+fn persist_street_hand_strength(
+    tx: &mut Transaction<'_>,
+    hand_id: Uuid,
+    rows: &[StreetHandStrengthRow],
+) -> Result<()> {
+    tx.execute(
+        "DELETE FROM derived.street_hand_strength
+         WHERE hand_id = $1
+           AND descriptor_version = $2",
+        &[&hand_id, &STREET_HAND_STRENGTH_VERSION],
+    )?;
+
+    for row in rows {
+        tx.execute(
+            "INSERT INTO derived.street_hand_strength (
+                hand_id,
+                seat_no,
+                street,
+                best_hand_class,
+                best_hand_rank_value,
+                pair_strength,
+                is_nut_hand,
+                is_nut_draw,
+                has_flush_draw,
+                has_backdoor_flush_draw,
+                has_open_ended,
+                has_gutshot,
+                has_double_gutshot,
+                has_pair_plus_draw,
+                has_overcards,
+                has_air,
+                has_missed_draw_by_river,
+                descriptor_version,
+                certainty_state
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                $11, $12, $13, $14, $15, $16, $17, $18, $19
+            )",
+            &[
+                &hand_id,
+                &row.seat_no,
+                &row.street,
+                &row.best_hand_class,
+                &row.best_hand_rank_value,
+                &row.pair_strength,
+                &row.is_nut_hand,
+                &row.is_nut_draw,
+                &row.has_flush_draw,
+                &row.has_backdoor_flush_draw,
+                &row.has_open_ended,
+                &row.has_gutshot,
+                &row.has_double_gutshot,
+                &row.has_pair_plus_draw,
+                &row.has_overcards,
+                &row.has_air,
+                &row.has_missed_draw_by_river,
+                &row.descriptor_version,
+                &row.certainty_state,
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
 fn replace_hand_children(
     tx: &mut Transaction<'_>,
     source_file_id: Uuid,
@@ -938,6 +1029,32 @@ fn build_hand_pot_rows(
             amount: pot.amount,
         })
         .collect()
+}
+
+fn build_street_hand_strength_rows(hand: &CanonicalParsedHand) -> Result<Vec<StreetHandStrengthRow>> {
+    Ok(evaluate_street_hand_strength(hand)?
+        .into_iter()
+        .map(|descriptor| StreetHandStrengthRow {
+            seat_no: descriptor.seat_no as i32,
+            street: street_code(descriptor.street).to_string(),
+            best_hand_class: descriptor.best_hand_class.as_str().to_string(),
+            best_hand_rank_value: descriptor.best_hand_rank_value,
+            pair_strength: descriptor.pair_strength.as_str().to_string(),
+            is_nut_hand: descriptor.is_nut_hand,
+            is_nut_draw: descriptor.is_nut_draw,
+            has_flush_draw: descriptor.has_flush_draw,
+            has_backdoor_flush_draw: descriptor.has_backdoor_flush_draw,
+            has_open_ended: descriptor.has_open_ended,
+            has_gutshot: descriptor.has_gutshot,
+            has_double_gutshot: descriptor.has_double_gutshot,
+            has_pair_plus_draw: descriptor.has_pair_plus_draw,
+            has_overcards: descriptor.has_overcards,
+            has_air: descriptor.has_air,
+            has_missed_draw_by_river: descriptor.has_missed_draw_by_river,
+            descriptor_version: descriptor.descriptor_version.to_string(),
+            certainty_state: certainty_state_code(descriptor.certainty_state).to_string(),
+        })
+        .collect())
 }
 
 fn build_hand_pot_contribution_rows(
@@ -1795,6 +1912,43 @@ mod tests {
         assert!(!elimination.get::<_, bool>(8));
         assert_eq!(elimination.get::<_, String>(9), "exact");
 
+        let street_strength_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.street_hand_strength
+                 WHERE hand_id = $1
+                   AND descriptor_version = 'gg_mbr_street_strength_v1'",
+                &[&hand_id],
+            )
+            .unwrap()
+            .get(0);
+        let hero_street_strength_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.street_hand_strength
+                 WHERE hand_id = $1
+                   AND seat_no = 7
+                   AND descriptor_version = 'gg_mbr_street_strength_v1'",
+                &[&hand_id],
+            )
+            .unwrap()
+            .get(0);
+        let villain_street_strength_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.street_hand_strength
+                 WHERE hand_id = $1
+                   AND seat_no = 3
+                   AND descriptor_version = 'gg_mbr_street_strength_v1'",
+                &[&hand_id],
+            )
+            .unwrap()
+            .get(0);
+
+        assert_eq!(street_strength_count, 6);
+        assert_eq!(hero_street_strength_count, 3);
+        assert_eq!(villain_street_strength_count, 3);
+
         let pot_count: i64 = client
             .query_one(
                 "SELECT COUNT(*) FROM core.hand_pots WHERE hand_id = $1",
@@ -2123,7 +2277,7 @@ mod tests {
     fn player_hand_row_counts(
         client: &mut Client,
         player_profile_id: Uuid,
-    ) -> (i64, i64, i64, i64, i64, i64, i64, i64) {
+    ) -> (i64, i64, i64, i64, i64, i64, i64, i64, i64) {
         let hands: i64 = client
             .query_one(
                 "SELECT COUNT(*)
@@ -2203,6 +2357,17 @@ mod tests {
             )
             .unwrap()
             .get(0);
+        let street_strength: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.street_hand_strength sh
+                 JOIN core.hands h ON h.id = sh.hand_id
+                 WHERE h.player_profile_id = $1
+                   AND sh.descriptor_version = 'gg_mbr_street_strength_v1'",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
 
         (
             hands,
@@ -2213,6 +2378,7 @@ mod tests {
             returns,
             resolutions,
             eliminations,
+            street_strength,
         )
     }
 
@@ -2274,6 +2440,15 @@ mod tests {
         client
             .execute(
                 "DELETE FROM derived.hand_state_resolutions
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM derived.street_hand_strength
                  WHERE hand_id IN (
                      SELECT id FROM core.hands WHERE player_profile_id = $1
                  )",
