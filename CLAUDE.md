@@ -111,16 +111,25 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - summary smoke output for a single fixture file;
   - `import-local` smoke path into PostgreSQL using `CHECK_MATE_DATABASE_URL`.
 - Current local smoke import guarantees:
-  - TS -> `import.source_files`, `import.import_jobs`, `import.file_fragments`, `core.tournaments`, `core.tournament_entries`;
-  - HH -> `import.source_files`, `import.import_jobs`, `import.file_fragments`, `core.hands`, `core.hand_seats`, `core.hand_hole_cards`, `core.hand_actions`, `core.hand_boards`, `core.hand_showdowns`, `core.hand_pots`, `core.hand_pot_contributions`, `core.hand_pot_winners`, `core.hand_returns`, `core.parse_issues`, `derived.hand_state_resolutions`, `derived.hand_eliminations`, `derived.mbr_stage_resolution`;
+  - TS -> deduped `import.source_files`, synthetic `import.source_file_members`, `import.import_jobs`, `import.job_attempts`, `import.file_fragments`, `core.tournaments`, `core.tournament_entries`;
+  - HH -> deduped `import.source_files`, synthetic `import.source_file_members`, `import.import_jobs`, `import.job_attempts`, `import.file_fragments`, `core.hands`, `core.hand_seats`, `core.hand_hole_cards`, `core.hand_actions`, `core.hand_boards`, `core.hand_showdowns`, `core.hand_pots`, `core.hand_pot_contributions`, `core.hand_pot_winners`, `core.hand_returns`, `core.parse_issues`, `derived.hand_state_resolutions`, `derived.hand_eliminations`, `derived.mbr_stage_resolution`;
   - post-import runtime refresh -> `analytics.player_hand_bool_features`, `analytics.player_hand_num_features`, `analytics.player_hand_enum_features` for the current dev player and runtime version.
 - Current persistence behavior:
+  - `backend/migrations/0004_exact_core_schema_v2.sql` now hardens the exact-core schema with `core.player_aliases`, `import.source_file_members`, `import.job_attempts`, `analytics.feature_catalog`, `analytics.stat_catalog`, `analytics.stat_dependencies`, and `analytics.materialization_policies`;
+  - `backend/seeds/0001_reference_data.sql` now seeds the minimal analytics catalog slice required by the current runtime materializer and seed stat query layer;
   - `core.hands` is upserted by `(player_profile_id, external_hand_id)`;
+  - `import.source_files` is deduped by `(player_profile_id, room, file_kind, sha256)`, `import.file_fragments` by `(source_file_id, sha256)`, `import.source_file_members` by both `(source_file_id, member_index)` and `(source_file_id, sha256)`, and `import.job_attempts` by `(import_job_id, attempt_no)`;
+  - flat local HH/TS imports now always materialize one synthetic `import.source_file_members` row so the member contract is exercised before ZIP/archive ingestion exists;
+  - dev bootstrap/import now ensures a primary `core.player_aliases` row for `Hero` and uses alias lookup when attaching the Hero seat to `core.hand_seats.player_profile_id`;
+  - `core.tournaments` and `core.hands` now persist `*_raw`, `*_local`, and `*_tz_provenance` alongside nullable canonical UTC timestamps;
+  - current GG MBR timestamp policy is conservative: HH/TS text timestamps are persisted as raw text plus parsed local naive timestamps with `tz_provenance = gg_text_without_timezone`, while canonical UTC fields remain `NULL` until an exact timezone source exists;
   - child canonical rows are replaced for the current hand before re-insert, so repeated local imports stay idempotent at the hand layer.
 - Current normalized persistence behavior:
   - `normalize_hand` now runs through an internal replay ledger instead of relying on `collect` line order;
   - `normalize_hand` now exposes committed totals, exact final pot graph, return rows, resolved eliminations, and invariant results;
   - final pot winner allocation is reconstructed from pot eligibility plus aggregate winner totals, so aggregated or reordered `collect` lines on the committed GG corpus no longer force `collect_mapping_amount_mismatch`;
+  - when multiple valid pot-winner mappings exist, the hand now stays `uncertain` and guessed `core.hand_pot_winners` rows are intentionally not materialized; only exact mappings persist winner rows;
+  - unsatisfied winner mappings now surface through `invariant_errors` without inventing fallback winners;
   - `parser_worker import-local` persists the first exact derived row into `derived.hand_state_resolutions`;
   - persisted fields currently include `chip_conservation_ok`, `pot_conservation_ok`, parsed `rake_amount`, `final_stacks`, and `invariant_errors`.
 - Current MBR stage persistence behavior:
@@ -143,6 +152,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `normalize_hand` now derives exact eliminations for players whose starting stack was positive and whose final stack after the hand is zero;
   - `parser_worker import-local` now persists those rows into `derived.hand_eliminations`;
   - current persisted slice now includes `resolved_by_pot_no`, `hero_involved`, `hero_share_fraction`, `is_split_ko`, `split_n`, `is_sidepot_based`, and `certainty_state`;
+  - when winner mapping is ambiguous or unsatisfied, elimination rows still keep the busted seat/pot context but intentionally omit guessed winner attribution details;
   - `hero_involved = true` only when Hero receives a positive share of the pot that contains the eliminated player's last chips.
 - Current street-strength persistence behavior:
   - `tracker_parser_core` now exposes a pure `street_strength` evaluator over `CanonicalParsedHand`;
@@ -173,6 +183,8 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current reproducibility gate:
   - `backend/fixtures/mbr/hh` and `backend/fixtures/mbr/ts` are now committed sanitized golden fixtures, not local-only artifacts;
   - `tracker_parser_core` now contains a full-pack HH/TS sweep over the committed `9 HH + 9 TS` GG corpus;
+  - the committed syntax surface is now explicitly documented in `docs/COMMITTED_PACK_SYNTAX_CATALOG.md`;
+  - parser-worker now persists structured parse issues with `severity = warning|error` instead of a warning-only fallback;
   - canonical repo-level setup is `bash scripts/db_up.sh` + `bash scripts/db_bootstrap.sh`;
   - `bash scripts/db_bootstrap.sh` now also re-syncs the PostgreSQL role password to the current `.env` contract so reused Docker volumes do not keep stale auth state;
   - canonical repo-level backend verification is `bash scripts/backend_test.sh`;
@@ -180,7 +192,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - backend checks now include an ignored PostgreSQL full-pack import smoke for zero parse issues, zero invariant mismatches, and idempotent hand-child persistence on that committed corpus;
   - GitHub Actions backend gate lives in `.github/workflows/backend-foundation.yml` and is intentionally backend-only.
 - Current intentional limitation:
-  - timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly;
+  - canonical UTC timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly, even though raw/local/provenance fields are now persisted;
   - date-range filters and session filters are still intentionally absent from the runtime query contract because timestamp normalization and session modeling are not exact yet;
   - street-strength v1 intentionally stops at exact descriptors in `derived.street_hand_strength` and does not yet materialize runtime features or nut-policy fields;
   - FT reach and KO averages are currently defined over tournaments with imported HH coverage, not summary-only tournaments;

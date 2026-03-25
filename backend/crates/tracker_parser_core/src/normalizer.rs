@@ -538,17 +538,17 @@ fn resolve_pot_winners(
         ));
     };
 
-    let certainty = if solutions.len() == 1 {
-        CertaintyState::Exact
-    } else {
-        CertaintyState::Uncertain
-    };
+    if solutions.len() == 1 {
+        return Ok((
+            allocations_to_pot_winners(&first_solution, seat_by_player)?,
+            CertaintyState::Exact,
+            Vec::new(),
+        ));
+    }
 
-    Ok((
-        allocations_to_pot_winners(&first_solution, seat_by_player)?,
-        certainty,
-        Vec::new(),
-    ))
+    // When multiple valid mappings exist we keep the hand uncertain and avoid
+    // materializing guessed winners into exact downstream tables.
+    Ok((Vec::new(), CertaintyState::Uncertain, Vec::new()))
 }
 
 fn search_pot_allocations(

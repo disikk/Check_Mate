@@ -12,6 +12,97 @@ SET
     name = EXCLUDED.name,
     max_players = EXCLUDED.max_players;
 
+INSERT INTO analytics.feature_catalog (
+    feature_key,
+    feature_version,
+    table_family,
+    value_kind,
+    exactness_class,
+    description
+)
+VALUES
+    ('played_ft_hand', 'mbr_runtime_v1', 'bool', 'bool', 'exact', 'Exact final-table participation flag sourced from derived.mbr_stage_resolution.'),
+    ('has_exact_ko', 'mbr_runtime_v1', 'bool', 'bool', 'exact', 'Whether Hero has at least one exact KO on the hand.'),
+    ('has_split_ko', 'mbr_runtime_v1', 'bool', 'bool', 'exact', 'Whether Hero shares at least one exact split KO on the hand.'),
+    ('has_sidepot_ko', 'mbr_runtime_v1', 'bool', 'bool', 'exact', 'Whether Hero records at least one exact side-pot KO on the hand.'),
+    ('ft_table_size', 'mbr_runtime_v1', 'num', 'double', 'exact', 'Observed seat count on exact final-table hands.'),
+    ('hero_exact_ko_count', 'mbr_runtime_v1', 'num', 'double', 'exact', 'Exact KO event count attributed to Hero on the hand.'),
+    ('hero_split_ko_count', 'mbr_runtime_v1', 'num', 'double', 'exact', 'Exact split-KO event count attributed to Hero on the hand.'),
+    ('hero_sidepot_ko_count', 'mbr_runtime_v1', 'num', 'double', 'exact', 'Exact side-pot KO event count attributed to Hero on the hand.'),
+    ('ft_stage_bucket', 'mbr_runtime_v1', 'enum', 'enum', 'exact', 'Derived final-table stage bucket from exact table size.')
+ON CONFLICT (feature_key, feature_version) DO UPDATE
+SET
+    table_family = EXCLUDED.table_family,
+    value_kind = EXCLUDED.value_kind,
+    exactness_class = EXCLUDED.exactness_class,
+    description = EXCLUDED.description,
+    is_active = TRUE;
+
+INSERT INTO analytics.stat_catalog (
+    stat_key,
+    stat_family,
+    exactness_class,
+    output_kind,
+    description
+)
+VALUES
+    ('roi_pct', 'seed_snapshot', 'exact', 'percent', 'ROI over summary-covered tournaments.'),
+    ('avg_finish_place', 'seed_snapshot', 'exact', 'double', 'Average finish place over summary-covered tournaments.'),
+    ('final_table_reach_percent', 'seed_snapshot', 'exact', 'percent', 'Share of HH-covered tournaments where Hero reaches the final table.'),
+    ('total_ko', 'seed_snapshot', 'exact', 'integer', 'Total exact KO count over HH-covered tournaments.'),
+    ('avg_ko_per_tournament', 'seed_snapshot', 'exact', 'double', 'Average exact KO count per HH-covered tournament.')
+ON CONFLICT (stat_key) DO UPDATE
+SET
+    stat_family = EXCLUDED.stat_family,
+    exactness_class = EXCLUDED.exactness_class,
+    output_kind = EXCLUDED.output_kind,
+    description = EXCLUDED.description,
+    is_active = TRUE;
+
+INSERT INTO analytics.stat_dependencies (
+    stat_key,
+    dependency_kind,
+    dependency_key,
+    dependency_version
+)
+VALUES
+    ('roi_pct', 'summary_field', 'core.tournaments.buyin_total', ''),
+    ('roi_pct', 'summary_field', 'core.tournament_entries.total_payout_money', ''),
+    ('avg_finish_place', 'summary_field', 'core.tournament_entries.finish_place', ''),
+    ('final_table_reach_percent', 'feature', 'played_ft_hand', 'mbr_runtime_v1'),
+    ('final_table_reach_percent', 'coverage_metric', 'hand_tournament_count', ''),
+    ('total_ko', 'feature', 'hero_exact_ko_count', 'mbr_runtime_v1'),
+    ('avg_ko_per_tournament', 'feature', 'hero_exact_ko_count', 'mbr_runtime_v1'),
+    ('avg_ko_per_tournament', 'coverage_metric', 'hand_tournament_count', '')
+ON CONFLICT (stat_key, dependency_kind, dependency_key, dependency_version) DO NOTHING;
+
+INSERT INTO analytics.materialization_policies (
+    target_kind,
+    target_key,
+    target_version,
+    policy_code,
+    refresh_mode
+)
+VALUES
+    ('feature', 'played_ft_hand', 'mbr_runtime_v1', 'import_local_full_refresh', 'full_refresh'),
+    ('feature', 'has_exact_ko', 'mbr_runtime_v1', 'import_local_full_refresh', 'full_refresh'),
+    ('feature', 'has_split_ko', 'mbr_runtime_v1', 'import_local_full_refresh', 'full_refresh'),
+    ('feature', 'has_sidepot_ko', 'mbr_runtime_v1', 'import_local_full_refresh', 'full_refresh'),
+    ('feature', 'ft_table_size', 'mbr_runtime_v1', 'import_local_full_refresh', 'full_refresh'),
+    ('feature', 'hero_exact_ko_count', 'mbr_runtime_v1', 'import_local_full_refresh', 'full_refresh'),
+    ('feature', 'hero_split_ko_count', 'mbr_runtime_v1', 'import_local_full_refresh', 'full_refresh'),
+    ('feature', 'hero_sidepot_ko_count', 'mbr_runtime_v1', 'import_local_full_refresh', 'full_refresh'),
+    ('feature', 'ft_stage_bucket', 'mbr_runtime_v1', 'import_local_full_refresh', 'full_refresh'),
+    ('stat', 'roi_pct', '', 'query_only_seed_snapshot', 'full_refresh'),
+    ('stat', 'avg_finish_place', '', 'query_only_seed_snapshot', 'full_refresh'),
+    ('stat', 'final_table_reach_percent', '', 'query_only_seed_snapshot', 'full_refresh'),
+    ('stat', 'total_ko', '', 'query_only_seed_snapshot', 'full_refresh'),
+    ('stat', 'avg_ko_per_tournament', '', 'query_only_seed_snapshot', 'full_refresh')
+ON CONFLICT (target_kind, target_key, target_version, policy_code) DO UPDATE
+SET
+    refresh_mode = EXCLUDED.refresh_mode,
+    is_active = TRUE;
+
 -- Current GG Mystery Battle Royale reference economics, aligned to the
 -- official GGPoker public payout tables as captured on 2026-03-24.
 WITH gg_mbr AS (

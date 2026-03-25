@@ -110,6 +110,53 @@ Seat 1: Shorty (small blind) lost
 Seat 2: Hero (big blind) folded before Flop
 Seat 3: Medium showed [Jh Jc] and lost
 Seat 4: BigStack showed [As Ad] and collected (2,600)"#;
+const AMBIGUOUS_COLLECT_HAND: &str = r#"Poker Hand #BRAMBIG1: Tournament #999004, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(100)) - 2026/03/16 12:15:00
+Table '3' 4-max Seat #1 is the button
+Seat 1: ShortyA (100 in chips)
+Seat 2: ShortyB (100 in chips)
+Seat 3: Hero (300 in chips)
+Seat 4: Villain (300 in chips)
+ShortyA: posts the ante 100
+ShortyB: posts the ante 100
+Hero: posts the ante 100
+Villain: posts the ante 100
+*** HOLE CARDS ***
+Dealt to ShortyA
+Dealt to ShortyB
+Dealt to Hero [Ah Ad]
+Dealt to Villain
+Hero: bets 200 and is all-in
+Villain: calls 200 and is all-in
+Hero: shows [Ah Ad]
+Villain: shows [Ks Kd]
+*** SHOWDOWN ***
+Hero collected 400 from pot
+Villain collected 400 from pot
+*** SUMMARY ***
+Total pot 800 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: ShortyA lost
+Seat 2: ShortyB lost
+Seat 3: Hero showed [Ah Ad] and collected (400)
+Seat 4: Villain showed [Ks Kd] and collected (400)"#;
+const UNSATISFIED_COLLECT_HAND: &str = r#"Poker Hand #BRBROKEN1: Tournament #999005, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(100)) - 2026/03/16 12:20:00
+Table '4' 2-max Seat #1 is the button
+Seat 1: Hero (100 in chips)
+Seat 2: Villain (100 in chips)
+Hero: posts the ante 100
+Villain: posts the ante 100
+*** HOLE CARDS ***
+Dealt to Hero [As Ac]
+Dealt to Villain
+Hero: shows [As Ac]
+Villain: shows [Kd Kh]
+*** SHOWDOWN ***
+Hero collected 250 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 3d 4h 5s 6c]
+Seat 1: Hero showed [As Ac] and collected (250)
+Seat 2: Villain showed [Kd Kh] and lost"#;
 
 const HH_FIXTURE_FILES: &[&str] = &[
     "GG20260316-0307 - Mystery Battle Royale 25.txt",
@@ -385,6 +432,74 @@ fn resolves_pot_winners_even_when_collect_lines_are_not_grouped_by_pot() {
         .unwrap();
     assert_eq!(medium.resolved_by_pot_no, Some(3));
     assert_eq!(medium.certainty_state, CertaintyState::Exact);
+}
+
+#[test]
+fn keeps_ambiguous_collect_mappings_uncertain_without_guessing_pot_winners() {
+    let hand = parse_canonical_hand(AMBIGUOUS_COLLECT_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    assert_eq!(normalized.final_pots.len(), 2);
+    assert_eq!(normalized.final_pots[0].amount, 400);
+    assert_eq!(normalized.final_pots[1].amount, 400);
+    assert!(normalized.pot_winners.is_empty());
+    assert!(normalized.invariants.chip_conservation_ok);
+    assert!(normalized.invariants.pot_conservation_ok);
+    assert!(normalized.invariants.invariant_errors.is_empty());
+
+    let shorty_a = normalized
+        .eliminations
+        .iter()
+        .find(|elimination| elimination.eliminated_player_name == "ShortyA")
+        .unwrap();
+    assert_eq!(shorty_a.resolved_by_pot_no, Some(1));
+    assert_eq!(shorty_a.ko_involved_winner_count, 0);
+    assert!(!shorty_a.hero_involved);
+    assert_eq!(shorty_a.hero_share_fraction, None);
+    assert!(!shorty_a.is_split_ko);
+    assert_eq!(shorty_a.split_n, None);
+    assert!(!shorty_a.is_sidepot_based);
+    assert_eq!(shorty_a.certainty_state, CertaintyState::Uncertain);
+
+    let shorty_b = normalized
+        .eliminations
+        .iter()
+        .find(|elimination| elimination.eliminated_player_name == "ShortyB")
+        .unwrap();
+    assert_eq!(shorty_b.resolved_by_pot_no, Some(1));
+    assert_eq!(shorty_b.ko_involved_winner_count, 0);
+    assert!(!shorty_b.hero_involved);
+    assert_eq!(shorty_b.hero_share_fraction, None);
+    assert_eq!(shorty_b.certainty_state, CertaintyState::Uncertain);
+}
+
+#[test]
+fn surfaces_unsatisfied_collect_mapping_as_invariant_error_without_guessing_winners() {
+    let hand = parse_canonical_hand(UNSATISFIED_COLLECT_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    assert_eq!(normalized.final_pots.len(), 1);
+    assert_eq!(normalized.final_pots[0].amount, 200);
+    assert!(normalized.pot_winners.is_empty());
+    assert!(!normalized.invariants.chip_conservation_ok);
+    assert!(!normalized.invariants.pot_conservation_ok);
+    assert!(
+        normalized
+            .invariants
+            .invariant_errors
+            .contains(&"collect_mapping_unsatisfied".to_string())
+    );
+
+    let villain = normalized
+        .eliminations
+        .iter()
+        .find(|elimination| elimination.eliminated_player_name == "Villain")
+        .unwrap();
+    assert_eq!(villain.resolved_by_pot_no, Some(1));
+    assert_eq!(villain.ko_involved_winner_count, 0);
+    assert!(!villain.hero_involved);
+    assert_eq!(villain.hero_share_fraction, None);
+    assert_eq!(villain.certainty_state, CertaintyState::Uncertain);
 }
 
 fn read_hh_fixture(filename: &str) -> String {

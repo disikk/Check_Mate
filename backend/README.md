@@ -1,136 +1,99 @@
-# Backend Foundation
+# Backend foundation
 
-`Check_Mate` is being built as one integrated product: student cabinets, MBR Stats replacement, GG MBR parser/normalizer, and future tracker/filter/stat capabilities on one data model. This directory is the backend foundation for that unified core.
+Это backend-ядро нового проекта для покерной школы. Текущая ветка и этот архив ориентированы только на **GG Mystery Battle Royale**.
 
-## Scope
+## Что входит в backend-срез
 
-- only `GG MBR`
-- no `Chico` support in this project branch
-- PostgreSQL is the source of truth
-- real HH/TS fixtures from MBR exports are the golden parser pack
-- parser architecture: `tracker_parser_core` + `parser_worker`
+- `migrations/` — схема PostgreSQL source-of-truth;
+- `seeds/` — reference data, включая current GG MBR economics tables;
+- `fixtures/mbr/hh/` — committed GG HH;
+- `fixtures/mbr/ts/` — committed GG TS;
+- `crates/tracker_parser_core/` — parser + normalizer + street strength foundation;
+- `crates/parser_worker/` — dev-only CLI importer;
+- `crates/mbr_stats_runtime/` — первый materializer и seed-safe stat queries.
 
-## Runtime Status (2026-03-24)
+## Что подтверждено по коду
 
-- canonical repo-level onboarding is Docker-first from the project root
-- root entrypoints are `docker-compose.yml`, `scripts/`, and `Makefile`
-- canonical DB contract is `CHECK_MATE_DATABASE_URL="host=localhost port=5432 user=postgres password=postgres dbname=check_mate_dev"`
-- migrations `0001_init_source_of_truth.sql`, `0002_exact_pot_ko_core.sql`, and seed `0001_reference_data.sql` are applied by `bash scripts/db_bootstrap.sh`
-- `bash scripts/db_bootstrap.sh` also re-syncs the PostgreSQL role password to `.env`, so reused Docker volumes do not keep stale auth credentials
-- backend-specific entrypoints remain:
-  - `backend/scripts/bootstrap_backend_dev.sh`
-  - `backend/scripts/run_backend_checks.sh`
-- a legacy local Homebrew PostgreSQL 16 cluster may still exist on `localhost:5433` as a maintainer fallback on this Mac, but it is not the canonical first-run path
-- GitHub Actions backend gate now lives in `.github/workflows/backend-foundation.yml`
+### Уже хорошо
 
-## Layout
+- схема БД уже отделяет `auth / org / import / core / derived / analytics`;
+- parser и normalizer разделены правильно;
+- exact elimination трактуется через pot-winner mapping, а не через legacy эвристику;
+- persisted split/side-pot признаки уже есть;
+- street hand strength foundation уже реализован и пишется в БД;
+- runtime-слой уже может materialize первый набор hand-features;
+- tournament economics уже вынесены в explicit `ref.mbr_*` tables;
+- importer уже раскладывает `regular_prize_money` и `mystery_money_total` для current listed GG Royal buy-ins;
+- schema v2 hardening уже добавил `player_aliases`, `source_file_members`, `job_attempts` и minimal analytics catalogs;
+- GG committed syntax surface теперь зафиксирован в `docs/COMMITTED_PACK_SYNTAX_CATALOG.md`;
+- parse issues теперь materialize-ятся со structured severity (`warning` / `error`);
+- pure non-greedy Big KO decoder уже есть как foundation-модуль.
 
-- `migrations/` - SQL schema for the source-of-truth database
-- `seeds/` - reference seed scripts
-- `fixtures/mbr/hh/` - committed golden GG MBR hand histories
-- `fixtures/mbr/ts/` - committed golden GG MBR tournament summaries
-- `crates/tracker_parser_core/` - parser and normalizer core
-- `crates/parser_worker/` - local CLI/import smoke worker
-- `crates/mbr_stats_runtime/` - typed feature registry, per-hand materializer, and seed aggregate queries
+### Уже есть, но пока только как foundation
 
-## Current Parser State
+- `derived.mbr_stage_resolution`;
+- `derived.street_hand_strength`;
+- `analytics.player_hand_*_features`;
+- idempotent replacement child-rows на повторном HH import;
+- ignored integration tests под local PostgreSQL.
 
-- file kind detection: `hh` / `ts`
-- tournament summary parsing
-- hand-history splitting into individual hands
-- canonical GG MBR hand parsing:
-  - seats
-  - action events
-  - final board runout
-  - hero hole cards
-  - showdown hands
-  - collected amounts
-  - parse warnings
-- first replay-grade normalizer slice:
-  - terminal all-in snapshot detection
-  - committed-by-street tracking
-  - actual final stacks/winner collections
-  - repeated `collect` accumulation across main/side pots
-  - exact elimination detection by end-of-hand stack resolution
-  - invariant calculation for chip and pot conservation
+## Что пока не доведено до production-grade
 
-## Current Import State
+1. **Parser coverage**
+   - committed GG pack покрывается чисто;
+   - committed syntax catalog и fixture tests уже есть;
+   - широкий реальный корпус ещё не доказан;
+   - summary seat-result lines ещё не превращаются в полноценную структурную модель результата.
 
-`parser_worker import-local` now writes:
+2. **Normalizer**
+   - на покрытых тестами кейсах выглядит хорошим;
+   - для общего tracker-core ещё не replay-grade вне committed pack;
+   - pot winner mapping всё ещё опирается на search over aggregated collect amounts, но ambiguous mappings теперь не materialize-ят guessed `hand_pot_winners`.
 
-- `import.source_files`
-- `import.import_jobs`
-- `import.file_fragments`
-- `core.tournaments`
-- `core.tournament_entries`
-- `core.hands`
-- `core.hand_seats`
-- `core.hand_hole_cards`
-- `core.hand_actions`
-- `core.hand_boards`
-- `core.hand_showdowns`
-- `core.hand_pots`
-- `core.hand_pot_contributions`
-- `core.hand_pot_winners`
-- `core.hand_returns`
-- `core.parse_issues`
-- `derived.hand_state_resolutions`
-- `derived.hand_eliminations`
-- `derived.street_hand_strength`
-- `derived.mbr_stage_resolution`
-- `analytics.player_hand_bool_features`
-- `analytics.player_hand_num_features`
-- `analytics.player_hand_enum_features`
+3. **MBR-specific layer**
+   - `played_ft_hand` есть и это хорошо;
+   - boundary-zone больше не placeholder;
+   - boundary v1 уже пишет candidate-based `boundary_ko_ev / min / max`;
+   - это пока legacy-compatible point estimate, а не финальный uncertainty-aware resolver.
 
-Hand-child persistence is intentionally idempotent:
+4. **Tournament economics**
+   - `total_payout_money`, `regular_prize_money` и `mystery_money_total` уже materialize'ятся;
+   - reference tables seeded под current public GG Royal buy-ins `$0.25 / $1 / $3 / $10 / $25`;
+   - big-KO decoder уже существует, но пока не доведён до stat-card materialization layer.
 
-- `core.hands` is upserted by `(player_profile_id, external_hand_id)`
-- child rows are replaced for the current hand before re-insert
-- `derived.street_hand_strength` rows are replaced for the current `hand_id + descriptor_version` before re-insert
-- post-import runtime features are full-refreshed for the current `player_profile_id` and `mbr_runtime_v1`
+5. **Web/system readiness**
+   - это пока CLI importer, а не сервис для школы;
+   - нет API, auth, upload queue, object storage, RLS.
 
-## Testing
+## Важные технические ограничения текущего состояния
 
-- `cargo test` covers fixture parsing and first normalizer invariants
-- `bash scripts/db_bootstrap.sh` is the canonical repo bootstrap
-- `bash scripts/backend_test.sh` is the canonical root backend smoke gate
-- `bash backend/scripts/bootstrap_backend_dev.sh` and `bash backend/scripts/run_backend_checks.sh` remain backend-focused helper gates
-- `parser_worker` has:
-  - a unit test for canonical hand -> persistence row mapping
-  - a unit test for normalized hand -> `hand_state_resolutions` mapping
-  - a unit test for exact elimination extraction on an FT all-in hand
-  - a unit test for FT/rush `mbr_stage_resolution` mapping
-  - a dedicated parser-core test suite for exact `street_hand_strength` descriptors
-  - a regression test for repeated `collect` lines by the same player
-  - an ignored integration test for real PostgreSQL writes
-  - an ignored integration test for analytics refresh and seed runtime queries
+- `hand_started_at` и `started_at` пока фактически не нормализуются и не используются как надёжное время для аналитики;
+- raw/local/provenance timestamp contract уже пишется, но canonical UTC time всё ещё intentionally `NULL`;
+- `import-local` жёстко завязан на dev-контекст (`Hero`, `Check Mate Dev Org`);
+- `source_files` уже дедуплицируются по `(player_profile_id, room, file_kind, sha256)`, но ingest всё ещё dev-only и не заменяет будущий web/API pipeline;
+- runtime materializer делает полный refresh feature-rows для игрока после каждого импорта;
+- `hero_exact_ko_count` сейчас трактуется как число KO-событий, а не как KO-share/эквивалент полного KO;
+- `is_nut_hand` и `is_nut_draw` в street strength v1 намеренно остаются `NULL`;
+- boundary KO persistence пока ограничена boundary v1 point estimate;
+- pure `big_ko` decoder ещё не подключён к final stat/materialization contract.
 
-## Known Limits
+## Что нужно следующим слоем
 
-- hand/tournament timestamps are still stored as `NULL` until GG MBR timezone normalization is specified exactly
-- `derived.mbr_stage_resolution` now persists the exact `played_ft_hand` slice, exact `ft_table_size`, and the estimated last-rush boundary candidate hand
-- `derived.hand_eliminations` now persists exact pot-specific KO attribution including `resolved_by_pot_no`, `hero_involved`, `hero_share_fraction`, `is_split_ko`, `split_n`, `is_sidepot_based`, and `certainty_state`
-- `derived.street_hand_strength` now persists exact street-level descriptors for Hero and showdown-known opponents, but `is_nut_hand` / `is_nut_draw` remain intentionally `NULL` in v1
-- `mbr_stats_runtime` currently exposes only seed exact-safe stats and still intentionally excludes session/date filters
-- boundary-zone and boundary-KO fields are still intentionally unresolved/uncertain beyond the boundary-candidate flag
-- server FT stats and AST/filter engine come later in the plan
+1. street hand strength v2;
+2. feature registry + stat registry + AST engine;
+3. web/API ingest.
 
-## Useful Commands
+## Основные команды
 
 ```bash
 cd backend
-bash scripts/bootstrap_backend_dev.sh
 cargo test
-bash scripts/run_backend_checks.sh
 cargo run -p parser_worker -- "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local "fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt"
 ```
 
-`import-local` expects `CHECK_MATE_DATABASE_URL` in the environment.
-
-For a generic local setup, use the Docker PostgreSQL from the project root and export:
-
-```bash
-export CHECK_MATE_DATABASE_URL="host=localhost port=5432 user=postgres password=postgres dbname=check_mate_dev"
-```
+Canonical first-run path для проекта всё равно идёт **из корня репозитория** через:
+- `docker-compose.yml`
+- `scripts/`
+- `Makefile`

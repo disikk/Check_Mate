@@ -1,249 +1,385 @@
 # Чёткий план исправления и продолжения разработки
 
-## Принцип
+## Базовый принцип
 
-Порядок работ фиксированный:
+Порядок фиксированный. Нельзя перепрыгивать через этапы.
 
-1. reproducible environment
-2. full GG parser coverage
-3. replay-grade normalizer
-4. street hand strength
-5. corrected MBR stage/KO layer
-6. перенос MBR Stats
-7. stat/filter AST engine
-8. web backend
-9. frontend integration
-10. popup/HUD
+1. Репозиторий и воспроизводимость.
+2. Схема БД v2.
+3. Реальный ingest pipeline.
+4. Полное покрытие GG parser.
+5. Replay-grade normalizer.
+6. MBR stage/economics layer.
+7. Street hand strength v2.
+8. Feature/stat engine.
+9. Перенос каталога MBR Stats.
+10. Web backend для школы.
+11. Frontend integration.
+12. Popup/HUD и performance layer.
 
-Нельзя перепрыгивать через этапы.
+Acceptance criteria по фазам лежат в `docs/QUALITY_GATES.md`.
 
----
-
-## Фаза 1. Привести среду к воспроизводимому виду
-
-### Задачи
-
-1. Удалить из репозитория лишние артефакты сборки.
-2. Держать golden fixtures внутри проекта или в официальном приватном storage с bootstrap-script.
-3. Добиться сценария:
-   - clone
-   - db up
-   - migrations
-   - cargo test
-   - fixture import
-4. Добавить CI-пайплайн, который проверяет:
-   - migrations
-   - parser tests
-   - normalizer tests
-   - import-local tests
-
-### Критерий завершения
-
-Новый разработчик без ручной магии поднимает проект с нуля по runbook.
+Статус на `2026-03-24`:
+- Phase 1 schema hardening закрыта через `backend/migrations/0004_exact_core_schema_v2.sql`;
+- committed-pack slice для parser coverage и replay-grade exact core закрыт;
+- stage/economics foundation уже реализован;
+- следующий логический шаг после текущего exact-core hardening: **Фаза 6 / street hand strength v2**.
 
 ---
 
-## Фаза 2. Закрыть parser coverage для GG MBR
+## Фаза 0. Привести репозиторий в воспроизводимое состояние
 
-### Задачи
+### Цель
+Сделать так, чтобы любой разработчик и любой агент могли одинаково поднять и проверить проект.
 
-1. Собрать расширенный golden pack реальных GG HH/TS.
-2. Зафиксировать каталог всех syntax patterns.
-3. На каждый pattern сделать fixture test.
-4. Любая неизвестная строка должна либо:
-   - быть осознанно whitelisted как info;
-   - либо падать в parse issue.
-5. Проверить все формы:
-   - hidden deal lines;
-   - collect lines;
-   - summary lines;
+### Сделать
+1. Удалить из репозитория и будущих архиваций:
+   - `dist/`
+   - `backend/target/`
+   - `__MACOSX/`
+   - `.DS_Store`
+2. Зафиксировать root `.gitignore`.
+3. Держать `.env.example` в корне.
+4. Зафиксировать committed fixtures как канонический minimal pack.
+5. Привести все README/runbook-файлы к одному фактическому состоянию проекта.
+6. Поднять CI минимум на:
+   - migrations;
+   - parser tests;
+   - normalizer tests;
+   - frontend build.
+
+### Выходные артефакты
+- чистый репозиторий;
+- `.env.example`;
+- root `.gitignore`;
+- CI pipeline.
+
+### Gate
+См. `G0` в `docs/QUALITY_GATES.md`.
+
+---
+
+## Фаза 1. Усилить схему БД до v2
+
+### Цель
+Довести foundation schema до уровня, на котором реально можно строить систему для школы и stat engine.
+
+### Сделать
+
+### 1.1 Добавить недостающие сущности
+1. `core.player_aliases`
+2. `import.source_file_members`
+3. `import.job_attempts`
+4. `ref.mbr_buyin_configs`
+5. `ref.mbr_regular_prizes`
+6. `ref.mbr_mystery_envelopes`
+7. `analytics.feature_catalog`
+8. `analytics.stat_catalog`
+9. `analytics.stat_dependencies`
+10. `analytics.materialization_policies`
+
+### 1.2 Добавить временные поля
+Для турниров и рук хранить минимум:
+- raw time string;
+- parsed local time;
+- utc time;
+- timezone provenance.
+
+### 1.3 Усилить целостность
+Добавить composite FK/unique constraints для:
+- `(hand_id, seat_no)` child tables;
+- `(hand_id, pot_no)` pot child tables;
+- source file dedupe;
+- archive-member dedupe.
+
+### 1.4 Согласовать reference model
+Убрать концептуальную рассинхронизацию, где часть room/model живёт как text, а часть как reference tables.
+
+### Выходные артефакты
+- миграция `0004_exact_core_schema_v2.sql`;
+- обновлённый seed reference data;
+- схема, достаточная для stat engine и web foundation.
+
+### Gate
+См. `G1`.
+
+### Статус
+Закрыто в текущем snapshot.
+
+---
+
+## Фаза 2. Построить реальный ingest pipeline
+
+### Цель
+Перестать опираться на dev-only `import-local` как на основной путь загрузки.
+
+### Сделать
+1. API endpoint для загрузки ZIP/TXT.
+2. Сохранение файла в object storage.
+3. Создание `source_file` + `import_job`.
+4. Worker contract для разбора job.
+5. ZIP splitting → `source_file_members`.
+6. Dedup policy на source files и members.
+7. Retry model через `job_attempts`.
+8. Progress/state model для UI.
+
+### Выходные артефакты
+- API contract;
+- parser worker contract;
+- object storage contract;
+- import state machine.
+
+### Gate
+См. `G2` и `G8` частично.
+
+---
+
+## Фаза 3. Закрыть parser coverage для GG MBR
+
+### Цель
+Сделать parser форматно-полным для реального GG MBR корпуса.
+
+### Сделать
+1. Собрать expanded golden pack.
+2. Завести syntax catalog.
+3. На каждый syntax pattern сделать fixture test.
+4. Поддержать и классифицировать:
+   - hidden dealt lines;
    - showdown variants;
-   - uncalled returns;
-   - split pots;
-   - repeated collect.
+   - collect variants;
+   - summary seat-result lines;
+   - repeated collect;
+   - no-show / muck / partial reveal, если встретятся;
+   - future edge variants из реального корпуса.
+5. Ввести нормальный severity model для parse issues:
+   - info;
+   - warning;
+   - error.
+6. Не позволять новой неизвестной строке исчезать без следа.
 
-### Критерий завершения
+### Важное требование
+Parser не считает статы. Parser только строит каноническую модель.
 
-На golden pack нет непонятных warning-level строк, кроме специально whitelisted.
+### Gate
+См. `G2`.
 
----
-
-## Фаза 3. Довести normalizer до replay-grade
-
-### Задачи
-
-1. Построить полноценный replay state machine.
-2. Проверить exact committed / returns / side pots / winners.
-3. Заполнить exact pot layer во всех покрытиях.
-4. Расширить synthetic edge-cases:
-   - split KO
-   - side-pot KO
-   - multiple winners
-   - uncalled return
-   - short stack bust in side pot
-   - repeated collect
-   - no-show/muck если встретятся
-5. Зафиксировать инварианты:
-   - chip conservation
-   - pot conservation
-   - pot-winner coverage
-
-### Критерий завершения
-
-На golden pack и synthetic edge-cases нет несходимостей по стеку и банкам.
+### Статус
+Закрыто для committed `9 HH + 9 TS` GG pack:
+- syntax catalog зафиксирован в `docs/COMMITTED_PACK_SYNTAX_CATALOG.md`;
+- parser-worker пишет structured parse issue severity;
+- committed pack держит `warning-level parse issues = 0`.
 
 ---
 
-## Фаза 4. Реализовать street hand strength
+## Фаза 4. Довести normalizer до replay-grade exact core
 
-### Задачи
+### Цель
+Сделать ядро, на котором можно без стыда строить popup, filters и stats.
 
-1. Сделать evaluator для Hero на flop / turn / river.
-2. Считать:
-   - best_hand_class
-   - pair_strength
-   - flush draw
-   - backdoor flush draw
-   - open-ended
-   - gutshot
-   - double gutshot
-   - pair+draw
-   - overcards
-   - air
-   - missed_draw_by_river
-3. Писать результаты в `derived.street_hand_strength`.
-4. Сделать fixture tests под эти признаки.
+### Сделать
+1. Полный replay state machine.
+2. Exact pot tree:
+   - main pot;
+   - side pots;
+   - returns;
+   - winners;
+   - winner shares.
+3. Persist exact pot layer во всех покрытых кейсах.
+4. Ввести расширенный synthetic edge-pack:
+   - split KO;
+   - side-pot KO;
+   - repeated collect;
+   - multiple winners;
+   - uncalled return;
+   - short stack side-pot bust;
+   - summary/showdown oddities.
+5. Зафиксировать invariants как жёсткое правило.
+6. Отдельно документировать uncertainty model для ambiguous mappings.
 
-### Критерий завершения
+### Gate
+См. `G3`.
 
-Можно выражать фильтры типа:
-- чек две улицы с air
-- river jam с missed draw
-- flop continue с pair+draw
-
----
-
-## Фаза 5. Исправить MBR stage / KO модель
-
-### Задачи
-
-1. Оставить `played_ft_hand` как exact-факт.
-2. Внедрить final boundary-KO EV формулу.
-3. Разделить:
-   - `ko_exact`
-   - `ko_boundary_ev`
-   - `ko_total_adj`
-4. Хранить:
-   - `boundary_ko_min`
-   - `boundary_ko_ev`
-   - `boundary_ko_max`
-   - `boundary_ko_method`
-   - `boundary_ko_certainty`
-5. Никаких int-округлений в базовых KO-агрегатах.
-6. Для eliminations хранить и использовать:
-   - `hero_involved`
-   - `hero_share_fraction`
-   - `split_n`
-   - `is_sidepot_based`
-
-### Критерий завершения
-
-Boundary-логика формализована и не смешивается с exact FT logic.
+### Статус
+Закрыто для current exact-core scope:
+- replay ledger остаётся source-of-truth для pots/contributions;
+- ambiguous winner mappings больше не materialize-ят guessed `hand_pot_winners`;
+- unsatisfied mappings уходят в `invariant_errors`;
+- committed pack и synthetic edge-pack держат invariants зелёными.
 
 ---
 
-## Фаза 6. Перенести каталог MBR Stats
+## Фаза 5. Исправить MBR-specific слой
 
-### Задачи
+### Цель
+Сделать корректный MBR stage/KO/economics слой поверх exact core.
 
-1. Инвентаризировать все старые статы.
-2. Каждый стат классифицировать:
-   - exact
-   - estimated
-   - expression
-   - fun
-3. Перенести статы на новый source-of-truth слой.
-4. Явно разделить exact и estimated версии там, где это нужно.
-5. Убрать legacy assumptions старого `MBR Stats`.
+### Сделать
 
-### Критерий завершения
+### 5.1 Stage model
+Разделить и хранить отдельно:
+- `played_ft_hand` — exact;
+- `entered_boundary_zone` — estimated/uncertain;
+- `ft_table_size` — exact observed seated players on 9-max hand;
+- `boundary_ko_min`;
+- `boundary_ko_ev`;
+- `boundary_ko_max`;
+- `boundary_ko_method`;
+- `boundary_ko_certainty`.
 
-Все статы из каталога доступны из нового ядра и имеют корректную классификацию.
+### 5.2 Tournament economics
+Импортировать и рассчитывать:
+- `regular_prize_money`;
+- `mystery_money_total`;
+- `total_payout_money`;
+- `buyin` components from reference tables.
 
----
+### 5.3 Big KO
+Убрать greedy decomposition.
+Сделать posterior / DP decoder по:
+- official envelope distribution;
+- total mystery money;
+- split factors;
+- KO event count.
 
-## Фаза 7. Построить AST/filter/stat engine
+### Gate
+См. `G5`.
 
-### Задачи
-
-1. Ввести feature registry.
-2. Ввести stat registry.
-3. Реализовать AST для фильтров.
-4. Реализовать AST для выражений/stat formulas.
-5. Реализовать planner/executor.
-6. Отдельно определить policy materialization hot-features.
-
-### Критерий завершения
-
-Новые статы и popup-блоки добавляются через каталоги и AST, а не hand-coded классами.
-
----
-
-## Фаза 8. Сделать web backend для школы
-
-### Задачи
-
-1. Auth:
-   - invite flow
-   - password setup
-   - session strategy
-2. Role model:
-   - student
-   - coach
-   - org_admin
-   - super_admin
-3. Visibility model:
-   - student sees own data
-   - coach sees own groups/org scope
-   - super_admin sees all
-4. Upload API
-5. Import job API
-6. Stats/report API
-7. Parse issues API
-
-### Критерий завершения
-
-Ученики и тренеры реально работают в одной системе с разделённым доступом.
+### Статус
+Foundation-layer уже реализован в текущем snapshot; phase не является следующим блокером.
 
 ---
 
-## Фаза 9. Подключить frontend к живому API
+## Фаза 6. Довести street hand strength до v2
 
-### Задачи
+### Цель
+Сделать hand-strength слой пригодным для будущих фильтров и статов.
 
-1. Убрать mock data.
-2. Подключить auth.
-3. Подключить real upload flow.
-4. Подключить dashboard/stat views.
-5. Сделать coach aggregate pages.
-6. Сделать parse issue drilldown.
+### Сделать
+1. Проверить и дополнить current descriptor set.
+2. Завершить:
+   - `is_nut_hand`;
+   - `is_nut_draw`;
+   - missed-draw semantics;
+   - pair+draw / combo-draw / overcards / air rules.
+3. Явно зафиксировать, какие descriptors exact для Hero, а какие только для showdown-known opponents.
+4. Добавить fixtures под реальные фильтры будущего popup.
 
-### Критерий завершения
-
-Frontend больше не зависит от моков и работает на живой БД.
+### Gate
+См. `G4`.
 
 ---
 
-## Фаза 10. Реализовать giant popup / HUD layer
+## Фаза 7. Построить feature/stat engine
 
-### Задачи
+### Цель
+Перейти от hand-coded статов к нормальному движку признаков, фильтров и формул.
 
-1. Собрать popup stat catalog.
-2. Реализовать display groups.
-3. Реализовать drilldown filters.
-4. Сделать expression stats.
-5. Сделать performance tuning по реальным query patterns.
+### Сделать
+1. `feature_registry`
+2. `stat_registry`
+3. AST filters
+4. AST expressions
+5. planner
+6. executor
+7. exact/estimated/fun policy
+8. selective materialization hot-features
 
-### Критерий завершения
+### Принцип
+Source of truth — canonical + normalized + derived data.
+Materialized features — только ускорение, не основной источник истины.
 
-Большая часть поп-апа строится через единый stat/query engine.
+### Gate
+См. `G6`.
+
+---
+
+## Фаза 8. Перенести весь каталог MBR Stats
+
+### Цель
+Перевести все 31 legacy stat-модуля на новое ядро.
+
+### Сделать
+1. Для каждого stat из inventory зафиксировать:
+   - final formula;
+   - dependencies;
+   - exactness class;
+   - blockers;
+   - acceptance fixture.
+2. Переносить статы не Python-классами, а через registry/AST.
+3. Для каждого stat сделать одну из категорий:
+   - `exact`;
+   - `estimated`;
+   - `expression`;
+   - `fun`.
+4. Для спорных stat-ов хранить раздельно exact и estimated компоненты.
+
+### Gate
+См. `G7`.
+
+---
+
+## Фаза 9. Сделать web backend для школы
+
+### Цель
+Построить реальную систему доступа и работы с данными.
+
+### Сделать
+1. auth-flow;
+2. invite flow;
+3. sessions;
+4. role model;
+5. RLS policy design;
+6. upload/import API;
+7. stats/report API;
+8. parse issues API;
+9. coach aggregate API.
+
+### Gate
+См. `G8`.
+
+---
+
+## Фаза 10. Подключить frontend к живому backend
+
+### Цель
+Убрать mocks из основных пользовательских сценариев.
+
+### Сделать
+1. убрать mock upload;
+2. убрать mock stats;
+3. подключить auth;
+4. подключить progress/import lifecycle;
+5. сделать student views;
+6. сделать coach views;
+7. сделать parse issue drilldown.
+
+### Gate
+См. `G9`.
+
+---
+
+## Фаза 11. Реализовать большой popup / HUD
+
+### Цель
+Построить popup-слой поверх stat/query engine, а не костылями.
+
+### Сделать
+1. popup stat catalog;
+2. display groups;
+3. drilldown filters;
+4. expression stats;
+5. performance tuning;
+6. selective precomputation where profiling proves it is needed.
+
+### Gate
+См. `G10`.
+
+---
+
+## Строгий запрет на неправильный порядок
+
+Нельзя:
+- переносить popup раньше stat engine;
+- переносить массу legacy stat-ов раньше corrected MBR layer;
+- строить UI на живые данные раньше backend visibility model;
+- считать проект “уже почти продуктом” по одному clean fixture-pack.

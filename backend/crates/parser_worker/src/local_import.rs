@@ -36,6 +36,7 @@ struct DevContext {
     organization_id: Uuid,
     user_id: Uuid,
     player_profile_id: Uuid,
+    player_aliases: Vec<String>,
     room_id: Uuid,
     format_id: Uuid,
 }
@@ -98,6 +99,7 @@ struct HandShowdownRow {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParseIssueRow {
+    severity: String,
     code: String,
     message: String,
     raw_line: Option<String>,
@@ -281,6 +283,37 @@ fn ensure_dev_context(tx: &mut Transaction<'_>) -> Result<DevContext> {
         .get(0)
     };
 
+    tx.execute(
+        "INSERT INTO core.player_aliases (
+            organization_id,
+            player_profile_id,
+            room,
+            alias,
+            is_primary,
+            source
+        )
+        VALUES ($1, $2, 'gg', $3, TRUE, 'dev_context')
+        ON CONFLICT (player_profile_id, room, alias)
+        DO UPDATE SET
+            is_primary = TRUE,
+            source = EXCLUDED.source",
+        &[&organization_id, &player_profile_id, &DEV_PLAYER_NAME],
+    )?;
+
+    let player_aliases = tx
+        .query(
+            "SELECT alias
+             FROM core.player_aliases
+             WHERE organization_id = $1
+               AND player_profile_id = $2
+               AND room = 'gg'
+             ORDER BY is_primary DESC, created_at, alias",
+            &[&organization_id, &player_profile_id],
+        )?
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>();
+
     let room_id = tx
         .query_one("SELECT id FROM core.rooms WHERE code = 'gg'", &[])?
         .get(0);
@@ -292,6 +325,7 @@ fn ensure_dev_context(tx: &mut Transaction<'_>) -> Result<DevContext> {
         organization_id,
         user_id,
         player_profile_id,
+        player_aliases,
         room_id,
         format_id,
     })
@@ -306,7 +340,9 @@ fn import_tournament_summary(
     let summary = parse_tournament_summary(input)?;
     let tournament_entry_economics = load_tournament_entry_economics(tx, context, &summary)?;
     let source_file_id = insert_source_file(tx, context, path, input, "ts")?;
+    insert_source_file_member(tx, source_file_id, path, "ts", input)?;
     let import_job_id = insert_import_job(tx, context.organization_id, source_file_id)?;
+    insert_job_attempt(tx, import_job_id)?;
     insert_file_fragment(tx, source_file_id, 0, None, "summary", input)?;
 
     let tournament_id: Uuid = tx
@@ -324,6 +360,9 @@ fn import_tournament_summary(
                 currency,
                 max_players,
                 started_at,
+                started_at_raw,
+                started_at_local,
+                started_at_tz_provenance,
                 source_summary_file_id
             )
             VALUES (
@@ -335,7 +374,10 @@ fn import_tournament_summary(
                 'USD',
                 $10,
                 NULL,
-                $11
+                $11,
+                replace($11, '/', '-')::timestamp,
+                'gg_text_without_timezone',
+                $12
             )
             ON CONFLICT (player_profile_id, room_id, external_tournament_id)
             DO UPDATE SET
@@ -346,6 +388,9 @@ fn import_tournament_summary(
                 currency = EXCLUDED.currency,
                 max_players = EXCLUDED.max_players,
                 started_at = COALESCE(EXCLUDED.started_at, core.tournaments.started_at),
+                started_at_raw = EXCLUDED.started_at_raw,
+                started_at_local = EXCLUDED.started_at_local,
+                started_at_tz_provenance = EXCLUDED.started_at_tz_provenance,
                 source_summary_file_id = COALESCE(EXCLUDED.source_summary_file_id, core.tournaments.source_summary_file_id)
             RETURNING id",
             &[
@@ -359,6 +404,7 @@ fn import_tournament_summary(
                 &cents_to_f64(summary.bounty_cents),
                 &cents_to_f64(summary.rake_cents),
                 &(summary.entrants as i32),
+                &summary.started_at,
                 &source_file_id,
             ],
         )?
@@ -452,7 +498,9 @@ fn import_hand_history(
         })?;
 
     let source_file_id = insert_source_file(tx, context, path, input, "hh")?;
+    insert_source_file_member(tx, source_file_id, path, "hh", input)?;
     let import_job_id = insert_import_job(tx, context.organization_id, source_file_id)?;
+    insert_job_attempt(tx, import_job_id)?;
     let stage_facts = canonical_hands
         .iter()
         .zip(normalized_hands.iter())
@@ -492,7 +540,7 @@ fn import_hand_history(
             fragment_id,
             canonical_hand,
         )?;
-        persist_canonical_hand(tx, source_file_id, fragment_id, hand_id, canonical_hand)?;
+        persist_canonical_hand(tx, context, source_file_id, fragment_id, hand_id, canonical_hand)?;
         let normalized_hand = &normalized_hands[index];
         persist_normalized_hand(tx, hand_id, &normalized_hand)?;
         let street_strength_rows = build_street_hand_strength_rows(canonical_hand)?;
@@ -535,6 +583,9 @@ fn upsert_hand_row(
                 source_file_id,
                 external_hand_id,
                 hand_started_at,
+                hand_started_at_raw,
+                hand_started_at_local,
+                hand_started_at_tz_provenance,
                 table_name,
                 table_max_seats,
                 dealer_seat_no,
@@ -552,19 +603,25 @@ fn upsert_hand_row(
                 $5,
                 NULL,
                 $6,
+                replace($6, '/', '-')::timestamp,
+                'gg_text_without_timezone',
                 $7,
                 $8,
                 $9,
                 $10,
                 $11,
+                $12,
                 'USD',
-                $12
+                $13
             )
             ON CONFLICT (player_profile_id, external_hand_id)
             DO UPDATE SET
                 tournament_id = EXCLUDED.tournament_id,
                 source_file_id = EXCLUDED.source_file_id,
                 hand_started_at = EXCLUDED.hand_started_at,
+                hand_started_at_raw = EXCLUDED.hand_started_at_raw,
+                hand_started_at_local = EXCLUDED.hand_started_at_local,
+                hand_started_at_tz_provenance = EXCLUDED.hand_started_at_tz_provenance,
                 table_name = EXCLUDED.table_name,
                 table_max_seats = EXCLUDED.table_max_seats,
                 dealer_seat_no = EXCLUDED.dealer_seat_no,
@@ -580,6 +637,7 @@ fn upsert_hand_row(
                 &tournament_id,
                 &source_file_id,
                 &hand.header.hand_id,
+                &hand.header.played_at,
                 &hand.header.table_name,
                 &(hand.header.max_players as i32),
                 &(hand.header.button_seat as i32),
@@ -594,6 +652,7 @@ fn upsert_hand_row(
 
 fn persist_canonical_hand(
     tx: &mut Transaction<'_>,
+    context: &DevContext,
     source_file_id: Uuid,
     fragment_id: Uuid,
     hand_id: Uuid,
@@ -608,15 +667,21 @@ fn persist_canonical_hand(
                 hand_id,
                 seat_no,
                 player_name,
+                player_profile_id,
                 starting_stack,
                 is_hero,
                 is_button
             )
-            VALUES ($1, $2, $3, $4, $5, $6)",
+            VALUES ($1, $2, $3, $4, $5, $6, $7)",
             &[
                 &hand_id,
                 &seat.seat_no,
                 &seat.player_name,
+                &context
+                    .player_aliases
+                    .iter()
+                    .any(|alias| alias == &seat.player_name)
+                    .then_some(context.player_profile_id),
                 &seat.starting_stack,
                 &seat.is_hero,
                 &seat.is_button,
@@ -721,11 +786,12 @@ fn persist_canonical_hand(
                 message,
                 raw_line
             )
-            VALUES ($1, $2, $3, 'warning', $4, $5, $6)",
+            VALUES ($1, $2, $3, $4, $5, $6, $7)",
             &[
                 &source_file_id,
                 &fragment_id,
                 &hand_id,
+                &issue.severity,
                 &issue.code,
                 &issue.message,
                 &issue.raw_line,
@@ -1346,11 +1412,11 @@ fn build_canonical_persistence(hand: &CanonicalParsedHand) -> CanonicalHandPersi
                 true,
                 hand.showdown_hands.contains_key(hero_name),
             ),
-            None => parse_issues.push(ParseIssueRow {
-                code: "hero_cards_missing_seat".to_string(),
-                message: format!("hero hole cards exist but hero `{hero_name}` has no seat row"),
-                raw_line: None,
-            }),
+            None => parse_issues.push(error_parse_issue(
+                "hero_cards_missing_seat",
+                format!("hero hole cards exist but hero `{hero_name}` has no seat row"),
+                None,
+            )),
         }
     }
 
@@ -1364,11 +1430,11 @@ fn build_canonical_persistence(hand: &CanonicalParsedHand) -> CanonicalHandPersi
                     shown_cards: shown_cards.clone(),
                 });
             }
-            None => parse_issues.push(ParseIssueRow {
-                code: "showdown_player_missing_seat".to_string(),
-                message: format!("showdown hand exists for `{player_name}` without seat row"),
-                raw_line: None,
-            }),
+            None => parse_issues.push(error_parse_issue(
+                "showdown_player_missing_seat",
+                format!("showdown hand exists for `{player_name}` without seat row"),
+                None,
+            )),
         }
     }
 
@@ -1382,11 +1448,11 @@ fn build_canonical_persistence(hand: &CanonicalParsedHand) -> CanonicalHandPersi
         if let Some(player_name) = &event.player_name
             && seat_no.is_none()
         {
-            parse_issues.push(ParseIssueRow {
-                code: "action_player_missing_seat".to_string(),
-                message: format!("action references `{player_name}` without seat row"),
-                raw_line: Some(event.raw_line.clone()),
-            });
+            parse_issues.push(error_parse_issue(
+                "action_player_missing_seat",
+                format!("action references `{player_name}` without seat row"),
+                Some(event.raw_line.clone()),
+            ));
         }
 
         actions.push(HandActionRow {
@@ -1456,17 +1522,31 @@ fn build_board_row(cards: &[String]) -> Option<HandBoardRow> {
 
 fn parse_warning_to_issue(warning: &str) -> ParseIssueRow {
     if let Some(raw_line) = warning.strip_prefix("unparsed_line: ") {
-        ParseIssueRow {
-            code: "unparsed_line".to_string(),
-            message: warning.to_string(),
-            raw_line: Some(raw_line.to_string()),
-        }
+        warning_parse_issue(
+            "unparsed_line",
+            warning.to_string(),
+            Some(raw_line.to_string()),
+        )
     } else {
-        ParseIssueRow {
-            code: "parser_warning".to_string(),
-            message: warning.to_string(),
-            raw_line: None,
-        }
+        warning_parse_issue("parser_warning", warning.to_string(), None)
+    }
+}
+
+fn warning_parse_issue(code: &str, message: String, raw_line: Option<String>) -> ParseIssueRow {
+    ParseIssueRow {
+        severity: "warning".to_string(),
+        code: code.to_string(),
+        message,
+        raw_line,
+    }
+}
+
+fn error_parse_issue(code: &str, message: String, raw_line: Option<String>) -> ParseIssueRow {
+    ParseIssueRow {
+        severity: "error".to_string(),
+        code: code.to_string(),
+        message,
+        raw_line,
     }
 }
 
@@ -1515,10 +1595,7 @@ fn insert_source_file(
     input: &str,
     file_kind: &str,
 ) -> Result<Uuid> {
-    let filename = Path::new(path)
-        .file_name()
-        .and_then(|value| value.to_str())
-        .ok_or_else(|| anyhow!("failed to derive filename from `{path}`"))?;
+    let filename = source_filename(path)?;
     let storage_uri = format!("local://{}", path.replace('\\', "/"));
     let sha256 = sha256_hex(input);
 
@@ -1537,6 +1614,14 @@ fn insert_source_file(
                 storage_uri
             )
             VALUES ($1, $2, $3, $4, 'gg', $5, $6, $7, $8, $9)
+            ON CONFLICT (player_profile_id, room, file_kind, sha256)
+            DO UPDATE SET
+                organization_id = EXCLUDED.organization_id,
+                uploaded_by_user_id = EXCLUDED.uploaded_by_user_id,
+                owner_user_id = EXCLUDED.owner_user_id,
+                original_filename = EXCLUDED.original_filename,
+                byte_size = EXCLUDED.byte_size,
+                storage_uri = EXCLUDED.storage_uri
             RETURNING id",
             &[
                 &context.organization_id,
@@ -1548,6 +1633,45 @@ fn insert_source_file(
                 &filename,
                 &(input.len() as i64),
                 &storage_uri,
+            ],
+        )?
+        .get(0))
+}
+
+fn insert_source_file_member(
+    tx: &mut Transaction<'_>,
+    source_file_id: Uuid,
+    path: &str,
+    member_kind: &str,
+    input: &str,
+) -> Result<Uuid> {
+    let member_path = source_filename(path)?;
+    let sha256 = sha256_hex(input);
+
+    Ok(tx
+        .query_one(
+            "INSERT INTO import.source_file_members (
+                source_file_id,
+                member_index,
+                member_path,
+                member_kind,
+                sha256,
+                byte_size
+            )
+            VALUES ($1, 0, $2, $3, $4, $5)
+            ON CONFLICT (source_file_id, member_index)
+            DO UPDATE SET
+                member_path = EXCLUDED.member_path,
+                member_kind = EXCLUDED.member_kind,
+                sha256 = EXCLUDED.sha256,
+                byte_size = EXCLUDED.byte_size
+            RETURNING id",
+            &[
+                &source_file_id,
+                &member_path,
+                &member_kind,
+                &sha256,
+                &(input.len() as i64),
             ],
         )?
         .get(0))
@@ -1575,6 +1699,30 @@ fn insert_import_job(
         .get(0))
 }
 
+fn insert_job_attempt(tx: &mut Transaction<'_>, import_job_id: Uuid) -> Result<Uuid> {
+    Ok(tx
+        .query_one(
+            "INSERT INTO import.job_attempts (
+                import_job_id,
+                attempt_no,
+                status,
+                stage,
+                started_at,
+                finished_at
+            )
+            VALUES ($1, 1, 'done', 'done', now(), now())
+            ON CONFLICT (import_job_id, attempt_no)
+            DO UPDATE SET
+                status = EXCLUDED.status,
+                stage = EXCLUDED.stage,
+                started_at = EXCLUDED.started_at,
+                finished_at = EXCLUDED.finished_at
+            RETURNING id",
+            &[&import_job_id],
+        )?
+        .get(0))
+}
+
 fn insert_file_fragment(
     tx: &mut Transaction<'_>,
     source_file_id: Uuid,
@@ -1596,6 +1744,12 @@ fn insert_file_fragment(
                 sha256
             )
             VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (source_file_id, fragment_index)
+            DO UPDATE SET
+                external_hand_id = EXCLUDED.external_hand_id,
+                kind = EXCLUDED.kind,
+                raw_text = EXCLUDED.raw_text,
+                sha256 = EXCLUDED.sha256
             RETURNING id",
             &[
                 &source_file_id,
@@ -1613,6 +1767,14 @@ fn sha256_hex(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+fn source_filename(path: &str) -> Result<String> {
+    Path::new(path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| anyhow!("failed to derive filename from `{path}`"))
 }
 
 fn cents_to_f64(cents: i64) -> f64 {
@@ -1740,6 +1902,40 @@ mod tests {
         );
 
         assert!(rows.parse_issues.is_empty());
+    }
+
+    #[test]
+    fn classifies_parse_issues_with_structured_severity_at_parser_worker_boundary() {
+        let mut hand = parse_canonical_hand(&first_ft_hand_text()).unwrap();
+        hand.parse_warnings
+            .push("unparsed_line: Dealer note: test-only unexpected line".to_string());
+        hand.actions.push(tracker_parser_core::models::HandActionEvent {
+            seq: 999,
+            street: Street::Summary,
+            player_name: Some("Ghost".to_string()),
+            action_type: ActionType::Fold,
+            is_forced: false,
+            is_all_in: false,
+            amount: None,
+            to_amount: None,
+            cards: None,
+            raw_line: "Ghost: folds".to_string(),
+        });
+
+        let rows = build_canonical_persistence(&hand);
+
+        assert!(rows.parse_issues.contains(&ParseIssueRow {
+            severity: "warning".to_string(),
+            code: "unparsed_line".to_string(),
+            message: "unparsed_line: Dealer note: test-only unexpected line".to_string(),
+            raw_line: Some("Dealer note: test-only unexpected line".to_string()),
+        }));
+        assert!(rows.parse_issues.contains(&ParseIssueRow {
+            severity: "error".to_string(),
+            code: "action_player_missing_seat".to_string(),
+            message: "action references `Ghost` without seat row".to_string(),
+            raw_line: Some("Ghost: folds".to_string()),
+        }));
     }
 
     #[test]
@@ -2022,6 +2218,627 @@ mod tests {
 
     #[test]
     #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0004_adds_schema_v2_contracts() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../migrations/0004_exact_core_schema_v2.sql"),
+        );
+
+        let table_contract_rows = client
+            .query(
+                "SELECT table_schema, table_name
+                 FROM information_schema.tables
+                 WHERE (table_schema, table_name) IN (
+                     ('core', 'player_aliases'),
+                     ('import', 'source_file_members'),
+                     ('import', 'job_attempts'),
+                     ('analytics', 'feature_catalog'),
+                     ('analytics', 'stat_catalog'),
+                     ('analytics', 'stat_dependencies'),
+                     ('analytics', 'materialization_policies')
+                 )
+                 ORDER BY table_schema, table_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            table_contract_rows,
+            vec![
+                ("analytics".to_string(), "feature_catalog".to_string()),
+                ("analytics".to_string(), "materialization_policies".to_string()),
+                ("analytics".to_string(), "stat_catalog".to_string()),
+                ("analytics".to_string(), "stat_dependencies".to_string()),
+                ("core".to_string(), "player_aliases".to_string()),
+                ("import".to_string(), "job_attempts".to_string()),
+                ("import".to_string(), "source_file_members".to_string()),
+            ]
+        );
+
+        let time_columns = client
+            .query(
+                "SELECT table_schema, table_name, column_name
+                 FROM information_schema.columns
+                 WHERE (table_schema, table_name, column_name) IN (
+                     ('core', 'tournaments', 'started_at_raw'),
+                     ('core', 'tournaments', 'started_at_local'),
+                     ('core', 'tournaments', 'started_at_tz_provenance'),
+                     ('core', 'hands', 'hand_started_at_raw'),
+                     ('core', 'hands', 'hand_started_at_local'),
+                     ('core', 'hands', 'hand_started_at_tz_provenance')
+                 )
+                 ORDER BY table_schema, table_name, column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, String>(0),
+                    row.get::<_, String>(1),
+                    row.get::<_, String>(2),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            time_columns,
+            vec![
+                ("core".to_string(), "hands".to_string(), "hand_started_at_local".to_string()),
+                ("core".to_string(), "hands".to_string(), "hand_started_at_raw".to_string()),
+                (
+                    "core".to_string(),
+                    "hands".to_string(),
+                    "hand_started_at_tz_provenance".to_string(),
+                ),
+                ("core".to_string(), "tournaments".to_string(), "started_at_local".to_string()),
+                ("core".to_string(), "tournaments".to_string(), "started_at_raw".to_string()),
+                (
+                    "core".to_string(),
+                    "tournaments".to_string(),
+                    "started_at_tz_provenance".to_string(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0004_adds_composite_integrity_constraints() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../migrations/0004_exact_core_schema_v2.sql"),
+        );
+
+        client
+            .batch_execute(
+                "BEGIN;
+                 INSERT INTO org.organizations (id, name) VALUES ('00000000-0000-0000-0000-000000000001', 'schema-test-org') ON CONFLICT (id) DO NOTHING;
+                 INSERT INTO auth.users (id, email, auth_provider, status) VALUES ('00000000-0000-0000-0000-000000000002', 'schema-test@example.com', 'seed', 'active') ON CONFLICT (id) DO NOTHING;
+                 INSERT INTO core.rooms (id, code, name) VALUES ('00000000-0000-0000-0000-000000000003', 'gg-schema-test', 'GG Schema Test') ON CONFLICT (id) DO NOTHING;
+                 INSERT INTO core.formats (id, room_id, code, name, max_players) VALUES ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000003', 'mbr-schema-test', 'MBR Schema Test', 18) ON CONFLICT (id) DO NOTHING;
+                 INSERT INTO core.player_profiles (id, organization_id, owner_user_id, room, network, screen_name) VALUES ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'gg', 'gg', 'SchemaHero') ON CONFLICT (id) DO NOTHING;
+                 INSERT INTO import.source_files (id, organization_id, uploaded_by_user_id, owner_user_id, player_profile_id, room, file_kind, sha256, original_filename, byte_size, storage_uri)
+                 VALUES ('00000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000005', 'gg', 'hh', repeat('a', 64), 'schema-test.txt', 1, 'local://schema-test.txt') ON CONFLICT DO NOTHING;
+                 INSERT INTO core.tournaments (id, organization_id, player_profile_id, room_id, format_id, external_tournament_id, buyin_total, buyin_prize_component, buyin_bounty_component, fee_component, currency, max_players, source_summary_file_id)
+                 VALUES ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000004', 'schema-tournament', 25.00, 12.50, 10.50, 2.00, 'USD', 18, '00000000-0000-0000-0000-000000000006') ON CONFLICT DO NOTHING;
+                 INSERT INTO import.file_fragments (id, source_file_id, fragment_index, external_hand_id, kind, raw_text, sha256)
+                 VALUES ('00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000006', 0, 'schema-hand', 'hand', 'raw', repeat('b', 64)) ON CONFLICT DO NOTHING;
+                 INSERT INTO core.hands (id, organization_id, player_profile_id, tournament_id, source_file_id, external_hand_id, table_name, table_max_seats, dealer_seat_no, small_blind, big_blind, ante, currency, raw_fragment_id)
+                 VALUES ('00000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000006', 'schema-hand', '1', 9, 1, 100, 200, 25, 'USD', '00000000-0000-0000-0000-000000000008') ON CONFLICT DO NOTHING;
+                 INSERT INTO core.hand_seats (hand_id, seat_no, player_name, starting_stack, is_hero, is_button)
+                 VALUES ('00000000-0000-0000-0000-000000000009', 1, 'SchemaHero', 10000, true, true) ON CONFLICT DO NOTHING;
+                 INSERT INTO core.hand_pots (hand_id, pot_no, pot_type, amount)
+                 VALUES ('00000000-0000-0000-0000-000000000009', 1, 'main', 300) ON CONFLICT DO NOTHING;
+                 COMMIT;",
+            )
+            .unwrap();
+
+        let seat_fk_error = client
+            .execute(
+                "INSERT INTO core.hand_showdowns (
+                    hand_id,
+                    seat_no,
+                    shown_cards,
+                    best5_cards,
+                    hand_rank_class,
+                    hand_rank_value
+                )
+                 VALUES ($1, $2, ARRAY['As', 'Ah'], ARRAY['As', 'Ah', 'Kd', 'Qc', 'Jd'], 'pair', 1)",
+                &[&Uuid::parse_str("00000000-0000-0000-0000-000000000009").unwrap(), &2_i32],
+            )
+            .unwrap_err();
+        assert_eq!(
+            seat_fk_error.code(),
+            Some(&postgres::error::SqlState::FOREIGN_KEY_VIOLATION)
+        );
+        assert_eq!(
+            seat_fk_error
+                .as_db_error()
+                .and_then(|error| error.constraint()),
+            Some("fk_hand_showdowns_hand_seat")
+        );
+
+        let pot_fk_error = client
+            .execute(
+                "INSERT INTO core.hand_pot_winners (
+                    hand_id,
+                    pot_no,
+                    seat_no,
+                    share_amount
+                 )
+                 VALUES ($1, $2, $3, $4)",
+                &[
+                    &Uuid::parse_str("00000000-0000-0000-0000-000000000009").unwrap(),
+                    &2_i32,
+                    &1_i32,
+                    &300_i64,
+                ],
+            )
+            .unwrap_err();
+        assert_eq!(
+            pot_fk_error.code(),
+            Some(&postgres::error::SqlState::FOREIGN_KEY_VIOLATION)
+        );
+        assert_eq!(
+            pot_fk_error
+                .as_db_error()
+                .and_then(|error| error.constraint()),
+            Some("fk_hand_pot_winners_hand_pot")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn seed_populates_runtime_catalog_contracts() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../migrations/0004_exact_core_schema_v2.sql"),
+        );
+        apply_sql_file(
+            &mut client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+
+        let feature_catalog = client
+            .query(
+                "SELECT feature_key, feature_version, table_family, value_kind
+                 FROM analytics.feature_catalog
+                 ORDER BY feature_key",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, String>(0),
+                    row.get::<_, String>(1),
+                    row.get::<_, String>(2),
+                    row.get::<_, String>(3),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            feature_catalog,
+            vec![
+                ("ft_stage_bucket".to_string(), "mbr_runtime_v1".to_string(), "enum".to_string(), "enum".to_string()),
+                ("ft_table_size".to_string(), "mbr_runtime_v1".to_string(), "num".to_string(), "double".to_string()),
+                ("has_exact_ko".to_string(), "mbr_runtime_v1".to_string(), "bool".to_string(), "bool".to_string()),
+                ("has_sidepot_ko".to_string(), "mbr_runtime_v1".to_string(), "bool".to_string(), "bool".to_string()),
+                ("has_split_ko".to_string(), "mbr_runtime_v1".to_string(), "bool".to_string(), "bool".to_string()),
+                ("hero_exact_ko_count".to_string(), "mbr_runtime_v1".to_string(), "num".to_string(), "double".to_string()),
+                ("hero_sidepot_ko_count".to_string(), "mbr_runtime_v1".to_string(), "num".to_string(), "double".to_string()),
+                ("hero_split_ko_count".to_string(), "mbr_runtime_v1".to_string(), "num".to_string(), "double".to_string()),
+                ("played_ft_hand".to_string(), "mbr_runtime_v1".to_string(), "bool".to_string(), "bool".to_string()),
+            ]
+        );
+
+        let stat_catalog = client
+            .query(
+                "SELECT stat_key, stat_family, exactness_class
+                 FROM analytics.stat_catalog
+                 ORDER BY stat_key",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, String>(0),
+                    row.get::<_, String>(1),
+                    row.get::<_, String>(2),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            stat_catalog,
+            vec![
+                ("avg_finish_place".to_string(), "seed_snapshot".to_string(), "exact".to_string()),
+                ("avg_ko_per_tournament".to_string(), "seed_snapshot".to_string(), "exact".to_string()),
+                ("final_table_reach_percent".to_string(), "seed_snapshot".to_string(), "exact".to_string()),
+                ("roi_pct".to_string(), "seed_snapshot".to_string(), "exact".to_string()),
+                ("total_ko".to_string(), "seed_snapshot".to_string(), "exact".to_string()),
+            ]
+        );
+
+        let dependency_count: i64 = client
+            .query_one("SELECT COUNT(*) FROM analytics.stat_dependencies", &[])
+            .unwrap()
+            .get(0);
+        let policy_count: i64 = client
+            .query_one("SELECT COUNT(*) FROM analytics.materialization_policies", &[])
+            .unwrap()
+            .get(0);
+
+        assert!(dependency_count >= 5);
+        assert!(policy_count >= 9);
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn import_local_persists_time_provenance_members_and_alias_contracts() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0004_exact_core_schema_v2.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+
+        let ts_path = fixture_path(
+            "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        );
+        let hh_path =
+            fixture_path("../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+
+        let ts_report = import_path(&ts_path).unwrap();
+        let hh_report = import_path(&hh_path).unwrap();
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let player_profile_id = dev_player_profile_id(&mut client);
+
+        let tournament_time = client
+            .query_one(
+                "SELECT
+                    started_at::text,
+                    started_at_raw,
+                    started_at_local::text,
+                    started_at_tz_provenance
+                 FROM core.tournaments
+                 WHERE id = $1",
+                &[&ts_report.tournament_id],
+            )
+            .unwrap();
+
+        assert_eq!(tournament_time.get::<_, Option<String>>(0), None);
+        assert_eq!(
+            tournament_time.get::<_, Option<String>>(1).as_deref(),
+            Some("2026/03/16 10:44:11")
+        );
+        assert_eq!(
+            tournament_time.get::<_, Option<String>>(2).as_deref(),
+            Some("2026-03-16 10:44:11")
+        );
+        assert_eq!(
+            tournament_time.get::<_, Option<String>>(3).as_deref(),
+            Some("gg_text_without_timezone")
+        );
+
+        let hand_time = client
+            .query_one(
+                "SELECT
+                    hand_started_at::text,
+                    hand_started_at_raw,
+                    hand_started_at_local::text,
+                    hand_started_at_tz_provenance
+                 FROM core.hands
+                 WHERE source_file_id = $1
+                   AND external_hand_id = $2",
+                &[&hh_report.source_file_id, &FT_HAND_ID],
+            )
+            .unwrap();
+
+        assert_eq!(hand_time.get::<_, Option<String>>(0), None);
+        assert_eq!(
+            hand_time.get::<_, Option<String>>(1).as_deref(),
+            Some("2026/03/16 11:07:34")
+        );
+        assert_eq!(
+            hand_time.get::<_, Option<String>>(2).as_deref(),
+            Some("2026-03-16 11:07:34")
+        );
+        assert_eq!(
+            hand_time.get::<_, Option<String>>(3).as_deref(),
+            Some("gg_text_without_timezone")
+        );
+
+        let source_file_members = client
+            .query(
+                "SELECT source_file_id, member_index, member_path, member_kind
+                 FROM import.source_file_members
+                 WHERE source_file_id IN ($1, $2)
+                 ORDER BY member_kind, source_file_id",
+                &[&ts_report.source_file_id, &hh_report.source_file_id],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, Uuid>(0),
+                    row.get::<_, i32>(1),
+                    row.get::<_, String>(2),
+                    row.get::<_, String>(3),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            source_file_members,
+            vec![
+                (
+                    hh_report.source_file_id,
+                    0,
+                    "GG20260316-0344 - Mystery Battle Royale 25.txt".to_string(),
+                    "hh".to_string(),
+                ),
+                (
+                    ts_report.source_file_id,
+                    0,
+                    "GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
+                        .to_string(),
+                    "ts".to_string(),
+                ),
+            ]
+        );
+
+        let job_attempts = client
+            .query(
+                "SELECT attempt_no, status, stage
+                 FROM import.job_attempts
+                 WHERE import_job_id IN ($1, $2)
+                 ORDER BY import_job_id",
+                &[&ts_report.import_job_id, &hh_report.import_job_id],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, i32>(0),
+                    row.get::<_, String>(1),
+                    row.get::<_, String>(2),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            job_attempts,
+            vec![
+                (1, "done".to_string(), "done".to_string()),
+                (1, "done".to_string(), "done".to_string()),
+            ]
+        );
+
+        let alias_row = client
+            .query_one(
+                "SELECT alias, is_primary
+                 FROM core.player_aliases
+                 WHERE player_profile_id = $1
+                 ORDER BY created_at
+                 LIMIT 1",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        assert_eq!(alias_row.get::<_, String>(0), DEV_PLAYER_NAME);
+        assert!(alias_row.get::<_, bool>(1));
+
+        let hero_seat = client
+            .query_one(
+                "SELECT player_name, player_profile_id
+                 FROM core.hand_seats
+                 WHERE hand_id = (
+                     SELECT id
+                     FROM core.hands
+                     WHERE source_file_id = $1
+                       AND external_hand_id = $2
+                 )
+                   AND is_hero = TRUE",
+                &[&hh_report.source_file_id, &FT_HAND_ID],
+            )
+            .unwrap();
+        assert_eq!(hero_seat.get::<_, String>(0), DEV_PLAYER_NAME);
+        assert_eq!(
+            hero_seat.get::<_, Option<Uuid>>(1),
+            Some(player_profile_id)
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn import_local_reuses_source_files_and_members_on_repeat_import() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0004_exact_core_schema_v2.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+
+        let ts_path = fixture_path(
+            "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        );
+        let hh_path =
+            fixture_path("../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+
+        let first_ts_report = import_path(&ts_path).unwrap();
+        let first_hh_report = import_path(&hh_path).unwrap();
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let player_profile_id = dev_player_profile_id(&mut client);
+
+        let source_file_count_after_first: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM import.source_files
+                 WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let member_count_after_first: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM import.source_file_members members
+                 JOIN import.source_files files ON files.id = members.source_file_id
+                 WHERE files.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let import_job_count_after_first: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM import.import_jobs
+                 WHERE source_file_id IN ($1, $2)",
+                &[&first_ts_report.source_file_id, &first_hh_report.source_file_id],
+            )
+            .unwrap()
+            .get(0);
+        let attempt_count_after_first: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM import.job_attempts attempts
+                 JOIN import.import_jobs jobs ON jobs.id = attempts.import_job_id
+                 WHERE jobs.source_file_id IN ($1, $2)",
+                &[&first_ts_report.source_file_id, &first_hh_report.source_file_id],
+            )
+            .unwrap()
+            .get(0);
+
+        let second_ts_report = import_path(&ts_path).unwrap();
+        let second_hh_report = import_path(&hh_path).unwrap();
+
+        assert_eq!(first_ts_report.source_file_id, second_ts_report.source_file_id);
+        assert_eq!(first_hh_report.source_file_id, second_hh_report.source_file_id);
+
+        let source_file_count_after_second: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM import.source_files
+                 WHERE player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let member_count_after_second: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM import.source_file_members members
+                 JOIN import.source_files files ON files.id = members.source_file_id
+                 WHERE files.player_profile_id = $1",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+        let import_job_count_after_second: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM import.import_jobs
+                 WHERE source_file_id IN ($1, $2)",
+                &[&first_ts_report.source_file_id, &first_hh_report.source_file_id],
+            )
+            .unwrap()
+            .get(0);
+        let attempt_count_after_second: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM import.job_attempts attempts
+                 JOIN import.import_jobs jobs ON jobs.id = attempts.import_job_id
+                 WHERE jobs.source_file_id IN ($1, $2)",
+                &[&first_ts_report.source_file_id, &first_hh_report.source_file_id],
+            )
+            .unwrap()
+            .get(0);
+
+        assert_eq!(source_file_count_after_first + 0, source_file_count_after_second);
+        assert_eq!(member_count_after_first + 0, member_count_after_second);
+        assert_eq!(import_job_count_after_first + 2, import_job_count_after_second);
+        assert_eq!(attempt_count_after_first + 2, attempt_count_after_second);
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
     fn import_local_persists_canonical_hand_layer_to_postgres() {
         let _guard = db_test_guard();
         let database_url = env::var("CHECK_MATE_DATABASE_URL")
@@ -2035,6 +2852,10 @@ mod tests {
         apply_sql_file(
             &mut setup_client,
             &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0004_exact_core_schema_v2.sql"),
         );
         apply_sql_file(
             &mut setup_client,
@@ -2397,6 +3218,10 @@ mod tests {
         );
         apply_sql_file(
             &mut setup_client,
+            &fixture_path("../../migrations/0004_exact_core_schema_v2.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
             &fixture_path("../../seeds/0001_reference_data.sql"),
         );
 
@@ -2627,6 +3452,10 @@ mod tests {
         apply_sql_file(
             &mut setup_client,
             &fixture_path("../../migrations/0003_mbr_stage_economics.sql"),
+        );
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../migrations/0004_exact_core_schema_v2.sql"),
         );
         apply_sql_file(
             &mut setup_client,
@@ -2946,6 +3775,15 @@ mod tests {
             .unwrap();
         client
             .execute(
+                "DELETE FROM import.source_file_members
+                 WHERE source_file_id IN (
+                     SELECT id FROM import.source_files WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
                 "DELETE FROM core.hand_returns
                  WHERE hand_id IN (
                      SELECT id FROM core.hands WHERE player_profile_id = $1
@@ -3058,6 +3896,12 @@ mod tests {
                  WHERE source_file_id IN (
                      SELECT id FROM import.source_files WHERE player_profile_id = $1
                  )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM core.player_aliases WHERE player_profile_id = $1",
                 &[&player_profile_id],
             )
             .unwrap();

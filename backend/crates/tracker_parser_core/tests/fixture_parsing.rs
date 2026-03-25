@@ -229,6 +229,91 @@ fn accumulates_repeated_collect_lines_for_same_player() {
 }
 
 #[test]
+fn parses_committed_ante_hidden_dealt_and_ranked_show_surface_without_warnings() {
+    let raw = read_fixture("hh", "GG20260316-0338 - Mystery Battle Royale 25.txt");
+    let hand_text = find_hand_text(&raw, "Hero: posts the ante 60");
+    let hand = parse_canonical_hand(&hand_text).unwrap();
+
+    assert!(
+        hand.actions
+            .iter()
+            .any(|event| event.action_type == ActionType::PostAnte)
+    );
+    assert_eq!(hand.hero_name.as_deref(), Some("Hero"));
+    assert_eq!(
+        hand.hero_hole_cards,
+        Some(vec!["Qh".to_string(), "Kh".to_string()])
+    );
+    assert_eq!(hand.showdown_hands.get("Hero"), Some(&vec!["Qh".to_string(), "Kh".to_string()]));
+    assert_eq!(
+        hand.showdown_hands.get("ae7eda73"),
+        Some(&vec!["2s".to_string(), "6c".to_string()])
+    );
+    assert_eq!(hand.summary_total_pot, Some(1_944));
+    assert_eq!(hand.summary_rake_amount, Some(0));
+    assert_eq!(hand.summary_board.len(), 5);
+    assert!(hand.parse_warnings.is_empty());
+}
+
+#[test]
+fn parses_committed_check_bet_uncalled_and_collect_surface_without_warnings() {
+    let raw = read_fixture("hh", "GG20260316-0316 - Mystery Battle Royale 25.txt");
+    let hand_text = find_hand_text(&raw, "Hero: bets 73");
+    let hand = parse_canonical_hand(&hand_text).unwrap();
+
+    assert!(
+        hand.actions
+            .iter()
+            .any(|event| event.action_type == ActionType::Check)
+    );
+    assert!(
+        hand.actions
+            .iter()
+            .any(|event| event.action_type == ActionType::Bet)
+    );
+    assert!(
+        hand.actions
+            .iter()
+            .any(|event| event.action_type == ActionType::ReturnUncalled)
+    );
+    assert!(
+        hand.actions
+            .iter()
+            .any(|event| event.action_type == ActionType::Collect)
+    );
+    assert_eq!(hand.collected_amounts.get("Hero"), Some(&220));
+    assert!(hand.parse_warnings.is_empty());
+}
+
+#[test]
+fn preserves_unknown_non_seat_lines_as_unparsed_warnings() {
+    let hand = parse_canonical_hand(
+        r#"Poker Hand #BRPARSER1: Tournament #999101, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:30:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Villain (1,000 in chips)
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealer note: this line is not part of the parser contract
+Hero: raises 100 to 200
+Villain: folds
+Uncalled bet (100) returned to Hero
+*** SHOWDOWN ***
+Hero collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Hero collected (200)
+Seat 2: Villain folded before Flop"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        hand.parse_warnings,
+        vec!["unparsed_line: Dealer note: this line is not part of the parser contract"]
+    );
+}
+
+#[test]
 fn parses_all_committed_tournament_summary_fixtures() {
     for fixture in TS_FIXTURE_FILES {
         let raw = read_fixture("ts", fixture);
@@ -285,6 +370,15 @@ fn parses_all_committed_hand_history_fixtures_without_unexpected_warnings() {
 
 fn read_fixture(kind: &str, filename: &str) -> String {
     fs::read_to_string(fixture_path(kind, filename)).unwrap()
+}
+
+fn find_hand_text(raw: &str, needle: &str) -> String {
+    split_hand_history(raw)
+        .unwrap()
+        .into_iter()
+        .find(|hand| hand.raw_text.contains(needle))
+        .map(|hand| hand.raw_text)
+        .unwrap_or_else(|| panic!("no hand in fixture contains `{needle}`"))
 }
 
 fn fixture_path(kind: &str, filename: &str) -> PathBuf {
