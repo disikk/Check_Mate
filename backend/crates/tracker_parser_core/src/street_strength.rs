@@ -5,7 +5,7 @@ use crate::{
     models::{CanonicalParsedHand, CertaintyState, Street},
 };
 
-pub const STREET_HAND_STRENGTH_VERSION: &str = "gg_mbr_street_strength_v1";
+pub const STREET_HAND_STRENGTH_NUT_POLICY: &str = "deferred";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BestHandClass {
@@ -51,34 +51,71 @@ impl BestHandClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PairStrength {
-    None,
-    BoardPair,
+pub enum MadeHandCategory {
+    HighCard,
+    BoardPairOnly,
     Underpair,
-    BottomPair,
-    MiddlePair,
-    TopPairAceKicker,
-    TopPairBroadwayKicker,
-    TopPairWeakKicker,
+    ThirdPair,
+    SecondPair,
+    TopPairWeak,
+    TopPairGood,
+    TopPairTop,
     Overpair,
-    Trips,
+    TwoPair,
     Set,
+    Trips,
+    Straight,
+    Flush,
+    FullHouse,
+    Quads,
+    StraightFlush,
 }
 
-impl PairStrength {
+impl MadeHandCategory {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::HighCard => "high_card",
+            Self::BoardPairOnly => "board_pair_only",
+            Self::Underpair => "underpair",
+            Self::ThirdPair => "third_pair",
+            Self::SecondPair => "second_pair",
+            Self::TopPairWeak => "top_pair_weak",
+            Self::TopPairGood => "top_pair_good",
+            Self::TopPairTop => "top_pair_top",
+            Self::Overpair => "overpair",
+            Self::TwoPair => "two_pair",
+            Self::Set => "set",
+            Self::Trips => "trips",
+            Self::Straight => "straight",
+            Self::Flush => "flush",
+            Self::FullHouse => "full_house",
+            Self::Quads => "quads",
+            Self::StraightFlush => "straight_flush",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrawCategory {
+    None,
+    BackdoorFlushOnly,
+    Gutshot,
+    OpenEnded,
+    DoubleGutshot,
+    FlushDraw,
+    ComboDraw,
+}
+
+impl DrawCategory {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::None => "none",
-            Self::BoardPair => "board_pair",
-            Self::Underpair => "underpair",
-            Self::BottomPair => "bottom_pair",
-            Self::MiddlePair => "middle_pair",
-            Self::TopPairAceKicker => "top_pair_ace_kicker",
-            Self::TopPairBroadwayKicker => "top_pair_broadway_kicker",
-            Self::TopPairWeakKicker => "top_pair_weak_kicker",
-            Self::Overpair => "overpair",
-            Self::Trips => "trips",
-            Self::Set => "set",
+            Self::BackdoorFlushOnly => "backdoor_flush_only",
+            Self::Gutshot => "gutshot",
+            Self::OpenEnded => "open_ended",
+            Self::DoubleGutshot => "double_gutshot",
+            Self::FlushDraw => "flush_draw",
+            Self::ComboDraw => "combo_draw",
         }
     }
 }
@@ -89,19 +126,14 @@ pub struct StreetHandStrength {
     pub street: Street,
     pub best_hand_class: BestHandClass,
     pub best_hand_rank_value: i64,
-    pub pair_strength: PairStrength,
+    pub made_hand_category: MadeHandCategory,
+    pub draw_category: DrawCategory,
+    pub overcards_count: u8,
+    pub has_air: bool,
+    pub missed_flush_draw: bool,
+    pub missed_straight_draw: bool,
     pub is_nut_hand: Option<bool>,
     pub is_nut_draw: Option<bool>,
-    pub has_flush_draw: bool,
-    pub has_backdoor_flush_draw: bool,
-    pub has_open_ended: bool,
-    pub has_gutshot: bool,
-    pub has_double_gutshot: bool,
-    pub has_pair_plus_draw: bool,
-    pub has_overcards: bool,
-    pub has_air: bool,
-    pub has_missed_draw_by_river: bool,
-    pub descriptor_version: &'static str,
     pub certainty_state: CertaintyState,
 }
 
@@ -126,15 +158,12 @@ struct SeatDescriptorContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct StreetFlags {
-    has_flush_draw: bool,
-    has_backdoor_flush_draw: bool,
-    has_open_ended: bool,
-    has_gutshot: bool,
-    has_double_gutshot: bool,
-    has_pair_plus_draw: bool,
-    has_overcards: bool,
+struct StreetSignals {
+    draw_category: DrawCategory,
+    overcards_count: u8,
     has_air: bool,
+    has_frontdoor_flush_draw: bool,
+    has_player_specific_straight_draw: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,44 +186,44 @@ pub fn evaluate_street_hand_strength(
 
     for seat in known_seats.values() {
         let mut seat_rows = Vec::new();
+        let mut had_frontdoor_flush_draw = false;
+        let mut had_player_specific_straight_draw = false;
         for street in &streets {
             let street_board = street_board_cards(&board_cards, *street);
             let all_cards = all_cards(&seat.cards, &street_board);
             let evaluated = evaluate_best_hand(&all_cards);
-            let pair_strength =
-                pair_strength_for_street(&seat.cards, &street_board, evaluated.best_hand_class);
-            let draw_flags = build_draw_flags(&seat.cards, &street_board, &evaluated, *street);
+            let made_hand_category = made_hand_category_for_street(
+                &seat.cards,
+                &street_board,
+                evaluated.best_hand_class,
+            );
+            let street_signals =
+                build_street_signals(&seat.cards, &street_board, &evaluated, *street);
+
+            if *street != Street::River {
+                had_frontdoor_flush_draw |= street_signals.has_frontdoor_flush_draw;
+                had_player_specific_straight_draw |=
+                    street_signals.has_player_specific_straight_draw;
+            }
 
             seat_rows.push(StreetHandStrength {
                 seat_no: seat.seat_no,
                 street: *street,
                 best_hand_class: evaluated.best_hand_class,
                 best_hand_rank_value: evaluated.best_hand_rank_value,
-                pair_strength,
+                made_hand_category,
+                draw_category: street_signals.draw_category,
+                overcards_count: street_signals.overcards_count,
+                has_air: street_signals.has_air,
+                missed_flush_draw: false,
+                missed_straight_draw: false,
+                // Nut fields remain explicitly unavailable until a dedicated
+                // board-state policy is specified for this descriptor layer.
                 is_nut_hand: None,
                 is_nut_draw: None,
-                has_flush_draw: draw_flags.has_flush_draw,
-                has_backdoor_flush_draw: draw_flags.has_backdoor_flush_draw,
-                has_open_ended: draw_flags.has_open_ended,
-                has_gutshot: draw_flags.has_gutshot,
-                has_double_gutshot: draw_flags.has_double_gutshot,
-                has_pair_plus_draw: draw_flags.has_pair_plus_draw,
-                has_overcards: draw_flags.has_overcards,
-                has_air: draw_flags.has_air,
-                has_missed_draw_by_river: false,
-                descriptor_version: STREET_HAND_STRENGTH_VERSION,
                 certainty_state: CertaintyState::Exact,
             });
         }
-
-        let had_flush_family_draw = seat_rows
-            .iter()
-            .take_while(|row| row.street != Street::River)
-            .any(|row| row.has_flush_draw || row.has_backdoor_flush_draw);
-        let had_straight_family_draw = seat_rows
-            .iter()
-            .take_while(|row| row.street != Street::River)
-            .any(|row| row.has_open_ended || row.has_gutshot || row.has_double_gutshot);
 
         if let Some(river_row) = seat_rows.iter_mut().find(|row| row.street == Street::River) {
             let flush_completed = matches!(
@@ -205,9 +234,11 @@ pub fn evaluate_street_hand_strength(
                 river_row.best_hand_class,
                 BestHandClass::Straight | BestHandClass::StraightFlush
             );
-            river_row.has_missed_draw_by_river =
-                (had_flush_family_draw && !flush_completed)
-                    || (had_straight_family_draw && !straight_completed);
+            let suppress_missed_draw = should_suppress_missed_draw(river_row.best_hand_class);
+            river_row.missed_flush_draw =
+                !suppress_missed_draw && had_frontdoor_flush_draw && !flush_completed;
+            river_row.missed_straight_draw =
+                !suppress_missed_draw && had_player_specific_straight_draw && !straight_completed;
         }
 
         rows.extend(seat_rows);
@@ -346,21 +377,12 @@ fn evaluate_five_card_hand(cards: &[Card; 5]) -> EvaluatedHand {
         .iter()
         .all(|card| card.suit == cards.first().expect("cards").suit);
     let straight_high = highest_straight_high(&ranks);
-    let mut counts = rank_counts(&ranks)
-        .into_iter()
-        .collect::<Vec<(u8, u8)>>();
-    counts.sort_by(|left, right| {
-        right
-            .1
-            .cmp(&left.1)
-            .then_with(|| right.0.cmp(&left.0))
-    });
+    let mut counts = rank_counts(&ranks).into_iter().collect::<Vec<(u8, u8)>>();
+    counts.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| right.0.cmp(&left.0)));
 
-    let (best_hand_class, kickers) = if is_flush && straight_high.is_some() {
-        (
-            BestHandClass::StraightFlush,
-            vec![straight_high.expect("straight flush high card")],
-        )
+    let (best_hand_class, kickers) = if let Some(straight_high) = straight_high.filter(|_| is_flush)
+    {
+        (BestHandClass::StraightFlush, vec![straight_high])
     } else if counts[0].1 == 4 {
         let kicker = counts[1].0;
         (BestHandClass::Quads, vec![counts[0].0, kicker])
@@ -383,7 +405,10 @@ fn evaluate_five_card_hand(cards: &[Card; 5]) -> EvaluatedHand {
     } else if counts[0].1 == 2 && counts[1].1 == 2 {
         let high_pair = counts[0].0.max(counts[1].0);
         let low_pair = counts[0].0.min(counts[1].0);
-        (BestHandClass::TwoPair, vec![high_pair, low_pair, counts[2].0])
+        (
+            BestHandClass::TwoPair,
+            vec![high_pair, low_pair, counts[2].0],
+        )
     } else if counts[0].1 == 2 {
         let mut ordered = vec![counts[0].0];
         ordered.extend(
@@ -406,45 +431,63 @@ fn evaluate_five_card_hand(cards: &[Card; 5]) -> EvaluatedHand {
     }
 }
 
-fn build_draw_flags(
+fn build_street_signals(
     hole_cards: &[Card; 2],
     board: &[Card],
     evaluated: &EvaluatedHand,
     street: Street,
-) -> StreetFlags {
-    let all_cards = all_cards(hole_cards, board);
+) -> StreetSignals {
     let flush_draw = has_flush_draw(hole_cards, board, evaluated.best_hand_class, street);
     let backdoor_flush_draw =
         has_backdoor_flush_draw(hole_cards, board, evaluated.best_hand_class, street);
-    let completion_ranks = straight_completion_ranks(&all_cards);
+    let completion_ranks = straight_completion_ranks(hole_cards, board);
     let open_ended = !is_straight_family(evaluated.best_hand_class)
         && completion_ranks.len() >= 2
-        && has_four_consecutive_run(&all_cards);
+        && has_player_specific_four_consecutive_run(hole_cards, board);
     let double_gutshot = !is_straight_family(evaluated.best_hand_class)
         && completion_ranks.len() >= 2
         && !open_ended;
-    let gutshot = !is_straight_family(evaluated.best_hand_class)
-        && completion_ranks.len() == 1;
-    let has_active_draw = flush_draw || backdoor_flush_draw || open_ended || gutshot || double_gutshot;
-    let has_pair_family_value = matches!(
-        evaluated.best_hand_class,
-        BestHandClass::Pair | BestHandClass::TwoPair | BestHandClass::Trips | BestHandClass::FullHouse | BestHandClass::Quads
-    );
-    let overcards = evaluated.best_hand_class == BestHandClass::HighCard
-        && hole_cards
+    let gutshot = !is_straight_family(evaluated.best_hand_class) && completion_ranks.len() == 1;
+    let has_player_specific_straight_draw = open_ended || gutshot || double_gutshot;
+    let draw_category = if flush_draw && has_player_specific_straight_draw {
+        DrawCategory::ComboDraw
+    } else if flush_draw {
+        DrawCategory::FlushDraw
+    } else if double_gutshot {
+        DrawCategory::DoubleGutshot
+    } else if open_ended {
+        DrawCategory::OpenEnded
+    } else if gutshot {
+        DrawCategory::Gutshot
+    } else if backdoor_flush_draw {
+        DrawCategory::BackdoorFlushOnly
+    } else {
+        DrawCategory::None
+    };
+    let max_board_rank = board
+        .iter()
+        .map(|board_card| board_card.rank)
+        .max()
+        .unwrap_or(0);
+    let overcards_count = if evaluated.best_hand_class == BestHandClass::HighCard {
+        hole_cards
             .iter()
-            .all(|card| card.rank > board.iter().map(|board_card| board_card.rank).max().unwrap_or(0));
-    let air = evaluated.best_hand_class == BestHandClass::HighCard && !has_active_draw && !overcards;
+            .filter(|card| card.rank > max_board_rank)
+            .count() as u8
+    } else {
+        0
+    };
+    let has_air = evaluated.best_hand_class == BestHandClass::HighCard
+        && !flush_draw
+        && !has_player_specific_straight_draw
+        && overcards_count == 0;
 
-    StreetFlags {
-        has_flush_draw: flush_draw,
-        has_backdoor_flush_draw: backdoor_flush_draw,
-        has_open_ended: open_ended,
-        has_gutshot: gutshot,
-        has_double_gutshot: double_gutshot,
-        has_pair_plus_draw: has_pair_family_value && has_active_draw,
-        has_overcards: overcards,
-        has_air: air,
+    StreetSignals {
+        draw_category,
+        overcards_count,
+        has_air,
+        has_frontdoor_flush_draw: flush_draw,
+        has_player_specific_straight_draw,
     }
 }
 
@@ -484,10 +527,7 @@ fn has_backdoor_flush_draw(
             .any(|(hole_count, total_count)| *hole_count > 0 && *total_count == 3)
 }
 
-fn suited_hole_counts(
-    hole_cards: &[Card; 2],
-    board: &[Card],
-) -> BTreeMap<Suit, (usize, usize)> {
+fn suited_hole_counts(hole_cards: &[Card; 2], board: &[Card]) -> BTreeMap<Suit, (usize, usize)> {
     let mut counts = BTreeMap::new();
     for suit in [Suit::Clubs, Suit::Diamonds, Suit::Hearts, Suit::Spades] {
         let hole_count = hole_cards.iter().filter(|card| card.suit == suit).count();
@@ -497,30 +537,70 @@ fn suited_hole_counts(
     counts
 }
 
-fn straight_completion_ranks(cards: &[Card]) -> BTreeSet<u8> {
-    if highest_straight_high(&cards.iter().map(|card| card.rank).collect::<Vec<_>>()).is_some() {
+fn straight_completion_ranks(hole_cards: &[Card; 2], board: &[Card]) -> BTreeSet<u8> {
+    let current_ranks = all_cards(hole_cards, board)
+        .iter()
+        .map(|card| card.rank)
+        .collect::<Vec<_>>();
+    if highest_straight_high(&current_ranks).is_some() {
         return BTreeSet::new();
     }
 
     (2_u8..=14_u8)
         .filter(|candidate_rank| {
-            let mut ranks = cards.iter().map(|card| card.rank).collect::<Vec<_>>();
-            ranks.push(*candidate_rank);
-            highest_straight_high(&ranks).is_some()
+            completion_creates_player_specific_straight(hole_cards, board, *candidate_rank)
         })
         .collect()
 }
 
-fn has_four_consecutive_run(cards: &[Card]) -> bool {
-    let rank_set = mirrored_rank_set(&cards.iter().map(|card| card.rank).collect::<Vec<_>>());
-    (1_u8..=11_u8).any(|start| (start..=start + 3).all(|rank| rank_set.contains(&rank)))
+fn completion_creates_player_specific_straight(
+    hole_cards: &[Card; 2],
+    board: &[Card],
+    candidate_rank: u8,
+) -> bool {
+    let mut ranks = all_cards(hole_cards, board)
+        .iter()
+        .map(|card| card.rank)
+        .collect::<Vec<_>>();
+    ranks.push(candidate_rank);
+
+    let combined_rank_set = mirrored_rank_set(&ranks);
+    let hole_rank_set =
+        mirrored_rank_set(&hole_cards.iter().map(|card| card.rank).collect::<Vec<_>>());
+    let candidate_rank_set = mirrored_rank_set(&[candidate_rank]);
+
+    (1_u8..=10_u8).any(|start| {
+        let mut window = start..=start + 4;
+        window.clone().all(|rank| combined_rank_set.contains(&rank))
+            && window
+                .clone()
+                .any(|rank| candidate_rank_set.contains(&rank))
+            && window.any(|rank| hole_rank_set.contains(&rank))
+    })
 }
 
-fn pair_strength_for_street(
+fn has_player_specific_four_consecutive_run(hole_cards: &[Card; 2], board: &[Card]) -> bool {
+    let rank_set = mirrored_rank_set(
+        &all_cards(hole_cards, board)
+            .iter()
+            .map(|card| card.rank)
+            .collect::<Vec<_>>(),
+    );
+    let hole_rank_set =
+        mirrored_rank_set(&hole_cards.iter().map(|card| card.rank).collect::<Vec<_>>());
+    (1_u8..=11_u8).any(|start| (start..=start + 3).all(|rank| rank_set.contains(&rank)))
+        && (1_u8..=11_u8).any(|start| {
+            let mut window = start..=start + 3;
+            window.clone().all(|rank| rank_set.contains(&rank))
+                && window.any(|rank| hole_rank_set.contains(&rank))
+        })
+}
+
+fn made_hand_category_for_street(
     hole_cards: &[Card; 2],
     board: &[Card],
     best_hand_class: BestHandClass,
-) -> PairStrength {
+) -> MadeHandCategory {
     let board_ranks = board.iter().map(|card| card.rank).collect::<Vec<_>>();
     let hole_ranks = [hole_cards[0].rank, hole_cards[1].rank];
     let board_counts = rank_counts(&board_ranks);
@@ -528,22 +608,28 @@ fn pair_strength_for_street(
     board_unique_desc.sort_unstable_by(|left, right| right.cmp(left));
     board_unique_desc.dedup();
     let top_board_rank = *board_unique_desc.first().unwrap_or(&0);
-    let low_board_rank = *board_unique_desc.last().unwrap_or(&0);
 
     match best_hand_class {
+        BestHandClass::HighCard => MadeHandCategory::HighCard,
+        BestHandClass::Straight => MadeHandCategory::Straight,
+        BestHandClass::Flush => MadeHandCategory::Flush,
+        BestHandClass::FullHouse => MadeHandCategory::FullHouse,
+        BestHandClass::Quads => MadeHandCategory::Quads,
+        BestHandClass::StraightFlush => MadeHandCategory::StraightFlush,
+        BestHandClass::TwoPair => MadeHandCategory::TwoPair,
         BestHandClass::Trips => {
             if hole_ranks[0] == hole_ranks[1] && board_counts.contains_key(&hole_ranks[0]) {
-                PairStrength::Set
+                MadeHandCategory::Set
             } else {
-                PairStrength::Trips
+                MadeHandCategory::Trips
             }
         }
         BestHandClass::Pair => {
             if hole_ranks[0] == hole_ranks[1] {
                 if hole_ranks[0] > top_board_rank {
-                    PairStrength::Overpair
+                    MadeHandCategory::Overpair
                 } else {
-                    PairStrength::Underpair
+                    MadeHandCategory::Underpair
                 }
             } else {
                 let paired_rank = hole_ranks
@@ -551,24 +637,31 @@ fn pair_strength_for_street(
                     .find(|rank| board_counts.contains_key(rank));
 
                 match paired_rank {
-                    Some(rank) if rank == top_board_rank => {
-                        let kicker = hole_ranks
-                            .into_iter()
-                            .find(|kicker| *kicker != rank)
-                            .unwrap_or(rank);
-                        match kicker {
-                            14 => PairStrength::TopPairAceKicker,
-                            10..=13 => PairStrength::TopPairBroadwayKicker,
-                            _ => PairStrength::TopPairWeakKicker,
-                        }
+                    Some(rank) if rank == top_board_rank => top_pair_category(hole_ranks, rank),
+                    Some(rank) if board_unique_desc.get(1).copied() == Some(rank) => {
+                        MadeHandCategory::SecondPair
                     }
-                    Some(rank) if rank == low_board_rank => PairStrength::BottomPair,
-                    Some(_) => PairStrength::MiddlePair,
-                    None => PairStrength::BoardPair,
+                    Some(_) => MadeHandCategory::ThirdPair,
+                    None => MadeHandCategory::BoardPairOnly,
                 }
             }
         }
-        _ => PairStrength::None,
+    }
+}
+
+fn top_pair_category(hole_ranks: [u8; 2], paired_rank: u8) -> MadeHandCategory {
+    let kicker = hole_ranks
+        .into_iter()
+        .find(|rank| *rank != paired_rank)
+        .unwrap_or(paired_rank);
+    let top_possible_kicker = if paired_rank == 14 { 13 } else { 14 };
+
+    if kicker == top_possible_kicker {
+        MadeHandCategory::TopPairTop
+    } else if kicker >= 10 {
+        MadeHandCategory::TopPairGood
+    } else {
+        MadeHandCategory::TopPairWeak
     }
 }
 
@@ -674,5 +767,17 @@ fn is_flush_family(best_hand_class: BestHandClass) -> bool {
     matches!(
         best_hand_class,
         BestHandClass::Flush | BestHandClass::StraightFlush
+    )
+}
+
+fn should_suppress_missed_draw(best_hand_class: BestHandClass) -> bool {
+    matches!(
+        best_hand_class,
+        BestHandClass::TwoPair
+            | BestHandClass::Straight
+            | BestHandClass::Flush
+            | BestHandClass::FullHouse
+            | BestHandClass::Quads
+            | BestHandClass::StraightFlush
     )
 }

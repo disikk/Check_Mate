@@ -70,6 +70,15 @@ cd "$BACKEND_DIR"
 run cargo fmt --check
 run cargo clippy --workspace --all-targets -- -D warnings
 run cargo test
-run cargo test -p parser_worker local_import::tests::import_local_full_pack_smoke_is_clean_and_idempotent -- --ignored --exact
+log "running exact-core proof suite"
+run cargo test -p tracker_parser_core --test fixture_parsing -- --nocapture
+run cargo test -p tracker_parser_core --test positions -- --nocapture
+run cargo test -p tracker_parser_core --test hand_normalization -- --nocapture
+run cargo test -p tracker_parser_core --test phase0_exact_core_corpus -- --nocapture
+run cargo test -p parser_worker local_import::tests::import_local_full_pack_smoke_is_clean -- --ignored --exact
+run cargo test -p parser_worker local_import::tests::import_local_persists_tournament_summary_tail_conflicts_as_parse_issues -- --ignored --exact
+run cargo test -p parser_worker local_import::tests::import_local_persists_cm06_joint_ko_fields_to_postgres -- --ignored --exact
 run cargo test -p parser_worker local_import::tests::import_local_persists_canonical_hand_layer_to_postgres -- --ignored --exact
 run cargo test -p parser_worker local_import::tests::import_local_refreshes_analytics_features_and_seed_stats -- --ignored --exact
+run cargo test -p parser_worker local_import::tests::import_local_keeps_early_ft_ko_seed_stats_exact_without_proxy_hand_features -- --ignored --exact
+run cargo test -p parser_worker local_import::tests::import_local_exposes_exact_core_descriptors_to_runtime_filters -- --ignored --exact

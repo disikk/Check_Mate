@@ -332,7 +332,20 @@ ORDER BY cfg.buyin_total, envelope.sort_order;
 #### Street hand strength
 
 ```sql
-SELECT hand_id, seat_no, street, best_hand_class, pair_strength, has_flush_draw, has_open_ended, has_gutshot, has_air, has_missed_draw_by_river, descriptor_version, certainty_state
+SELECT hand_id,
+       seat_no,
+       street,
+       best_hand_class,
+       best_hand_rank_value,
+       made_hand_category,
+       draw_category,
+       overcards_count,
+       has_air,
+       missed_flush_draw,
+       missed_straight_draw,
+       is_nut_hand,
+       is_nut_draw,
+       certainty_state
 FROM derived.street_hand_strength
 ORDER BY created_at DESC
 LIMIT 20;
@@ -346,6 +359,63 @@ FROM analytics.player_hand_bool_features
 ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+```sql
+SELECT seat_no, street, feature_key, value
+FROM analytics.player_street_enum_features
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+#### Runtime filters
+
+`mbr_stats_runtime::query_matching_hand_ids(...)` теперь умеет оценивать один typed filter set сразу поверх:
+
+- hand-grain features из `analytics.player_hand_*_features`;
+- street-grain features из `analytics.player_street_*_features`.
+- sparse hand-level exact-core presence keys из `derived.hand_state_resolutions`:
+  - `has_uncertain_reason_code:<code>`;
+  - `has_action_legality_issue:<code>`;
+  - `has_invariant_error_code:<code>`.
+- synthetic seat-surface `street = 'seat'` из exact-core таблиц:
+  - `core.hand_positions` -> `position_code`, `preflop_act_order_index`, `postflop_act_order_index`;
+  - `core.hand_actions` -> `has_all_in_reason:<reason>`, `forced_all_in_preflop`;
+  - `core.hand_summary_results` -> `summary_outcome_kind`, `summary_position_marker`, `summary_folded_street`, `summary_has_shown_cards`, `summary_won_amount`, `summary_hand_class`;
+  - `derived.hand_eliminations` -> `is_exact_ko_participant`, `is_exact_ko_eliminated`.
+
+Семантика:
+
+- `hero_filters` применяются только к Hero;
+- `opponent_filters` считаются выполненными, если один showdown-known opponent seat матчит всю opponent-группу;
+- hand-grain predicates можно смешивать со street-grain predicates;
+- `street = 'seat'` — это runtime-only participant facet для exact-core seat facts, а не новая analytics-таблица;
+- отсутствующий sparse reason-coded hand key или отсутствующий key на `street = 'seat'` интерпретируется как honest `false`, а не как hard error на весь запрос;
+- `is_nut_hand` и `is_nut_draw` сейчас intentionally `unsupported`, а не silently `false`.
+
+#### Street bucket helper
+
+`mbr_stats_runtime::project_street_bucket(...)` даёт runtime/UI projection `best | good | weak | trash`.
+
+Важно:
+
+- это heuristic aggregation поверх exact fields;
+- bucket не materialize-ится в `analytics.player_street_*_features`;
+- bucket не является solver/range-relative truth.
+
+#### Seed stat snapshot sources
+
+`mbr_stats_runtime::query_seed_stats(...)` собирает текущий query-only seed snapshot из четырёх source-групп:
+
+- `roi_pct`, `avg_finish_place` читают summary-поля из `core.tournaments` и `core.tournament_entries`;
+- `final_table_reach_percent` читает exact FT helper `derived.mbr_tournament_ft_helper.reached_ft_exact` с denominator по HH-covered tournaments из `core.hands.tournament_id`;
+- `total_ko_event_count` и `avg_ko_event_per_tournament` читают exact KO rows из `derived.hand_eliminations`, где `hero_involved = true` и `certainty_state = 'exact'`;
+- `early_ft_ko_event_count` и `early_ft_ko_event_per_tournament` читают те же exact KO rows, дополнительно пересечённые с `derived.mbr_stage_resolution.is_stage_6_9`;
+- `early_ft_ko_event_per_tournament` делит только на турниры, где FT helper доказывает `reached_ft_exact = true`.
+
+Важно:
+
+- эти seed stats не materialize-ятся в отдельные analytics-таблицы и считаются query-time через `query_seed_stats(...)`;
+- summary-only турниры не попадают в HH-based denominator для FT/KO seed stats.
 
 ---
 
@@ -399,6 +469,10 @@ http://localhost:5173
 1. строки пишутся в `derived.street_hand_strength`;
 2. Hero получает descriptors по всем достигнутым улицам;
 3. showdown-known villains тоже появляются там, где карты известны.
+4. SQL-запросы используют `made_hand_category`, `draw_category`, `overcards_count`, `missed_flush_draw`, `missed_straight_draw` вместо legacy v1 битов.
+5. `analytics.player_street_*_features` заполняются только для Hero и showdown-known opponents.
+6. Nut predicates через runtime filters честно возвращают unsupported.
+7. `best/good/weak/trash` используются только как UI/runtime helper, а не как persisted exact слой.
 
 ---
 
@@ -411,7 +485,7 @@ http://localhost:5173
 - object storage;
 - giant popup;
 - полный MBR stat catalog;
-- query/filter AST engine;
+- full web/API query/filter AST engine;
 - корректный boundary KO EV слой;
 - final stat materialization поверх tournament economics и Big KO decode.
 

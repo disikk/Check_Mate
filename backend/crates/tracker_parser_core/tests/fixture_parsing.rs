@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use tracker_parser_core::{
     SourceKind, detect_source_kind,
-    models::{ActionType, Street},
+    models::{ActionType, AllInReason, Street},
     parsers::{
         hand_history::{parse_canonical_hand, parse_hand_header, split_hand_history},
         tournament_summary::parse_tournament_summary,
@@ -19,6 +19,11 @@ const TS_BUBBLE: &str = include_str!(
 const TS_WINNER: &str = include_str!(
     "../../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 );
+const TS_TAIL_EXTRA: &str = include_str!(
+    "../../../fixtures/mbr/ts/GG20260325 - Tournament #271770266 - Tail extra lines.txt"
+);
+const TS_TAIL_CONFLICT: &str =
+    include_str!("../../../fixtures/mbr/ts/GG20260325 - Tournament #271770266 - Tail conflict.txt");
 
 const HH_FIXTURE_FILES: &[&str] = &[
     "GG20260316-0307 - Mystery Battle Royale 25.txt",
@@ -72,6 +77,40 @@ fn parses_tournament_summary_fixture() {
     assert_eq!(summary.hero_name, "Hero");
     assert_eq!(summary.finish_place, 1);
     assert_eq!(summary.payout_cents, 20_500);
+    assert_eq!(summary.confirmed_finish_place, Some(1));
+    assert_eq!(summary.confirmed_payout_cents, Some(20_500));
+    assert!(summary.validation_issue_codes.is_empty());
+}
+
+#[test]
+fn parses_tournament_summary_tail_confirmations_with_harmless_extra_lines() {
+    let summary = parse_tournament_summary(TS_TAIL_EXTRA).unwrap();
+
+    assert_eq!(summary.buy_in_cents, 1_250);
+    assert_eq!(summary.rake_cents, 200);
+    assert_eq!(summary.bounty_cents, 1_050);
+    assert_eq!(summary.finish_place, 1);
+    assert_eq!(summary.payout_cents, 20_500);
+    assert_eq!(summary.confirmed_finish_place, Some(1));
+    assert_eq!(summary.confirmed_payout_cents, Some(20_500));
+    assert!(summary.validation_issue_codes.is_empty());
+}
+
+#[test]
+fn surfaces_tournament_summary_tail_conflicts_as_validation_issues() {
+    let summary = parse_tournament_summary(TS_TAIL_CONFLICT).unwrap();
+
+    assert_eq!(summary.finish_place, 1);
+    assert_eq!(summary.payout_cents, 20_500);
+    assert_eq!(summary.confirmed_finish_place, Some(2));
+    assert_eq!(summary.confirmed_payout_cents, Some(20_400));
+    assert_eq!(
+        summary.validation_issue_codes,
+        vec![
+            "ts_tail_finish_place_mismatch".to_string(),
+            "ts_tail_total_received_mismatch".to_string()
+        ]
+    );
 }
 
 #[test]
@@ -244,7 +283,10 @@ fn parses_committed_ante_hidden_dealt_and_ranked_show_surface_without_warnings()
         hand.hero_hole_cards,
         Some(vec!["Qh".to_string(), "Kh".to_string()])
     );
-    assert_eq!(hand.showdown_hands.get("Hero"), Some(&vec!["Qh".to_string(), "Kh".to_string()]));
+    assert_eq!(
+        hand.showdown_hands.get("Hero"),
+        Some(&vec!["Qh".to_string(), "Kh".to_string()])
+    );
     assert_eq!(
         hand.showdown_hands.get("ae7eda73"),
         Some(&vec!["2s".to_string(), "6c".to_string()])
@@ -283,6 +325,185 @@ fn parses_committed_check_bet_uncalled_and_collect_surface_without_warnings() {
     );
     assert_eq!(hand.collected_amounts.get("Hero"), Some(&220));
     assert!(hand.parse_warnings.is_empty());
+}
+
+#[test]
+fn parses_summary_seat_result_lines_into_structured_outcomes() {
+    let hand = parse_canonical_hand(&summary_outcome_hand_text()).unwrap();
+
+    assert_eq!(hand.summary_seat_outcomes.len(), 9);
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 1)
+            .unwrap()
+            .position_marker,
+        Some(tracker_parser_core::models::SummarySeatMarker::Button)
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 1)
+            .unwrap()
+            .outcome_kind,
+        tracker_parser_core::models::SummarySeatOutcomeKind::Won
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 2)
+            .unwrap()
+            .folded_at,
+        Some(Street::Preflop)
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 3)
+            .unwrap()
+            .folded_at,
+        Some(Street::Flop)
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 4)
+            .unwrap()
+            .outcome_kind,
+        tracker_parser_core::models::SummarySeatOutcomeKind::ShowedLost
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 4)
+            .unwrap()
+            .shown_cards,
+        Some(vec!["Qh".to_string(), "Kh".to_string()])
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 5)
+            .unwrap()
+            .outcome_kind,
+        tracker_parser_core::models::SummarySeatOutcomeKind::ShowedWon
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 5)
+            .unwrap()
+            .won_amount,
+        Some(1_944)
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 6)
+            .unwrap()
+            .outcome_kind,
+        tracker_parser_core::models::SummarySeatOutcomeKind::Lost
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 7)
+            .unwrap()
+            .outcome_kind,
+        tracker_parser_core::models::SummarySeatOutcomeKind::Mucked
+    );
+    assert_eq!(
+        hand.summary_seat_outcomes
+            .iter()
+            .find(|outcome| outcome.seat_no == 8)
+            .unwrap()
+            .outcome_kind,
+        tracker_parser_core::models::SummarySeatOutcomeKind::Collected
+    );
+    assert!(
+        hand.summary_seat_outcomes
+            .iter()
+            .any(|outcome| outcome.seat_no == 2 && outcome.player_name == "Hero")
+    );
+    assert!(
+        hand.parse_warnings
+            .iter()
+            .any(|warning| warning.contains("unparsed_summary_seat_line"))
+    );
+}
+
+#[test]
+fn parses_post_dead_muck_and_sitting_out_surface() {
+    let hand = parse_canonical_hand(&cm04_parser_surface_hand_text()).unwrap();
+
+    assert!(
+        hand.seats
+            .iter()
+            .find(|seat| seat.seat_no == 2)
+            .unwrap()
+            .is_sitting_out
+    );
+    assert!(hand.actions.iter().any(|event| {
+        event.player_name.as_deref() == Some("VillainDead")
+            && event.action_type == ActionType::PostDead
+            && event.amount == Some(100)
+    }));
+    assert!(hand.actions.iter().any(|event| {
+        event.player_name.as_deref() == Some("VillainMuck") && event.action_type == ActionType::Muck
+    }));
+}
+
+#[test]
+fn marks_no_show_and_partial_reveal_surface_explicitly() {
+    let hand = parse_canonical_hand(&cm04_show_surface_hand_text()).unwrap();
+
+    assert!(
+        hand.parse_warnings
+            .iter()
+            .any(|warning| warning == "partial_reveal_show_line: VillainPartial: shows [5d]")
+    );
+    assert!(
+        hand.parse_warnings
+            .iter()
+            .any(|warning| warning == "unsupported_no_show_line: VillainNoShow: doesn't show hand")
+    );
+    assert!(!hand.parse_warnings.iter().any(|warning| {
+        warning == "unparsed_line: VillainPartial: shows [5d]"
+            || warning == "unparsed_line: VillainNoShow: doesn't show hand"
+    }));
+}
+
+#[test]
+fn annotates_forced_all_in_reasons_for_ante_and_blind_exhaustion() {
+    let ante_hand = parse_canonical_hand(&cm04_ante_exhausted_hand_text()).unwrap();
+    let blind_hand = parse_canonical_hand(&cm04_blind_exhausted_hand_text()).unwrap();
+
+    let ante_action = ante_hand
+        .actions
+        .iter()
+        .find(|event| {
+            event.player_name.as_deref() == Some("ShortAnte")
+                && event.action_type == ActionType::PostAnte
+        })
+        .unwrap();
+    assert!(ante_action.is_all_in);
+    assert_eq!(ante_action.all_in_reason, Some(AllInReason::AnteExhausted));
+    assert!(ante_action.forced_all_in_preflop);
+
+    let blind_action = blind_hand
+        .actions
+        .iter()
+        .find(|event| {
+            event.player_name.as_deref() == Some("ShortBlind")
+                && event.action_type == ActionType::PostSb
+        })
+        .unwrap();
+    assert!(blind_action.is_all_in);
+    assert_eq!(
+        blind_action.all_in_reason,
+        Some(AllInReason::BlindExhausted)
+    );
+    assert!(blind_action.forced_all_in_preflop);
 }
 
 #[test]
@@ -332,6 +553,11 @@ fn parses_all_committed_tournament_summary_fixtures() {
             summary.entrants >= summary.finish_place,
             "fixture `{fixture}` has finish_place beyond entrants"
         );
+        assert!(
+            summary.validation_issue_codes.is_empty(),
+            "fixture `{fixture}` has unexpected TS validation issues: {:?}",
+            summary.validation_issue_codes
+        );
     }
 }
 
@@ -352,10 +578,17 @@ fn parses_all_committed_hand_history_fixtures_without_unexpected_warnings() {
                 )
             });
 
-            if !parsed.parse_warnings.is_empty() {
+            let unexpected_warnings = parsed
+                .parse_warnings
+                .iter()
+                .filter(|warning| !is_expected_explicit_surface_warning(warning))
+                .cloned()
+                .collect::<Vec<_>>();
+
+            if !unexpected_warnings.is_empty() {
                 unexpected.push(format!(
                     "{fixture} :: {} :: {:?}",
-                    parsed.header.hand_id, parsed.parse_warnings
+                    parsed.header.hand_id, unexpected_warnings
                 ));
             }
         }
@@ -366,6 +599,142 @@ fn parses_all_committed_hand_history_fixtures_without_unexpected_warnings() {
         "unexpected parser warnings across committed HH fixtures:\n{}",
         unexpected.join("\n")
     );
+}
+
+fn summary_outcome_hand_text() -> String {
+    r#"Poker Hand #BRSUMMARY1: Tournament #999101, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:30:00
+Table '1' 8-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: VillainA (1,000 in chips)
+Seat 3: VillainB (1,000 in chips)
+Seat 4: VillainC (1,000 in chips)
+Seat 5: VillainD (1,000 in chips)
+Seat 6: VillainE (1,000 in chips)
+Seat 7: VillainF (1,000 in chips)
+Seat 8: VillainG (1,000 in chips)
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+*** SHOWDOWN ***
+Hero collected 110 from pot
+*** SUMMARY ***
+Total pot 3,454 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) won (110)
+Seat 2: VillainA (small blind) folded before Flop
+Seat 3: VillainB (big blind) folded on the Flop
+Seat 4: VillainC showed [Qh Kh] and lost with a pair of Kings
+    Seat 5: VillainD showed [2s 6c] and won (1,944) with two pair, Sixes and Twos
+Seat 6: VillainE lost
+Seat 7: VillainF mucked
+Seat 8: VillainG collected (200)
+Seat 2: Hero lost
+Seat 9: VillainX (button) ???"#.to_string()
+}
+
+fn cm04_parser_surface_hand_text() -> String {
+    r#"Poker Hand #BRCM0401: Tournament #999201, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 13:00:00
+Table '1' 4-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Sitout (1,000 in chips) is sitting out
+Seat 3: VillainDead (1,000 in chips)
+Seat 4: VillainMuck (1,000 in chips)
+VillainDead: posts dead 100
+VillainMuck: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Hero: folds
+VillainMuck: mucks hand
+*** SHOWDOWN ***
+VillainDead collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Hero folded before Flop
+Seat 3: VillainDead collected (200)
+Seat 4: VillainMuck mucked"#.to_string()
+}
+
+fn cm04_show_surface_hand_text() -> String {
+    r#"Poker Hand #BRCM0402: Tournament #999202, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 13:05:00
+Table '1' 3-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: VillainPartial (1,000 in chips)
+Seat 3: VillainNoShow (1,000 in chips)
+VillainPartial: posts small blind 50
+VillainNoShow: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Hero: calls 100
+VillainPartial: calls 50
+VillainNoShow: checks
+*** FLOP *** [2c 7d 9h]
+VillainPartial: checks
+VillainNoShow: checks
+Hero: checks
+*** TURN *** [2c 7d 9h] [Qs]
+VillainPartial: checks
+VillainNoShow: checks
+Hero: checks
+*** RIVER *** [2c 7d 9h Qs] [3c]
+*** SHOWDOWN ***
+VillainPartial: shows [5d]
+VillainNoShow: doesn't show hand
+Hero: shows [Ah Ad]
+Hero collected 300 from pot
+*** SUMMARY ***
+Total pot 300 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and won (300)
+Seat 2: VillainPartial (small blind) showed [5d] and lost
+Seat 3: VillainNoShow (big blind) lost"#.to_string()
+}
+
+fn cm04_ante_exhausted_hand_text() -> String {
+    r#"Poker Hand #BRCM0403: Tournament #999203, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(100)) - 2026/03/16 13:10:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: ShortAnte (100 in chips)
+Seat 2: Hero (1,000 in chips)
+ShortAnte: posts the ante 100
+Hero: posts the ante 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Hero: checks
+*** FLOP *** [2c 7d 9h]
+*** TURN *** [2c 7d 9h] [Qs]
+*** RIVER *** [2c 7d 9h Qs] [3c]
+*** SHOWDOWN ***
+ShortAnte: shows [Kd Kh]
+Hero: shows [Ah Ad]
+Hero collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: ShortAnte (button) showed [Kd Kh] and lost
+Seat 2: Hero showed [Ah Ad] and won (200)"#.to_string()
+}
+
+fn cm04_blind_exhausted_hand_text() -> String {
+    r#"Poker Hand #BRCM0404: Tournament #999204, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 13:15:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: ShortBlind (50 in chips)
+Seat 2: Hero (1,000 in chips)
+ShortBlind: posts small blind 50
+Hero: posts big blind 100
+*** HOLE CARDS ***
+Dealt to ShortBlind
+Dealt to Hero [Ah Ad]
+Uncalled bet (50) returned to Hero
+*** FLOP *** [2c 7d 9h]
+*** TURN *** [2c 7d 9h] [Qs]
+*** RIVER *** [2c 7d 9h Qs] [3c]
+*** SHOWDOWN ***
+ShortBlind: shows [Kd Kh]
+Hero: shows [Ah Ad]
+Hero collected 100 from pot
+*** SUMMARY ***
+Total pot 100 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: ShortBlind (button) showed [Kd Kh] and lost
+Seat 2: Hero (big blind) showed [Ah Ad] and won (100)"#.to_string()
 }
 
 fn read_fixture(kind: &str, filename: &str) -> String {
@@ -383,4 +752,9 @@ fn find_hand_text(raw: &str, needle: &str) -> String {
 
 fn fixture_path(kind: &str, filename: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../fixtures/mbr/{kind}/{filename}"))
+}
+
+fn is_expected_explicit_surface_warning(warning: &str) -> bool {
+    warning.starts_with("partial_reveal_show_line: ")
+        || warning.starts_with("partial_reveal_summary_show_surface: ")
 }

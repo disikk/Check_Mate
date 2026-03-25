@@ -38,11 +38,16 @@ Pass condition:
 - parse issues имеют structured severity model.
 
 Pass condition:
-- на committed pack `warning-level parse issues = 0`;
-- на extended pack все неожиданные строки либо покрыты, либо явно whitelisted.
+- на committed pack `unexpected parse issues = 0`; формально разрешённые explicit surface warnings допускаются только как зафиксированный whitelist без silent ignore;
+- на extended pack все неожиданные строки либо покрыты, либо явно whitelisted; synthetic edge-corpus может содержать только reason-coded explicit warnings, а не silent ignore.
 
 Текущий статус:
-- PASS для committed `9 HH + 9 TS` GG pack на `2026-03-24`.
+- PASS для committed `9 HH + 9 TS` GG pack и explicit exact-core parser gate на `2026-03-25`.
+
+Proof suite:
+- `cargo test -p tracker_parser_core --test fixture_parsing -- --nocapture`
+- `cargo test -p tracker_parser_core --test phase0_exact_core_corpus -- --nocapture`
+- committed-pack parser warnings проходят только через explicit structured surface / whitelist contract, без silent ignore.
 
 ## G3. Replay-grade normalizer
 
@@ -52,13 +57,23 @@ Pass condition:
 - persisted `hand_pots`, `hand_pot_contributions`, `hand_pot_winners`, `hand_returns` согласованы;
 - elimination attribution проходит через pot resolution;
 - invariants обязательны;
-- ambiguous winner mappings не materialize-ят guessed exact winners.
+- ambiguous winner mappings не materialize-ят guessed exact winners;
+- uncertain / inconsistent settlement и KO cases surface-ятся reason-coded, а не схлопываются в guessed exact facts.
 
 Pass condition:
-- на committed pack и synthetic edge-pack `chip_conservation_ok = true`, `pot_conservation_ok = true`, `invariant_errors = []`.
+- на committed pack и synthetic edge-pack `chip_conservation_ok = true`, `pot_conservation_ok = true`, `invariant_errors = []`;
+- committed-pack import smoke подтверждает `uncertain_reason_codes = []`, `certainty_state = exact` для persisted elimination rows и отсутствие lossy KO fallback;
+- synthetic joint-KO round-trip подтверждает persistence для `resolved_by_pot_nos`, `ko_involved_winners`, `hero_ko_share_total`, `joint_ko`.
 
 Текущий статус:
-- PASS для current committed-pack + synthetic edge-pack scope на `2026-03-24`.
+- PASS для current committed-pack + synthetic edge-pack scope на `2026-03-25`.
+
+Proof suite:
+- `cargo test -p tracker_parser_core --test positions -- --nocapture`
+- `cargo test -p tracker_parser_core --test hand_normalization -- --nocapture`
+- `cargo test -p tracker_parser_core --test phase0_exact_core_corpus -- --nocapture`
+- `cargo test -p parser_worker local_import::tests::import_local_full_pack_smoke_is_clean -- --ignored --exact`
+- `cargo test -p parser_worker local_import::tests::import_local_persists_cm06_joint_ko_fields_to_postgres -- --ignored --exact`
 
 ## G4. Street hand strength v2
 

@@ -16,6 +16,12 @@ pub struct TournamentSummary {
     pub hero_name: String,
     pub finish_place: u32,
     pub payout_cents: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirmed_finish_place: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirmed_payout_cents: Option<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub validation_issue_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -73,6 +79,108 @@ pub struct ParsedHandSeat {
     pub seat_no: u8,
     pub player_name: String,
     pub starting_stack: i64,
+    pub is_sitting_out: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AllInReason {
+    Voluntary,
+    CallExhausted,
+    RaiseExhausted,
+    BlindExhausted,
+    AnteExhausted,
+}
+
+impl AllInReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Voluntary => "voluntary",
+            Self::CallExhausted => "call_exhausted",
+            Self::RaiseExhausted => "raise_exhausted",
+            Self::BlindExhausted => "blind_exhausted",
+            Self::AnteExhausted => "ante_exhausted",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum PositionCode {
+    #[serde(rename = "BTN")]
+    Btn,
+    #[serde(rename = "SB")]
+    Sb,
+    #[serde(rename = "BB")]
+    Bb,
+    #[serde(rename = "UTG")]
+    Utg,
+    #[serde(rename = "UTG+1")]
+    UtgPlus1,
+    #[serde(rename = "MP")]
+    Mp,
+    #[serde(rename = "LJ")]
+    Lj,
+    #[serde(rename = "HJ")]
+    Hj,
+    #[serde(rename = "CO")]
+    Co,
+}
+
+impl PositionCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Btn => "BTN",
+            Self::Sb => "SB",
+            Self::Bb => "BB",
+            Self::Utg => "UTG",
+            Self::UtgPlus1 => "UTG+1",
+            Self::Mp => "MP",
+            Self::Lj => "LJ",
+            Self::Hj => "HJ",
+            Self::Co => "CO",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandPosition {
+    pub seat_no: u8,
+    pub position_code: PositionCode,
+    pub preflop_act_order_index: u8,
+    pub postflop_act_order_index: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SummarySeatMarker {
+    Button,
+    SmallBlind,
+    BigBlind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SummarySeatOutcomeKind {
+    Folded,
+    ShowedWon,
+    ShowedLost,
+    Lost,
+    Mucked,
+    Won,
+    Collected,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SummarySeatOutcome {
+    pub seat_no: u8,
+    pub player_name: String,
+    pub position_marker: Option<SummarySeatMarker>,
+    pub outcome_kind: SummarySeatOutcomeKind,
+    pub folded_at: Option<Street>,
+    pub shown_cards: Option<Vec<String>>,
+    pub won_amount: Option<i64>,
+    pub hand_class: Option<String>,
+    pub raw_line: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -83,6 +191,8 @@ pub struct HandActionEvent {
     pub action_type: ActionType,
     pub is_forced: bool,
     pub is_all_in: bool,
+    pub all_in_reason: Option<AllInReason>,
+    pub forced_all_in_preflop: bool,
     pub amount: Option<i64>,
     pub to_amount: Option<i64>,
     pub cards: Option<Vec<String>>,
@@ -101,6 +211,7 @@ pub struct CanonicalParsedHand {
     pub summary_board: Vec<String>,
     pub hero_hole_cards: Option<Vec<String>>,
     pub showdown_hands: BTreeMap<String, Vec<String>>,
+    pub summary_seat_outcomes: Vec<SummarySeatOutcome>,
     pub collected_amounts: BTreeMap<String, i64>,
     pub raw_hand_text: String,
     pub parse_warnings: Vec<String>,
@@ -173,6 +284,13 @@ pub struct PotContribution {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PotEligibility {
+    pub pot_no: u8,
+    pub seat_no: u8,
+    pub player_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PotWinner {
     pub pot_no: u8,
     pub seat_no: u8,
@@ -214,6 +332,10 @@ pub struct HandOutcomeActual {
 pub struct HandElimination {
     pub eliminated_seat_no: u8,
     pub eliminated_player_name: String,
+    pub resolved_by_pot_nos: Vec<u8>,
+    pub ko_involved_winners: Vec<String>,
+    pub hero_ko_share_total: Option<f64>,
+    pub joint_ko: bool,
     pub resolved_by_pot_no: Option<u8>,
     pub ko_involved_winner_count: u8,
     pub hero_involved: bool,
@@ -229,6 +351,7 @@ pub struct NormalizationInvariants {
     pub chip_conservation_ok: bool,
     pub pot_conservation_ok: bool,
     pub invariant_errors: Vec<String>,
+    pub uncertain_reason_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -238,6 +361,7 @@ pub struct NormalizedHand {
     pub snapshot: Option<ResolutionNodeSnapshot>,
     pub final_pots: Vec<FinalPot>,
     pub pot_contributions: Vec<PotContribution>,
+    pub pot_eligibilities: Vec<PotEligibility>,
     pub pot_winners: Vec<PotWinner>,
     pub returns: Vec<HandReturn>,
     pub actual: HandOutcomeActual,

@@ -16,10 +16,14 @@
 5. Frontend build:
    - `npm run build` проходит на Node 22.
 6. Runtime-перепроверка после exact-core hardening:
+   - `bash backend/scripts/run_backend_checks.sh`
    - `cargo test -p tracker_parser_core parses_all_committed_tournament_summary_fixtures`
    - `cargo test -p tracker_parser_core parses_all_committed_hand_history_fixtures_without_unexpected_warnings`
+   - `cargo test -p tracker_parser_core --test positions -- --nocapture`
+   - `cargo test -p tracker_parser_core --test phase0_exact_core_corpus -- --nocapture`
    - `cargo test -p tracker_parser_core keeps_full_pack_invariants_green_for_all_committed_hands`
-   - `cargo test -p parser_worker import_local_full_pack_smoke_is_clean_and_idempotent -- --ignored`
+   - `cargo test -p parser_worker local_import::tests::import_local_full_pack_smoke_is_clean -- --ignored --exact`
+   - `cargo test -p parser_worker local_import::tests::import_local_persists_cm06_joint_ko_fields_to_postgres -- --ignored --exact`
 
 Что **всё ещё не доказано** runtime-исполнением:
 - extended real GG corpus за пределами committed `9 HH + 9 TS` пакета;
@@ -47,11 +51,26 @@
 - GG timestamps больше не “просто теряются”: canonical UTC поля всё ещё `NULL`, но raw/local/provenance contract уже persisted и зафиксирован;
 - parser committed-pack coverage теперь подкреплён syntax catalog (`docs/COMMITTED_PACK_SYNTAX_CATALOG.md`) и structured severity model для `core.parse_issues`;
 - normalizer больше не materialize-ит guessed `hand_pot_winners` для ambiguous mappings: такие кейсы остаются `uncertain`, exact-only downstream facts их игнорируют;
-- PostgreSQL full-pack smoke на committed corpus теперь подтверждает `0` parse issues, `0` invariant mismatches и idempotent re-import.
+- PostgreSQL full-pack smoke на committed corpus теперь подтверждает `0` unexpected parse issues, `0` invariant mismatches и idempotent re-import.
 
 Из этого следует:
 - exact-core для committed GG pack заметно сильнее, чем в исходной оценке ниже;
 - но общая продуктовая стадия проекта всё ещё остаётся foundation / narrow alpha, потому что extended corpus, web ingest и stat engine пока не завершены.
+
+### Update 2026-03-25
+
+Phase 0 exact-core hardening из аудита теперь закрывает не только committed-pack parser slice, но и весь current exact-core contract:
+- summary seat-result lines больше не теряются;
+- position engine, legality layer и forced-all-in / sit-out surface доказаны отдельными focused tests;
+- deterministic pot settlement больше не сводится к reverse guess по aggregated collect totals;
+- KO attribution v2 теперь может описывать multi-pot joint bust и это проверяется как в core, так и через persisted PostgreSQL round-trip;
+- synthetic edge matrix теперь committed как отдельный HH fixture и проверяет reason-coded explicit warnings / uncertainty contract на dead blind, no-show, heads-up order, short all-in, side-pot, odd-chip и joint-KO кейсах;
+- backend gate теперь явно запускает exact-core proof suite, а не полагается только на общий `cargo test`.
+- финальная serial-проверка `bash backend/scripts/run_backend_checks.sh` прошла целиком, включая committed-pack proof suite и ignored PostgreSQL smoke-тесты.
+
+Из этого следует:
+- для текущего committed `9 HH + 9 TS` pack + synthetic matrix exact-core уже replay-grade в пределах зафиксированного scope;
+- главный незакрытый риск смещается с “алгоритм пока слишком эвристический” на “недостаточно широк общий реальный corpus за пределами committed pack”.
 
 ---
 
@@ -64,7 +83,7 @@
 | PostgreSQL source-of-truth foundation | средняя | 45–50% | хорошая как foundation |
 | GG parser на committed pack | хороший узкий alpha | 55–60% | высокая на committed pack |
 | GG parser как production parser | ранняя | 30–35% | ещё не доказана |
-| Normalizer | узкий alpha | 30–35% | хорош в покрытых кейсах, но не replay-grade |
+| Normalizer | хороший узкий alpha | 45–50% | replay-grade в текущем exact-core scope, но ещё не доказан на широком реальном corpus |
 | MBR stage / KO derived-слой | foundation-only | 15–20% | пока частично корректен |
 | Street hand strength | foundation | 35–40% | частично корректен |
 | Runtime stat-layer | seed-safe slice | 10–15% | только для очень узкого набора |
@@ -126,14 +145,14 @@
 ### 5.2 Normalizer
 
 Сильные стороны:
-- logic уже опирается на replay-подобное применение action events;
-- repeated collect и split/side-pot кейсы учтены;
-- есть `certainty_state`.
+- logic опирается на replay-подобное применение action events;
+- positions, legality, forced all-in surface и deterministic pot settlement теперь покрыты отдельными proof-tests;
+- repeated collect, split/side-pot, odd chip и joint-KO кейсы учтены;
+- ambiguous / hidden showdown cases больше не materialize-ят guessed winners, а surface-ятся через `uncertain_reason_codes` и `certainty_state`.
 
-Но до replay-grade exact core ещё не дотягивает, потому что:
-- часть mapping pot winners выводится через inference по aggregated `collected_amounts`;
-- на общих кейсах это допустимо как foundation, но не даёт ещё полной уверенности для широкого production корпуса;
-- acceptance надо доказывать большим golden pack и расширенным synthetic набором.
+Что ещё не доказано полностью:
+- текущий committed pack + synthetic matrix уже достаточны для Phase 0 gate, но production-ready вывод на широком GG corpus пока делать рано;
+- acceptance следующей фазы надо доказывать расширенным real corpus за пределами committed `9 HH + 9 TS`.
 
 ### 5.3 Street hand strength
 
@@ -175,21 +194,26 @@
 #### 3. MBR stage/boundary модель пока placeholder
 
 Факты:
-- `build_mbr_stage_resolutions()` определяет boundary candidate как “последняя 5-max рука перед первой 9-max рукой”;
-- `boundary_ko_ev / min / max` в схеме существуют, но importer их не заполняет;
-- boundary logic пока не реализует финальную вероятностную модель.
+- hard-coded эвристика “последняя 5-max рука перед первой 9-max рукой” уже убрана;
+- boundary resolver теперь использует ordered timeline и умеет честно оставлять boundary `uncertain`, если несколько equally-late non-FT candidates одинаково допустимы;
+- `derived.mbr_stage_resolution` уже хранит `boundary_resolution_state`, `boundary_candidate_count`, `boundary_resolution_method`, `boundary_confidence_class`;
+- `boundary_ko_ev / min / max` больше не должны имитировать exact point estimate при non-exact boundary;
+- `derived.mbr_tournament_ft_helper` теперь materialize-ится на tournament grain и честно стабилизирует `reached_ft_exact`, `first_ft_hand_id`, incomplete FT и FT-entry stack semantics без guessed defaults;
+- boundary/stage logic всё ещё не реализует формальную predicate-family модель и probabilistic KO-money слой.
 
 Вывод:
-- MBR-specific derived-слой пока нельзя считать завершённым и точным.
+- MBR-specific derived-слой стал заметно честнее и безопаснее, но formal stage predicates и финальная probabilistic/economic модель всё ещё остаются незавершёнными.
 
 #### 4. Tournament economics не доведён
 
 Факты:
-- `total_payout_money` импортируется;
-- `regular_prize_money` и `mystery_money_total` пока не рассчитываются и не пишутся.
+- `total_payout_money`, `regular_prize_money` и `mystery_money_total` уже materialize-ятся в `core.tournament_entries`;
+- TS parser больше не опирается на жёсткие первые 6 строк и поднимает tail `You finished ...` / `You received ...` как structured confirmation layer;
+- primary source для finish/payout остаётся `result line`, а tail-конфликты surface-ятся как reason-coded warning parse issues вместо silent reconciliation;
+- missing buy-in config и negative mystery remainder по-прежнему считаются explicit import errors, а не guessed fallback.
 
 Последствия:
-- `winnings_from_itm`, `winnings_from_ko`, `roi_regular`, `roi_bounty`, `big_ko` пока не на чем корректно строить.
+- tournament-level ITM / payout / mystery-money foundation уже есть, но probabilistic boundary / KO-money model и downstream stat migration всё ещё не завершены.
 
 #### 5. В БД не хватает части целостностных ограничений
 

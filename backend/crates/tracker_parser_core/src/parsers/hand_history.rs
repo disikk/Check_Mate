@@ -1,12 +1,13 @@
 use crate::{
     ParserError,
     models::{
-        ActionType, CanonicalParsedHand, HandActionEvent, HandHeader, HandRecord, ParsedHandSeat,
-        Street,
+        ActionType, AllInReason, CanonicalParsedHand, HandActionEvent, HandHeader, HandRecord,
+        ParsedHandSeat, Street, SummarySeatMarker, SummarySeatOutcome, SummarySeatOutcomeKind,
     },
 };
 
 use regex::Regex;
+use std::sync::OnceLock;
 
 pub fn split_hand_history(input: &str) -> Result<Vec<HandRecord>, ParserError> {
     let normalized = normalize_newlines(input);
@@ -51,6 +52,9 @@ pub fn split_hand_history(input: &str) -> Result<Vec<HandRecord>, ParserError> {
 }
 
 pub fn parse_hand_header(hand_text: &str) -> Result<HandHeader, ParserError> {
+    static FIRST_REGEX: OnceLock<Regex> = OnceLock::new();
+    static SECOND_REGEX: OnceLock<Regex> = OnceLock::new();
+
     let normalized = normalize_newlines(hand_text);
     let mut lines = normalized.lines().filter(|line| !line.trim().is_empty());
 
@@ -59,14 +63,18 @@ pub fn parse_hand_header(hand_text: &str) -> Result<HandHeader, ParserError> {
         .ok_or(ParserError::MissingLine("hand header line"))?;
     let second_line = lines.next().ok_or(ParserError::MissingLine("table line"))?;
 
-    let first_regex = Regex::new(
-        r"^Poker Hand #(?P<hand_id>[^:]+): Tournament #(?P<tournament_id>\d+), (?P<game_name>.+) - (?P<level_name>Level\d+)\((?P<small_blind>[\d,]+)/(?P<big_blind>[\d,]+)\((?P<ante>[\d,]+)\)\) - (?P<played_at>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})$",
-    )
-    .expect("hand header regex must compile");
-    let second_regex = Regex::new(
-        r"^Table '(?P<table_name>[^']+)' (?P<max_players>\d+)-max Seat #(?P<button_seat>\d+) is the button$",
-    )
-    .expect("table regex must compile");
+    let first_regex = FIRST_REGEX.get_or_init(|| {
+        Regex::new(
+            r"^Poker Hand #(?P<hand_id>[^:]+): Tournament #(?P<tournament_id>\d+), (?P<game_name>.+) - (?P<level_name>Level\d+)\((?P<small_blind>[\d,]+)/(?P<big_blind>[\d,]+)\((?P<ante>[\d,]+)\)\) - (?P<played_at>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})$",
+        )
+        .expect("hand header regex must compile")
+    });
+    let second_regex = SECOND_REGEX.get_or_init(|| {
+        Regex::new(
+            r"^Table '(?P<table_name>[^']+)' (?P<max_players>\d+)-max Seat #(?P<button_seat>\d+) is the button$",
+        )
+        .expect("table regex must compile")
+    });
 
     let header_caps = first_regex
         .captures(first_line)
@@ -103,6 +111,7 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
     let mut hero_hole_cards = None;
     let mut hero_name = None;
     let mut showdown_hands = std::collections::BTreeMap::new();
+    let mut summary_seat_outcomes = Vec::new();
     let mut collected_amounts = std::collections::BTreeMap::new();
     let mut parse_warnings = Vec::new();
     let mut street = Street::Preflop;
@@ -111,11 +120,6 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
     for line in normalized.lines().skip(2) {
         let line = line.trim();
         if line.is_empty() {
-            continue;
-        }
-
-        if let Some(seat) = parse_seat_line(line)? {
-            seats.push(seat);
             continue;
         }
 
@@ -151,6 +155,20 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
 
         if line == "*** SUMMARY ***" {
             street = Street::Summary;
+            continue;
+        }
+
+        if street == Street::Summary && line.starts_with("Seat ") {
+            if let Some(outcome) = parse_summary_seat_outcome_line(line) {
+                summary_seat_outcomes.push(outcome);
+            } else {
+                parse_warnings.push(format!("unparsed_summary_seat_line: {line}"));
+            }
+            continue;
+        }
+
+        if let Some(seat) = parse_seat_line(line)? {
+            seats.push(seat);
             continue;
         }
 
@@ -191,10 +209,18 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
             continue;
         }
 
+        if is_no_show_line(line) {
+            parse_warnings.push(format!("unsupported_no_show_line: {line}"));
+            continue;
+        }
+
         if !line.starts_with("Seat ") {
             parse_warnings.push(format!("unparsed_line: {line}"));
         }
     }
+
+    annotate_partial_reveal_warnings(&mut parse_warnings, &actions, &summary_seat_outcomes);
+    annotate_action_all_in_metadata(&seats, &mut actions)?;
 
     Ok(CanonicalParsedHand {
         header,
@@ -207,6 +233,7 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
         summary_board,
         hero_hole_cards,
         showdown_hands,
+        summary_seat_outcomes,
         collected_amounts,
         raw_hand_text: normalized,
         parse_warnings,
@@ -246,9 +273,13 @@ fn invalid_field(field: &'static str, value: &str) -> ParserError {
 }
 
 fn parse_seat_line(line: &str) -> Result<Option<ParsedHandSeat>, ParserError> {
-    let regex =
-        Regex::new(r"^Seat (?P<seat_no>\d+): (?P<player_name>.+) \((?P<stack>[\d,]+) in chips\)$")
-            .expect("seat regex must compile");
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| {
+        Regex::new(
+            r"^Seat (?P<seat_no>\d+): (?P<player_name>.+) \((?P<stack>[\d,]+) in chips\)(?P<sitting_out> is sitting out)?$",
+        )
+        .expect("seat regex must compile")
+    });
     let Some(captures) = regex.captures(line) else {
         return Ok(None);
     };
@@ -257,12 +288,16 @@ fn parse_seat_line(line: &str) -> Result<Option<ParsedHandSeat>, ParserError> {
         seat_no: parse_u8(&captures["seat_no"], "seat_no")?,
         player_name: captures["player_name"].to_string(),
         starting_stack: parse_i64(&captures["stack"], "starting_stack")?,
+        is_sitting_out: captures.name("sitting_out").is_some(),
     }))
 }
 
 fn parse_dealt_to_line(line: &str) -> Option<(String, Vec<String>)> {
-    let regex = Regex::new(r"^Dealt to (?P<player_name>.+) \[(?P<cards>[^\]]+)\]$")
-        .expect("dealt-to regex must compile");
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| {
+        Regex::new(r"^Dealt to (?P<player_name>.+) \[(?P<cards>[^\]]+)\]$")
+            .expect("dealt-to regex must compile")
+    });
     let captures = regex.captures(line)?;
     Some((
         captures["player_name"].to_string(),
@@ -271,26 +306,38 @@ fn parse_dealt_to_line(line: &str) -> Option<(String, Vec<String>)> {
 }
 
 fn parse_hidden_dealt_to_line(line: &str) -> bool {
-    let regex = Regex::new(r"^Dealt to (?P<player_name>.+?)\s*$")
-        .expect("hidden dealt-to regex must compile");
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| {
+        Regex::new(r"^Dealt to (?P<player_name>.+?)\s*$")
+            .expect("hidden dealt-to regex must compile")
+    });
     regex.is_match(line)
 }
 
 fn parse_board_transition(line: &str) -> Option<(Street, Vec<String>)> {
-    let flop_regex =
-        Regex::new(r"^\*\*\* FLOP \*\*\* \[(?P<cards>[^\]]+)\]$").expect("flop regex must compile");
+    static FLOP_REGEX: OnceLock<Regex> = OnceLock::new();
+    static TURN_REGEX: OnceLock<Regex> = OnceLock::new();
+    static RIVER_REGEX: OnceLock<Regex> = OnceLock::new();
+
+    let flop_regex = FLOP_REGEX.get_or_init(|| {
+        Regex::new(r"^\*\*\* FLOP \*\*\* \[(?P<cards>[^\]]+)\]$").expect("flop regex must compile")
+    });
     if let Some(captures) = flop_regex.captures(line) {
         return Some((Street::Flop, split_cards(&captures["cards"])));
     }
 
-    let turn_regex = Regex::new(r"^\*\*\* TURN \*\*\* \[[^\]]+\] \[(?P<card>[^\]]+)\]$")
-        .expect("turn regex must compile");
+    let turn_regex = TURN_REGEX.get_or_init(|| {
+        Regex::new(r"^\*\*\* TURN \*\*\* \[[^\]]+\] \[(?P<card>[^\]]+)\]$")
+            .expect("turn regex must compile")
+    });
     if let Some(captures) = turn_regex.captures(line) {
         return Some((Street::Turn, vec![captures["card"].to_string()]));
     }
 
-    let river_regex = Regex::new(r"^\*\*\* RIVER \*\*\* \[[^\]]+\] \[(?P<card>[^\]]+)\]$")
-        .expect("river regex must compile");
+    let river_regex = RIVER_REGEX.get_or_init(|| {
+        Regex::new(r"^\*\*\* RIVER \*\*\* \[[^\]]+\] \[(?P<card>[^\]]+)\]$")
+            .expect("river regex must compile")
+    });
     if let Some(captures) = river_regex.captures(line) {
         return Some((Street::River, vec![captures["card"].to_string()]));
     }
@@ -299,9 +346,11 @@ fn parse_board_transition(line: &str) -> Option<(Street, Vec<String>)> {
 }
 
 fn parse_summary_total_line(line: &str) -> Result<Option<(i64, i64)>, ParserError> {
-    let regex =
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| {
         Regex::new(r"^Total pot (?P<total_pot>[\d,]+) \| Rake (?P<rake_amount>[\d,]+)(?: \| .+)?$")
-            .expect("summary total regex must compile");
+            .expect("summary total regex must compile")
+    });
     let Some(captures) = regex.captures(line) else {
         return Ok(None);
     };
@@ -313,10 +362,229 @@ fn parse_summary_total_line(line: &str) -> Result<Option<(i64, i64)>, ParserErro
 }
 
 fn parse_summary_board_line(line: &str) -> Option<Vec<String>> {
-    let regex =
-        Regex::new(r"^Board \[(?P<cards>[^\]]+)\]$").expect("summary board regex must compile");
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| {
+        Regex::new(r"^Board \[(?P<cards>[^\]]+)\]$").expect("summary board regex must compile")
+    });
     let captures = regex.captures(line)?;
     Some(split_cards(&captures["cards"]))
+}
+
+fn parse_summary_seat_outcome_line(line: &str) -> Option<SummarySeatOutcome> {
+    let seat_payload = line.strip_prefix("Seat ")?;
+    let (seat_no_raw, rest) = seat_payload.split_once(": ")?;
+    let seat_no = parse_u8(seat_no_raw, "summary_seat_no").ok()?;
+
+    let tail_prefixes = [
+        " folded before Flop",
+        " folded on the Flop",
+        " folded on the Turn",
+        " folded on the River",
+        " showed [",
+        " won (",
+        " collected (",
+        " lost",
+        " mucked",
+    ];
+    let tail_start = tail_prefixes
+        .iter()
+        .filter_map(|prefix| rest.find(prefix))
+        .min()?;
+    let player_section = &rest[..tail_start];
+    let tail = &rest[tail_start + 1..];
+
+    let (player_name, position_marker) =
+        if let Some(player_name) = player_section.strip_suffix(" (button)") {
+            (player_name.to_string(), Some(SummarySeatMarker::Button))
+        } else if let Some(player_name) = player_section.strip_suffix(" (small blind)") {
+            (player_name.to_string(), Some(SummarySeatMarker::SmallBlind))
+        } else if let Some(player_name) = player_section.strip_suffix(" (big blind)") {
+            (player_name.to_string(), Some(SummarySeatMarker::BigBlind))
+        } else {
+            (player_section.to_string(), None)
+        };
+
+    if let Some(folded_at) = parse_summary_folded_tail(tail) {
+        return Some(SummarySeatOutcome {
+            seat_no,
+            player_name,
+            position_marker,
+            outcome_kind: SummarySeatOutcomeKind::Folded,
+            folded_at: Some(folded_at),
+            shown_cards: None,
+            won_amount: None,
+            hand_class: None,
+            raw_line: line.to_string(),
+        });
+    }
+
+    if let Some((shown_cards, won_amount, hand_class)) = parse_summary_showed_won_tail(tail) {
+        return Some(SummarySeatOutcome {
+            seat_no,
+            player_name,
+            position_marker,
+            outcome_kind: SummarySeatOutcomeKind::ShowedWon,
+            folded_at: None,
+            shown_cards: Some(shown_cards),
+            won_amount: Some(won_amount),
+            hand_class,
+            raw_line: line.to_string(),
+        });
+    }
+
+    if let Some((shown_cards, hand_class)) = parse_summary_showed_lost_tail(tail) {
+        return Some(SummarySeatOutcome {
+            seat_no,
+            player_name,
+            position_marker,
+            outcome_kind: SummarySeatOutcomeKind::ShowedLost,
+            folded_at: None,
+            shown_cards: Some(shown_cards),
+            won_amount: None,
+            hand_class,
+            raw_line: line.to_string(),
+        });
+    }
+
+    if tail == "lost" {
+        return Some(SummarySeatOutcome {
+            seat_no,
+            player_name,
+            position_marker,
+            outcome_kind: SummarySeatOutcomeKind::Lost,
+            folded_at: None,
+            shown_cards: None,
+            won_amount: None,
+            hand_class: None,
+            raw_line: line.to_string(),
+        });
+    }
+
+    if tail == "mucked" {
+        return Some(SummarySeatOutcome {
+            seat_no,
+            player_name,
+            position_marker,
+            outcome_kind: SummarySeatOutcomeKind::Mucked,
+            folded_at: None,
+            shown_cards: None,
+            won_amount: None,
+            hand_class: None,
+            raw_line: line.to_string(),
+        });
+    }
+
+    if let Some((won_amount, hand_class)) = parse_summary_won_tail(tail) {
+        return Some(SummarySeatOutcome {
+            seat_no,
+            player_name,
+            position_marker,
+            outcome_kind: SummarySeatOutcomeKind::Won,
+            folded_at: None,
+            shown_cards: None,
+            won_amount: Some(won_amount),
+            hand_class,
+            raw_line: line.to_string(),
+        });
+    }
+
+    if let Some(won_amount) = parse_summary_collected_tail(tail) {
+        return Some(SummarySeatOutcome {
+            seat_no,
+            player_name,
+            position_marker,
+            outcome_kind: SummarySeatOutcomeKind::Collected,
+            folded_at: None,
+            shown_cards: None,
+            won_amount: Some(won_amount),
+            hand_class: None,
+            raw_line: line.to_string(),
+        });
+    }
+
+    None
+}
+
+fn parse_summary_folded_tail(tail: &str) -> Option<Street> {
+    if tail == "folded before Flop" {
+        return Some(Street::Preflop);
+    }
+
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let captures = REGEX
+        .get_or_init(|| {
+            Regex::new(r"^folded on the (?P<street>Flop|Turn|River)$")
+                .expect("summary folded tail regex must compile")
+        })
+        .captures(tail)?;
+    Some(match &captures["street"] {
+        "Flop" => Street::Flop,
+        "Turn" => Street::Turn,
+        "River" => Street::River,
+        _ => return None,
+    })
+}
+
+fn parse_summary_showed_won_tail(tail: &str) -> Option<(Vec<String>, i64, Option<String>)> {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let captures = REGEX
+        .get_or_init(|| {
+            Regex::new(
+                r"^showed \[(?P<cards>[^\]]+)\] and won \((?P<amount>[\d,]+)\)(?: with (?P<hand_class>.+))?$",
+            )
+            .expect("summary showed won tail regex must compile")
+        })
+        .captures(tail)?;
+    Some((
+        split_cards(&captures["cards"]),
+        parse_i64(&captures["amount"], "summary_won_amount").ok()?,
+        captures
+            .name("hand_class")
+            .map(|hand_class| hand_class.as_str().to_string()),
+    ))
+}
+
+fn parse_summary_showed_lost_tail(tail: &str) -> Option<(Vec<String>, Option<String>)> {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let captures = REGEX
+        .get_or_init(|| {
+            Regex::new(r"^showed \[(?P<cards>[^\]]+)\] and lost(?: with (?P<hand_class>.+))?$")
+                .expect("summary showed lost tail regex must compile")
+        })
+        .captures(tail)?;
+    Some((
+        split_cards(&captures["cards"]),
+        captures
+            .name("hand_class")
+            .map(|hand_class| hand_class.as_str().to_string()),
+    ))
+}
+
+fn parse_summary_won_tail(tail: &str) -> Option<(i64, Option<String>)> {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let captures = REGEX
+        .get_or_init(|| {
+            Regex::new(r"^won \((?P<amount>[\d,]+)\)(?: with (?P<hand_class>.+))?$")
+                .expect("summary won tail regex must compile")
+        })
+        .captures(tail)?;
+    Some((
+        parse_i64(&captures["amount"], "summary_won_amount").ok()?,
+        captures
+            .name("hand_class")
+            .map(|hand_class| hand_class.as_str().to_string()),
+    ))
+}
+
+fn parse_summary_collected_tail(tail: &str) -> Option<i64> {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let captures = REGEX
+        .get_or_init(|| {
+            Regex::new(r"^collected \((?P<amount>[\d,]+)\)$")
+                .expect("summary collected regex must compile")
+        })
+        .captures(tail)?;
+    parse_i64(&captures["amount"], "summary_collected_amount").ok()
 }
 
 fn parse_uncalled_return(
@@ -324,9 +592,11 @@ fn parse_uncalled_return(
     street: Street,
     seq: usize,
 ) -> Result<Option<HandActionEvent>, ParserError> {
-    let regex =
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| {
         Regex::new(r"^Uncalled bet \((?P<amount>[\d,]+)\) returned to (?P<player_name>.+)$")
-            .expect("uncalled return regex must compile");
+            .expect("uncalled return regex must compile")
+    });
     let Some(captures) = regex.captures(line) else {
         return Ok(None);
     };
@@ -338,6 +608,8 @@ fn parse_uncalled_return(
         action_type: ActionType::ReturnUncalled,
         is_forced: false,
         is_all_in: false,
+        all_in_reason: None,
+        forced_all_in_preflop: false,
         amount: Some(parse_i64(&captures["amount"], "return_amount")?),
         to_amount: None,
         cards: None,
@@ -350,8 +622,11 @@ fn parse_show_line(
     street: Street,
     seq: usize,
 ) -> Result<Option<(String, Vec<String>, HandActionEvent)>, ParserError> {
-    let regex = Regex::new(r"^(?P<player_name>.+): shows \[(?P<cards>[^\]]+)\](?: .+)?$")
-        .expect("show regex must compile");
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| {
+        Regex::new(r"^(?P<player_name>.+): shows \[(?P<cards>[^\]]+)\](?: .+)?$")
+            .expect("show regex must compile")
+    });
     let Some(captures) = regex.captures(line) else {
         return Ok(None);
     };
@@ -365,6 +640,8 @@ fn parse_show_line(
         action_type: ActionType::Show,
         is_forced: false,
         is_all_in: false,
+        all_in_reason: None,
+        forced_all_in_preflop: false,
         amount: None,
         to_amount: None,
         cards: Some(cards.clone()),
@@ -379,8 +656,11 @@ fn parse_collect_line(
     street: Street,
     seq: usize,
 ) -> Result<Option<(String, i64, HandActionEvent)>, ParserError> {
-    let regex = Regex::new(r"^(?P<player_name>.+) collected (?P<amount>[\d,]+) from .+$")
-        .expect("collect regex must compile");
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| {
+        Regex::new(r"^(?P<player_name>.+) collected (?P<amount>[\d,]+) from .+$")
+            .expect("collect regex must compile")
+    });
     let Some(captures) = regex.captures(line) else {
         return Ok(None);
     };
@@ -394,6 +674,8 @@ fn parse_collect_line(
         action_type: ActionType::Collect,
         is_forced: false,
         is_all_in: false,
+        all_in_reason: None,
+        forced_all_in_preflop: false,
         amount: Some(amount),
         to_amount: None,
         cards: None,
@@ -408,27 +690,53 @@ fn parse_player_action_line(
     street: Street,
     seq: usize,
 ) -> Result<Option<HandActionEvent>, ParserError> {
+    static POST_ANTE_REGEX: OnceLock<Regex> = OnceLock::new();
+    static POST_SB_REGEX: OnceLock<Regex> = OnceLock::new();
+    static POST_BB_REGEX: OnceLock<Regex> = OnceLock::new();
+    static POST_DEAD_REGEX: OnceLock<Regex> = OnceLock::new();
+    static FOLD_REGEX: OnceLock<Regex> = OnceLock::new();
+    static CHECK_REGEX: OnceLock<Regex> = OnceLock::new();
+    static CALL_REGEX: OnceLock<Regex> = OnceLock::new();
+    static BET_REGEX: OnceLock<Regex> = OnceLock::new();
+    static RAISE_REGEX: OnceLock<Regex> = OnceLock::new();
+    static MUCK_REGEX: OnceLock<Regex> = OnceLock::new();
+
     let forced_patterns = [
         (
-            Regex::new(
-                r"^(?P<player_name>.+): posts the ante (?P<amount>[\d,]+)(?: and is all-in)?$",
-            )
-            .expect("post ante regex must compile"),
+            POST_ANTE_REGEX.get_or_init(|| {
+                Regex::new(
+                    r"^(?P<player_name>.+): posts the ante (?P<amount>[\d,]+)(?: and is all-in)?$",
+                )
+                .expect("post ante regex must compile")
+            }),
             ActionType::PostAnte,
         ),
         (
-            Regex::new(
-                r"^(?P<player_name>.+): posts small blind (?P<amount>[\d,]+)(?: and is all-in)?$",
-            )
-            .expect("post sb regex must compile"),
+            POST_SB_REGEX.get_or_init(|| {
+                Regex::new(
+                    r"^(?P<player_name>.+): posts small blind (?P<amount>[\d,]+)(?: and is all-in)?$",
+                )
+                .expect("post sb regex must compile")
+            }),
             ActionType::PostSb,
         ),
         (
-            Regex::new(
-                r"^(?P<player_name>.+): posts big blind (?P<amount>[\d,]+)(?: and is all-in)?$",
-            )
-            .expect("post bb regex must compile"),
+            POST_BB_REGEX.get_or_init(|| {
+                Regex::new(
+                    r"^(?P<player_name>.+): posts big blind (?P<amount>[\d,]+)(?: and is all-in)?$",
+                )
+                .expect("post bb regex must compile")
+            }),
             ActionType::PostBb,
+        ),
+        (
+            POST_DEAD_REGEX.get_or_init(|| {
+                Regex::new(
+                    r"^(?P<player_name>.+): posts dead (?P<amount>[\d,]+)(?: and is all-in)?$",
+                )
+                .expect("post dead regex must compile")
+            }),
+            ActionType::PostDead,
         ),
     ];
 
@@ -441,6 +749,8 @@ fn parse_player_action_line(
                 action_type,
                 is_forced: true,
                 is_all_in: line.contains("and is all-in"),
+                all_in_reason: None,
+                forced_all_in_preflop: false,
                 amount: Some(parse_i64(&captures["amount"], "forced_amount")?),
                 to_amount: None,
                 cards: None,
@@ -449,7 +759,9 @@ fn parse_player_action_line(
         }
     }
 
-    let fold_regex = Regex::new(r"^(?P<player_name>.+): folds$").expect("fold regex must compile");
+    let fold_regex = FOLD_REGEX.get_or_init(|| {
+        Regex::new(r"^(?P<player_name>.+): folds$").expect("fold regex must compile")
+    });
     if let Some(captures) = fold_regex.captures(line) {
         return Ok(Some(HandActionEvent {
             seq,
@@ -458,6 +770,8 @@ fn parse_player_action_line(
             action_type: ActionType::Fold,
             is_forced: false,
             is_all_in: false,
+            all_in_reason: None,
+            forced_all_in_preflop: false,
             amount: None,
             to_amount: None,
             cards: None,
@@ -465,8 +779,9 @@ fn parse_player_action_line(
         }));
     }
 
-    let check_regex =
-        Regex::new(r"^(?P<player_name>.+): checks$").expect("check regex must compile");
+    let check_regex = CHECK_REGEX.get_or_init(|| {
+        Regex::new(r"^(?P<player_name>.+): checks$").expect("check regex must compile")
+    });
     if let Some(captures) = check_regex.captures(line) {
         return Ok(Some(HandActionEvent {
             seq,
@@ -475,6 +790,8 @@ fn parse_player_action_line(
             action_type: ActionType::Check,
             is_forced: false,
             is_all_in: false,
+            all_in_reason: None,
+            forced_all_in_preflop: false,
             amount: None,
             to_amount: None,
             cards: None,
@@ -482,9 +799,10 @@ fn parse_player_action_line(
         }));
     }
 
-    let call_regex =
+    let call_regex = CALL_REGEX.get_or_init(|| {
         Regex::new(r"^(?P<player_name>.+): calls (?P<amount>[\d,]+)(?: and is all-in)?$")
-            .expect("call regex must compile");
+            .expect("call regex must compile")
+    });
     if let Some(captures) = call_regex.captures(line) {
         let amount = parse_i64(&captures["amount"], "call_amount")?;
         return Ok(Some(HandActionEvent {
@@ -494,6 +812,8 @@ fn parse_player_action_line(
             action_type: ActionType::Call,
             is_forced: false,
             is_all_in: line.contains("and is all-in"),
+            all_in_reason: None,
+            forced_all_in_preflop: false,
             amount: Some(amount),
             to_amount: Some(amount),
             cards: None,
@@ -501,9 +821,10 @@ fn parse_player_action_line(
         }));
     }
 
-    let bet_regex =
+    let bet_regex = BET_REGEX.get_or_init(|| {
         Regex::new(r"^(?P<player_name>.+): bets (?P<amount>[\d,]+)(?: and is all-in)?$")
-            .expect("bet regex must compile");
+            .expect("bet regex must compile")
+    });
     if let Some(captures) = bet_regex.captures(line) {
         return Ok(Some(HandActionEvent {
             seq,
@@ -512,6 +833,8 @@ fn parse_player_action_line(
             action_type: ActionType::Bet,
             is_forced: false,
             is_all_in: line.contains("and is all-in"),
+            all_in_reason: None,
+            forced_all_in_preflop: false,
             amount: Some(parse_i64(&captures["amount"], "bet_amount")?),
             to_amount: None,
             cards: None,
@@ -519,10 +842,12 @@ fn parse_player_action_line(
         }));
     }
 
-    let raise_regex = Regex::new(
-        r"^(?P<player_name>.+): raises (?P<amount>[\d,]+) to (?P<to_amount>[\d,]+)(?: and is all-in)?$",
-    )
-    .expect("raise regex must compile");
+    let raise_regex = RAISE_REGEX.get_or_init(|| {
+        Regex::new(
+            r"^(?P<player_name>.+): raises (?P<amount>[\d,]+) to (?P<to_amount>[\d,]+)(?: and is all-in)?$",
+        )
+        .expect("raise regex must compile")
+    });
     if let Some(captures) = raise_regex.captures(line) {
         return Ok(Some(HandActionEvent {
             seq,
@@ -531,6 +856,8 @@ fn parse_player_action_line(
             action_type: ActionType::RaiseTo,
             is_forced: false,
             is_all_in: line.contains("and is all-in"),
+            all_in_reason: None,
+            forced_all_in_preflop: false,
             amount: Some(parse_i64(&captures["amount"], "raise_amount")?),
             to_amount: Some(parse_i64(&captures["to_amount"], "raise_to_amount")?),
             cards: None,
@@ -538,7 +865,173 @@ fn parse_player_action_line(
         }));
     }
 
+    let muck_regex = MUCK_REGEX.get_or_init(|| {
+        Regex::new(r"^(?P<player_name>.+): mucks(?: hand)?$").expect("muck regex must compile")
+    });
+    if let Some(captures) = muck_regex.captures(line) {
+        return Ok(Some(HandActionEvent {
+            seq,
+            street,
+            player_name: Some(captures["player_name"].to_string()),
+            action_type: ActionType::Muck,
+            is_forced: false,
+            is_all_in: false,
+            all_in_reason: None,
+            forced_all_in_preflop: false,
+            amount: None,
+            to_amount: None,
+            cards: None,
+            raw_line: line.to_string(),
+        }));
+    }
+
     Ok(None)
+}
+
+fn is_no_show_line(line: &str) -> bool {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX
+        .get_or_init(|| Regex::new(r"^.+: doesn't show hand$").expect("no-show regex must compile"))
+        .is_match(line)
+}
+
+fn annotate_partial_reveal_warnings(
+    parse_warnings: &mut Vec<String>,
+    actions: &[HandActionEvent],
+    summary_seat_outcomes: &[SummarySeatOutcome],
+) {
+    for action in actions {
+        if action.action_type == ActionType::Show
+            && action.cards.as_ref().is_some_and(|cards| cards.len() != 2)
+        {
+            parse_warnings.push(format!("partial_reveal_show_line: {}", action.raw_line));
+        }
+    }
+
+    for outcome in summary_seat_outcomes {
+        if outcome
+            .shown_cards
+            .as_ref()
+            .is_some_and(|cards| cards.len() != 2)
+        {
+            parse_warnings.push(format!(
+                "partial_reveal_summary_show_surface: {}",
+                outcome.raw_line
+            ));
+        }
+    }
+}
+
+fn annotate_action_all_in_metadata(
+    seats: &[ParsedHandSeat],
+    actions: &mut [HandActionEvent],
+) -> Result<(), ParserError> {
+    let mut stack_current = seats
+        .iter()
+        .map(|seat| (seat.player_name.clone(), seat.starting_stack))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut betting_round_contrib = seats
+        .iter()
+        .map(|seat| (seat.player_name.clone(), 0_i64))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut current_street = Street::Preflop;
+
+    for action in actions {
+        if is_betting_street(current_street)
+            && is_betting_street(action.street)
+            && action.street != current_street
+        {
+            for amount in betting_round_contrib.values_mut() {
+                *amount = 0;
+            }
+        }
+        current_street = action.street;
+
+        let Some(player_name) = action.player_name.as_ref() else {
+            continue;
+        };
+
+        let before_contrib = betting_round_contrib[player_name];
+        let mut delta = 0_i64;
+        let mut contributes_to_betting_round = false;
+
+        match action.action_type {
+            ActionType::PostAnte => {
+                delta = action.amount.unwrap_or(0);
+            }
+            ActionType::PostSb | ActionType::PostBb | ActionType::PostDead => {
+                delta = action.amount.unwrap_or(0);
+                contributes_to_betting_round = true;
+            }
+            ActionType::Call | ActionType::Bet => {
+                delta = action.amount.unwrap_or(0);
+                contributes_to_betting_round = true;
+            }
+            ActionType::RaiseTo => {
+                let to_amount = action.to_amount.ok_or(ParserError::InvalidField {
+                    field: "to_amount",
+                    value: action.raw_line.clone(),
+                })?;
+                delta = (to_amount - before_contrib).max(0);
+                contributes_to_betting_round = true;
+            }
+            ActionType::ReturnUncalled => {
+                let refund = action.amount.unwrap_or(0);
+                *stack_current.entry(player_name.clone()).or_default() += refund;
+                *betting_round_contrib
+                    .entry(player_name.clone())
+                    .or_default() -= refund;
+                continue;
+            }
+            ActionType::Fold
+            | ActionType::Check
+            | ActionType::Collect
+            | ActionType::Show
+            | ActionType::Muck => {}
+        }
+
+        if delta > 0 {
+            *stack_current.entry(player_name.clone()).or_default() -= delta;
+            if contributes_to_betting_round {
+                *betting_round_contrib
+                    .entry(player_name.clone())
+                    .or_default() += delta;
+            }
+        }
+
+        let exhausted_stack = stack_current[player_name] == 0;
+        if action.is_all_in || exhausted_stack {
+            action.is_all_in = true;
+            action.all_in_reason = Some(match action.action_type {
+                ActionType::PostAnte => AllInReason::AnteExhausted,
+                ActionType::PostSb | ActionType::PostBb | ActionType::PostDead => {
+                    AllInReason::BlindExhausted
+                }
+                ActionType::Call => AllInReason::CallExhausted,
+                ActionType::RaiseTo => AllInReason::RaiseExhausted,
+                ActionType::Bet => AllInReason::Voluntary,
+                ActionType::Fold
+                | ActionType::Check
+                | ActionType::ReturnUncalled
+                | ActionType::Collect
+                | ActionType::Show
+                | ActionType::Muck => continue,
+            });
+            action.forced_all_in_preflop = matches!(
+                action.all_in_reason,
+                Some(AllInReason::BlindExhausted | AllInReason::AnteExhausted)
+            ) && action.street == Street::Preflop;
+        }
+    }
+
+    Ok(())
+}
+
+fn is_betting_street(street: Street) -> bool {
+    matches!(
+        street,
+        Street::Preflop | Street::Flop | Street::Turn | Street::River
+    )
 }
 
 fn split_cards(raw: &str) -> Vec<String> {

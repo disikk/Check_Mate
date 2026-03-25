@@ -13,20 +13,22 @@ pub fn parse_tournament_summary(input: &str) -> Result<TournamentSummary, Parser
     let title_line = *lines
         .first()
         .ok_or(ParserError::MissingLine("tournament summary title"))?;
-    let buy_in_line = *lines
-        .get(1)
+    let buy_in_line = find_line(&lines, |line| line.starts_with("Buy-in: "))
         .ok_or(ParserError::MissingLine("buy-in line"))?;
-    let entrants_line = *lines
-        .get(2)
+    let entrants_line = find_line(&lines, |line| line.ends_with(" Players"))
         .ok_or(ParserError::MissingLine("entrants line"))?;
-    let prize_pool_line = *lines
-        .get(3)
+    let prize_pool_line = find_line(&lines, |line| line.starts_with("Total Prize Pool: "))
         .ok_or(ParserError::MissingLine("prize pool line"))?;
-    let started_line = *lines
-        .get(4)
+    let started_line = find_line(&lines, |line| line.starts_with("Tournament started "))
         .ok_or(ParserError::MissingLine("started line"))?;
-    let result_line = *lines
-        .get(5)
+    let result_regex =
+        Regex::new(r"^(?P<place>\d+)(?:st|nd|rd|th)\s*:\s*(?P<hero>.+),\s*(?P<payout>\$[\d.,]+)$")
+            .expect("result regex must compile");
+    let (result_line_index, result_line) = lines
+        .iter()
+        .enumerate()
+        .find(|(_, line)| result_regex.is_match(line))
+        .map(|(index, line)| (index, *line))
         .ok_or(ParserError::MissingLine("result line"))?;
 
     let title_body = title_line
@@ -39,13 +41,7 @@ pub fn parse_tournament_summary(input: &str) -> Result<TournamentSummary, Parser
         .rsplit_once(", ")
         .ok_or_else(|| invalid_field("title_line", title_line))?;
 
-    let buy_in_body = buy_in_line
-        .strip_prefix("Buy-in: ")
-        .ok_or_else(|| invalid_field("buy_in_line", buy_in_line))?;
-    let buy_in_parts: Vec<&str> = buy_in_body.split('+').collect();
-    if buy_in_parts.len() != 3 {
-        return Err(invalid_field("buy_in_line", buy_in_line));
-    }
+    let (buy_in_cents, rake_cents, bounty_cents) = parse_buy_in_components(buy_in_line)?;
 
     let entrants = entrants_line
         .strip_suffix(" Players")
@@ -63,27 +59,86 @@ pub fn parse_tournament_summary(input: &str) -> Result<TournamentSummary, Parser
         .trim()
         .to_string();
 
-    let result_regex =
-        Regex::new(r"^(?P<place>\d+)(?:st|nd|rd|th)\s*:\s*(?P<hero>.+),\s*(?P<payout>\$[\d.,]+)$")
-            .expect("result regex must compile");
     let captures = result_regex
         .captures(result_line)
         .ok_or_else(|| invalid_field("result_line", result_line))?;
+    let confirmed_finish_place =
+        find_confirmation_finish_place(lines.iter().skip(result_line_index + 1).copied())?;
+    let confirmed_payout_cents =
+        find_confirmation_payout(lines.iter().skip(result_line_index + 1).copied())?;
+    let finish_place = parse_u32(&captures["place"], "finish_place")?;
+    let payout_cents = parse_money_to_cents(&captures["payout"], "payout")?;
+    let mut validation_issue_codes = Vec::new();
+
+    if confirmed_finish_place.is_some_and(|confirmed| confirmed != finish_place) {
+        validation_issue_codes.push("ts_tail_finish_place_mismatch".to_string());
+    }
+    if confirmed_payout_cents.is_some_and(|confirmed| confirmed != payout_cents) {
+        validation_issue_codes.push("ts_tail_total_received_mismatch".to_string());
+    }
 
     Ok(TournamentSummary {
         tournament_id: parse_u64(tournament_id_raw, "tournament_id")?,
         tournament_name: tournament_name.to_string(),
         game_name: game_name.to_string(),
-        buy_in_cents: parse_money_to_cents(buy_in_parts[0], "buy_in")?,
-        rake_cents: parse_money_to_cents(buy_in_parts[1], "rake")?,
-        bounty_cents: parse_money_to_cents(buy_in_parts[2], "bounty")?,
+        buy_in_cents,
+        rake_cents,
+        bounty_cents,
         entrants,
         total_prize_pool_cents,
         started_at,
         hero_name: captures["hero"].to_string(),
-        finish_place: parse_u32(&captures["place"], "finish_place")?,
-        payout_cents: parse_money_to_cents(&captures["payout"], "payout")?,
+        finish_place,
+        payout_cents,
+        confirmed_finish_place,
+        confirmed_payout_cents,
+        validation_issue_codes,
     })
+}
+
+fn find_line<'a>(lines: &'a [&str], predicate: impl Fn(&str) -> bool) -> Option<&'a str> {
+    lines.iter().copied().find(|line| predicate(line))
+}
+
+fn parse_buy_in_components(line: &str) -> Result<(i64, i64, i64), ParserError> {
+    let buy_in_regex = Regex::new(
+        r"^Buy-in:\s*(?P<buy_in>\$[\d.,]+(?:\.\d+)?)\s*\+\s*(?P<rake>\$[\d.,]+(?:\.\d+)?)\s*\+\s*(?P<bounty>\$[\d.,]+(?:\.\d+)?)$",
+    )
+    .expect("buy-in regex must compile");
+    let captures = buy_in_regex
+        .captures(line)
+        .ok_or_else(|| invalid_field("buy_in_line", line))?;
+
+    Ok((
+        parse_money_to_cents(&captures["buy_in"], "buy_in")?,
+        parse_money_to_cents(&captures["rake"], "rake")?,
+        parse_money_to_cents(&captures["bounty"], "bounty")?,
+    ))
+}
+
+fn find_confirmation_finish_place<'a>(
+    mut tail_lines: impl Iterator<Item = &'a str>,
+) -> Result<Option<u32>, ParserError> {
+    let finish_regex =
+        Regex::new(r"^You finished the tournament in (?P<place>\d+)(?:st|nd|rd|th) place\.?$")
+            .expect("finish confirmation regex must compile");
+
+    tail_lines
+        .find_map(|line| finish_regex.captures(line))
+        .map(|captures| parse_u32(&captures["place"], "confirmed_finish_place"))
+        .transpose()
+}
+
+fn find_confirmation_payout<'a>(
+    mut tail_lines: impl Iterator<Item = &'a str>,
+) -> Result<Option<i64>, ParserError> {
+    let payout_regex = Regex::new(r"^You received a total of (?P<payout>\$[\d.,]+)\.?$")
+        .expect("payout confirmation regex must compile");
+
+    tail_lines
+        .find_map(|line| payout_regex.captures(line))
+        .map(|captures| parse_money_to_cents(&captures["payout"], "confirmed_payout"))
+        .transpose()
 }
 
 fn normalize_newlines(input: &str) -> String {

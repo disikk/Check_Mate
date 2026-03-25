@@ -72,7 +72,7 @@
 - `import-local` жёстко завязан на dev-контекст (`Hero`, `Check Mate Dev Org`);
 - `source_files` уже дедуплицируются по `(player_profile_id, room, file_kind, sha256)`, но ingest всё ещё dev-only и не заменяет будущий web/API pipeline;
 - runtime materializer делает полный refresh feature-rows для игрока после каждого импорта;
-- `hero_exact_ko_count` сейчас трактуется как число KO-событий, а не как KO-share/эквивалент полного KO;
+- `hero_exact_ko_event_count` сейчас трактуется как число KO-событий, а не как KO-share/эквивалент полного KO;
 - `is_nut_hand` и `is_nut_draw` в street strength v1 намеренно остаются `NULL`;
 - boundary KO persistence пока ограничена boundary v1 point estimate;
 - pure `big_ko` decoder ещё не подключён к final stat/materialization contract.

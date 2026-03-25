@@ -14,3 +14,5 @@ __MACOSX/
 backend/target/
 backend/.env
 /.claude
+/.agent/tasks
+/.codex/agents

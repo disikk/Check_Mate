@@ -122,7 +122,7 @@ cat <<EOF
 Next steps:
   cd "${BACKEND_DIR}"
   cargo test
-  cargo test -p parser_worker local_import::tests::import_local_full_pack_smoke_is_clean_and_idempotent -- --ignored --exact
+  cargo test -p parser_worker local_import::tests::import_local_full_pack_smoke_is_clean -- --ignored --exact
   cargo test -p parser_worker local_import::tests::import_local_persists_canonical_hand_layer_to_postgres -- --ignored --exact
   cargo test -p parser_worker local_import::tests::import_local_refreshes_analytics_features_and_seed_stats -- --ignored --exact
   bash scripts/run_backend_checks.sh

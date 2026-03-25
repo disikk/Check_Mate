@@ -64,15 +64,25 @@ Read this first when resuming on another machine or in another chat session.
 - `derived.hand_state_resolutions`
 - `derived.hand_eliminations`
 - `derived.mbr_stage_resolution`
+- `derived.mbr_tournament_ft_helper`
 
 ## Important exactness findings already fixed
 
 ### 1. FT stage logic
 
 - `played_ft_hand` is exact and based on real `9-max` hands.
-- The last chronological `5-max` hand before the first chronological `9-max` hand is persisted as the boundary candidate:
-  - `entered_boundary_zone = true`
-  - `entered_boundary_zone_state = estimated`
+- Boundary resolution now uses the ordered timeline and the last non-FT candidate set before the first chronological `9-max` hand.
+- Candidate rows still persist with `entered_boundary_zone = true`.
+- New per-hand metadata is persisted on `derived.mbr_stage_resolution`:
+  - `boundary_resolution_state`
+  - `boundary_candidate_count`
+  - `boundary_resolution_method`
+  - `boundary_confidence_class`
+- Single-candidate boundary cases are `exact`; multi-candidate last-timestamp cases are `uncertain`.
+- `boundary_ko_*` is no longer backfilled from a fake `0.0` placeholder when no exact Hero share exists.
+- `derived.mbr_tournament_ft_helper` now materializes one deterministic row per `(tournament_id, player_profile_id)` for HH-covered tournaments during `parser_worker import-local`.
+- Tournament-grain helper fields now include `reached_ft_exact`, `first_ft_hand_id`, `first_ft_hand_started_local`, `first_ft_table_size`, `ft_started_incomplete`, `deepest_ft_size_reached`, Hero FT-entry stacks, and aggregated boundary flags/state.
+- If an HH-covered tournament has no exact FT hand, the helper row still exists, but FT-specific fields stay `NULL` instead of being guessed.
 
 Verified examples:
 

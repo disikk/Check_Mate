@@ -1,0 +1,1233 @@
+spec_version: mbr_stats_spec_v1
+frozen_on: 2026-03-25
+scope:
+  phase_id: F0
+  task_ids:
+    - F0-T1
+    - F0-T2
+  description: "Semantic freeze for MBR stats before boundary, stage, KO-money, and Big KO code changes."
+dependency_order:
+  - F0-T1
+  - F0-T2
+  - F1-T1
+  - F1-T2
+  - F1-T3
+  - F2-T1
+  - F2-T2
+  - F3-T1
+  - F3-T2
+  - F4-T1
+  - F4-T2
+freeze_decisions:
+  - "This file is the source of truth for stat semantics, denominator contracts, and exactness classes."
+  - "Current runtime terms may remain as provisional implementation details; they are not canonical unless explicitly marked mapped."
+  - "Event-count metrics and money metrics are separate families and must never share one output key."
+  - "No F1+ code change may use `ft_stage_bucket` as a primary stage substrate."
+  - "No F1+ code change may present `boundary_ko_*` as exact while `boundary_resolution_state` is non-exact."
+  - "During F1-T3, runtime filters may read exact-core descriptors directly from `core/derived` tables, but this descriptor surface is a downstream substrate only and not yet a canonical public stat API."
+downstream_exact_core_filter_surface:
+  hand_presence_keys:
+    - "has_uncertain_reason_code:<code> -> derived.hand_state_resolutions.uncertain_reason_codes"
+    - "has_action_legality_issue:<code> -> derived.hand_state_resolutions.invariant_errors (legality subset)"
+    - "has_invariant_error_code:<code> -> derived.hand_state_resolutions.invariant_errors"
+  seat_surface:
+    surface_key: seat
+    note: "Runtime-only participant facet used by `mbr_stats_runtime::filters`; not a materialized analytics table and not a public stat key namespace."
+    source_tables:
+      - core.hand_positions
+      - core.hand_actions
+      - core.hand_summary_results
+      - derived.hand_eliminations
+    enum_keys:
+      - position_code
+      - summary_outcome_kind
+      - summary_position_marker
+      - summary_folded_street
+      - summary_hand_class
+    num_keys:
+      - preflop_act_order_index
+      - postflop_act_order_index
+      - summary_won_amount
+    bool_keys:
+      - forced_all_in_preflop
+      - summary_has_shown_cards
+      - is_exact_ko_participant
+      - is_exact_ko_eliminated
+      - has_all_in_reason:<reason>
+classification_legend:
+  delivery_status:
+    initial_tranche: "Part of the first honest stat tranche that should ship once its direct dependencies are implemented."
+    blocked: "Spec is frozen, but implementation is blocked by missing helper layers or money semantics."
+  runtime_status:
+    mapped: "Current runtime already matches the frozen semantic contract closely enough."
+    proxy: "Current runtime is useful but semantically narrower or named differently than the frozen contract."
+    blocked: "No current runtime surface is honest enough to expose this metric."
+    legacy_only: "Legacy output shape is retained only for compatibility notes and should not become the new canonical key."
+  exactness_class:
+    exact: "Value is provable directly from exact source-of-truth rows."
+    coverage_limited_exact: "Formula is exact on the covered subset, but denominator is restricted by available source coverage."
+    estimated: "Value comes from an explicitly inferred or posterior model."
+    blocked: "Spec is frozen, but the value must not be emitted yet."
+canonical_helper_terms:
+  summary_covered_tournaments: "Tournaments with non-null buy-in, finish place, and payout fields from summary import."
+  hh_covered_tournaments: "Tournaments with hand-history coverage sufficient to materialize exact per-hand features."
+  reached_ft_exact: "Tournament-level FT helper says Hero reached an exact final-table hand."
+  first_ft_hand_exact: "Tournament-level FT helper exposes one deterministic first FT hand."
+  ft_started_incomplete: "First exact FT hand started with fewer than nine active players."
+  hero_ft_entry_stack_chips: "Hero stack at the first exact FT hand."
+  hero_ft_entry_stack_bb: "Hero FT-entry stack expressed in big blinds at the first exact FT hand."
+  deepest_ft_size_reached: "Smallest exact FT player-count reached by Hero in the tournament."
+  hero_exact_ko_event_count: "Count of exact KO events credited to Hero; event semantics only."
+  ko_money_realized_total: "Money proven to come from KO rewards; money semantics only."
+  ko_money_estimated_total: "Money inferred from posterior or estimated KO allocation."
+  posterior_big_ko_bucket_weight: "Posterior expected count mass for a KO-money event in a multiplier bucket."
+runtime_term_alignment:
+  - runtime_term: roi_pct
+    canonical_stat_keys:
+      - roi_pct
+    status: mapped
+    note: "Current seed query already matches the frozen ROI formula over summary-covered tournaments."
+  - runtime_term: avg_finish_place
+    canonical_stat_keys:
+      - avg_finish_place
+    status: mapped
+    note: "Current seed query already matches the frozen average finish formula over summary-covered tournaments."
+  - runtime_term: final_table_reach_percent
+    canonical_stat_keys:
+      - final_table_reach_percent
+    status: mapped
+    note: "Current seed query already reads `derived.mbr_tournament_ft_helper.reached_ft_exact` over HH-covered tournaments."
+  - runtime_term: hero_exact_ko_event_count
+    canonical_stat_keys: []
+    status: legacy_only
+    note: "Retained only as a per-hand exact event counter. Public KO seed stats now read exact `derived.hand_eliminations` rows directly."
+  - runtime_term: ft_stage_bucket
+    canonical_stat_keys: []
+    status: legacy_only
+    note: "Allowed only as an auxiliary UI/debug bucket. All stage-aware stats must move to formal stage predicates from F1-T3."
+  - runtime_term: boundary_ko_min
+    canonical_stat_keys: []
+    status: blocked
+    note: "Current boundary v1 point estimate is not a valid uncertainty model."
+  - runtime_term: boundary_ko_ev
+    canonical_stat_keys: []
+    status: blocked
+    note: "Do not expose as a canonical stat until `boundary_resolution_state` and KO-money semantics are rebuilt."
+  - runtime_term: boundary_ko_max
+    canonical_stat_keys: []
+    status: blocked
+    note: "Do not expose as a canonical stat until `boundary_resolution_state` and KO-money semantics are rebuilt."
+stat_modules:
+  - legacy_module_id: avg_finish_place
+    legacy_name: "Avg Finish Place"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - avg_finish_place
+    formal_formula:
+      avg_finish_place: "sum(finish_place) / count(summary_covered_tournaments)"
+    numerator_definition:
+      avg_finish_place: "Sum of Hero finish_place across tournaments in `summary_covered_tournaments`."
+    denominator_definition:
+      avg_finish_place: "Count of tournaments in `summary_covered_tournaments` with non-null finish_place."
+    units:
+      avg_finish_place: place
+    grain: tournament_set
+    exactness_class:
+      avg_finish_place: coverage_limited_exact
+    source_dependencies:
+      - core.tournament_entries.finish_place
+      - core.tournaments.buyin_total
+      - core.tournament_entries.total_payout_money
+    nullability_rules:
+      avg_finish_place: "NULL when the denominator is 0."
+    partial_coverage_behavior: "Use only `summary_covered_tournaments`. HH-only tournaments never join this denominator."
+    fixture_expectations:
+      - "Finish places [2, 5] produce 3.5."
+      - "Tournament without finish_place is excluded from both numerator and denominator."
+
+  - legacy_module_id: avg_finish_place_ft
+    legacy_name: "Avg Finish Place FT"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - avg_finish_place_ft
+    formal_formula:
+      avg_finish_place_ft: "sum(finish_place where reached_ft_exact) / count(summary_covered_tournaments where reached_ft_exact)"
+    numerator_definition:
+      avg_finish_place_ft: "Sum of Hero finish_place across summary-covered tournaments where the tournament helper proves `reached_ft_exact = true`."
+    denominator_definition:
+      avg_finish_place_ft: "Count of summary-covered tournaments with `reached_ft_exact = true`."
+    units:
+      avg_finish_place_ft: place
+    grain: tournament_set
+    exactness_class:
+      avg_finish_place_ft: coverage_limited_exact
+    source_dependencies:
+      - core.tournament_entries.finish_place
+      - derived.mbr_tournament_ft_helper.reached_ft_exact
+    nullability_rules:
+      avg_finish_place_ft: "NULL when no tournament satisfies the denominator contract."
+    partial_coverage_behavior: "Mapped query-time from the tournament-level FT helper. Only summary-covered tournaments with exact `reached_ft_exact = true` enter the denominator; never infer FT reach from `ft_stage_bucket`."
+    fixture_expectations:
+      - "Two FT-reached tournaments with finish places [1, 4] produce 2.5."
+      - "Tournament with HH coverage but no exact FT helper record does not enter the denominator."
+
+  - legacy_module_id: avg_finish_place_no_ft
+    legacy_name: "Avg Finish Place No FT"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - avg_finish_place_no_ft
+    formal_formula:
+      avg_finish_place_no_ft: "sum(finish_place where reached_ft_exact = false) / count(summary_covered_tournaments where reached_ft_exact = false)"
+    numerator_definition:
+      avg_finish_place_no_ft: "Sum of Hero finish_place across summary-covered tournaments where the tournament helper proves `reached_ft_exact = false`."
+    denominator_definition:
+      avg_finish_place_no_ft: "Count of summary-covered tournaments where `reached_ft_exact = false`."
+    units:
+      avg_finish_place_no_ft: place
+    grain: tournament_set
+    exactness_class:
+      avg_finish_place_no_ft: coverage_limited_exact
+    source_dependencies:
+      - core.tournament_entries.finish_place
+      - derived.mbr_tournament_ft_helper.reached_ft_exact
+    nullability_rules:
+      avg_finish_place_no_ft: "NULL when no tournament satisfies the denominator contract."
+    partial_coverage_behavior: "Mapped query-time from the tournament-level FT helper. Only summary-covered tournaments with exact `reached_ft_exact = false` enter the denominator."
+    fixture_expectations:
+      - "Two non-FT tournaments with finish places [13, 22] produce 17.5."
+      - "Tournament with unknown FT status is excluded instead of guessed."
+
+  - legacy_module_id: avg_ft_initial_stack
+    legacy_name: "Avg FT Initial Stack"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - avg_ft_initial_stack_chips
+      - avg_ft_initial_stack_bb
+    formal_formula:
+      avg_ft_initial_stack_chips: "sum(hero_ft_entry_stack_chips where first_ft_hand_exact) / count(tournaments where first_ft_hand_exact)"
+      avg_ft_initial_stack_bb: "sum(hero_ft_entry_stack_bb where first_ft_hand_exact) / count(tournaments where first_ft_hand_exact)"
+    numerator_definition:
+      avg_ft_initial_stack_chips: "Sum of Hero chip stack on the first exact FT hand."
+      avg_ft_initial_stack_bb: "Sum of Hero stack in big blinds on the first exact FT hand."
+    denominator_definition:
+      avg_ft_initial_stack_chips: "Count of tournaments with an exact `first_ft_hand_id` and exact Hero FT-entry stack."
+      avg_ft_initial_stack_bb: "Count of tournaments with an exact `first_ft_hand_id` and exact Hero FT-entry stack."
+    units:
+      avg_ft_initial_stack_chips: chips
+      avg_ft_initial_stack_bb: big_blinds
+    grain: tournament_set
+    exactness_class:
+      avg_ft_initial_stack_chips: coverage_limited_exact
+      avg_ft_initial_stack_bb: coverage_limited_exact
+    source_dependencies:
+      - derived.mbr_tournament_ft_helper.first_ft_hand_id
+      - derived.mbr_tournament_ft_helper.hero_ft_entry_stack_chips
+      - derived.mbr_tournament_ft_helper.hero_ft_entry_stack_bb
+    nullability_rules:
+      avg_ft_initial_stack_chips: "NULL when denominator is 0."
+      avg_ft_initial_stack_bb: "NULL when denominator is 0."
+    partial_coverage_behavior: "Mapped query-time from the FT helper once it exposes one deterministic first FT hand and exact Hero FT-entry stacks. Tournaments with only estimated FT boundary stay out of the denominator."
+    fixture_expectations:
+      - "Hero FT-entry stacks [18bb, 27bb] produce 22.5bb."
+      - "Tournament with only estimated FT boundary never enters the denominator."
+
+  - legacy_module_id: avg_ko_per_tournament
+    legacy_name: "Avg KO Per Tournament"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - avg_ko_event_per_tournament
+    formal_formula:
+      avg_ko_event_per_tournament: "count(exact Hero KO events across hh_covered_tournaments) / count(hh_covered_tournaments)"
+    numerator_definition:
+      avg_ko_event_per_tournament: "Total number of exact `derived.hand_eliminations` rows where `hero_involved = true` and `certainty_state = exact` across `hh_covered_tournaments`."
+    denominator_definition:
+      avg_ko_event_per_tournament: "Count of tournaments in `hh_covered_tournaments`."
+    units:
+      avg_ko_event_per_tournament: ko_events_per_tournament
+    grain: tournament_set
+    exactness_class:
+      avg_ko_event_per_tournament: coverage_limited_exact
+    source_dependencies:
+      - derived.hand_eliminations.hero_involved
+      - derived.hand_eliminations.certainty_state
+      - core.hands.tournament_id
+    nullability_rules:
+      avg_ko_event_per_tournament: "NULL when the denominator is 0."
+    partial_coverage_behavior: "Use only HH-covered tournaments. Runtime now reads exact elimination rows directly, not per-hand proxy feature keys."
+    fixture_expectations:
+      - "Hero KO event totals [2, 1, 0] across three HH-covered tournaments produce 1.0."
+      - "Split KO still counts as one KO event for each busted opponent."
+
+  - legacy_module_id: big_ko
+    legacy_name: "Big KO"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - big_ko_x1_5_count
+      - big_ko_x2_count
+      - big_ko_x10_count
+      - big_ko_x100_count
+      - big_ko_x1000_count
+      - big_ko_x10000_count
+    formal_formula:
+      big_ko_x1_5_count: "sum(weighted_envelope_bucket_probability(event, x1.5))"
+      big_ko_x2_count: "sum(weighted_envelope_bucket_probability(event, x2))"
+      big_ko_x10_count: "sum(weighted_envelope_bucket_probability(event, x10))"
+      big_ko_x100_count: "sum(weighted_envelope_bucket_probability(event, x100))"
+      big_ko_x1000_count: "sum(weighted_envelope_bucket_probability(event, x1000))"
+      big_ko_x10000_count: "sum(weighted_envelope_bucket_probability(event, x10000))"
+    numerator_definition:
+      big_ko_x1_5_count: "Frequency-weighted expected Hero KO-event mass in the x1.5 bucket using the official envelope table for the tournament buy-in."
+      big_ko_x2_count: "Frequency-weighted expected Hero KO-event mass in the x2 bucket using the official envelope table for the tournament buy-in."
+      big_ko_x10_count: "Frequency-weighted expected Hero KO-event mass in the x10 bucket using the official envelope table for the tournament buy-in."
+      big_ko_x100_count: "Frequency-weighted expected Hero KO-event mass in the x100 bucket using the official envelope table for the tournament buy-in."
+      big_ko_x1000_count: "Frequency-weighted expected Hero KO-event mass in the x1000 bucket using the official envelope table for the tournament buy-in."
+      big_ko_x10000_count: "Frequency-weighted expected Hero KO-event mass in the x10000 bucket using the official envelope table for the tournament buy-in."
+    denominator_definition:
+      big_ko_x1_5_count: "Implicit denominator is the set of supported exact Hero KO-money events whose tournament buy-in maps to an official envelope table."
+      big_ko_x2_count: "Implicit denominator is the set of supported exact Hero KO-money events whose tournament buy-in maps to an official envelope table."
+      big_ko_x10_count: "Implicit denominator is the set of supported exact Hero KO-money events whose tournament buy-in maps to an official envelope table."
+      big_ko_x100_count: "Implicit denominator is the set of supported exact Hero KO-money events whose tournament buy-in maps to an official envelope table."
+      big_ko_x1000_count: "Implicit denominator is the set of supported exact Hero KO-money events whose tournament buy-in maps to an official envelope table."
+      big_ko_x10000_count: "Implicit denominator is the set of supported exact Hero KO-money events whose tournament buy-in maps to an official envelope table."
+    units:
+      big_ko_x1_5_count: expected_event_count
+      big_ko_x2_count: expected_event_count
+      big_ko_x10_count: expected_event_count
+      big_ko_x100_count: expected_event_count
+      big_ko_x1000_count: expected_event_count
+      big_ko_x10000_count: expected_event_count
+    grain: ko_money_event_set
+    exactness_class:
+      big_ko_x1_5_count: estimated
+      big_ko_x2_count: estimated
+      big_ko_x10_count: estimated
+      big_ko_x100_count: estimated
+      big_ko_x1000_count: estimated
+      big_ko_x10000_count: estimated
+    source_dependencies:
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+    nullability_rules:
+      big_ko_x1_5_count: "0 when no supported exact Hero KO-money event exists."
+      big_ko_x2_count: "0 when no supported exact Hero KO-money event exists."
+      big_ko_x10_count: "0 when no supported exact Hero KO-money event exists."
+      big_ko_x100_count: "0 when no supported exact Hero KO-money event exists."
+      big_ko_x1000_count: "0 when no supported exact Hero KO-money event exists."
+      big_ko_x10000_count: "0 when no supported exact Hero KO-money event exists."
+    partial_coverage_behavior: "Mapped query-time using official envelope-frequency weighting over supported exact Hero KO-share events. No posterior conditioning and no greedy event-to-money allocation are allowed in this tranche."
+    fixture_expectations:
+      - "A supported exact Hero KO event contributes fractional expected mass across buckets according to the official envelope frequencies for that buy-in."
+      - "Bucket counts remain expected counts, not forced integer allocations, when Hero only owns a partial KO-money share."
+
+  - legacy_module_id: deep_ft_stat
+    legacy_name: "Deep FT"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - deep_ft_reach_percent
+      - deep_ft_avg_stack_chips
+      - deep_ft_avg_stack_bb
+      - deep_ft_roi_pct
+    formal_formula:
+      deep_ft_reach_percent: "count(tournaments where deepest_ft_size_reached <= 5) / count(hh_covered_tournaments)"
+      deep_ft_avg_stack_chips: "sum(hero_stack_chips at first exact FT hand with players_remaining <= 5) / count(tournaments where deepest_ft_size_reached <= 5)"
+      deep_ft_avg_stack_bb: "sum(hero_stack_bb at first exact FT hand with players_remaining <= 5) / count(tournaments where deepest_ft_size_reached <= 5)"
+      deep_ft_roi_pct: "((sum(total_payout_money where deepest_ft_size_reached <= 5) - sum(buyin_total where deepest_ft_size_reached <= 5)) / sum(buyin_total where deepest_ft_size_reached <= 5)) * 100"
+    numerator_definition:
+      deep_ft_reach_percent: "Count of HH-covered tournaments where Hero reaches an exact FT state with five or fewer players remaining."
+      deep_ft_avg_stack_chips: "Sum of Hero stack in chips on the first exact hand satisfying the deep-FT predicate."
+      deep_ft_avg_stack_bb: "Sum of Hero stack in big blinds on the first exact hand satisfying the deep-FT predicate."
+      deep_ft_roi_pct: "Net tournament profit over tournaments where Hero reaches deep FT."
+    denominator_definition:
+      deep_ft_reach_percent: "Count of HH-covered tournaments."
+      deep_ft_avg_stack_chips: "Count of tournaments where Hero reaches deep FT exactly."
+      deep_ft_avg_stack_bb: "Count of tournaments where Hero reaches deep FT exactly."
+      deep_ft_roi_pct: "Sum of buy-ins for tournaments where Hero reaches deep FT exactly."
+    units:
+      deep_ft_reach_percent: percent
+      deep_ft_avg_stack_chips: chips
+      deep_ft_avg_stack_bb: big_blinds
+      deep_ft_roi_pct: percent
+    grain: tournament_set
+    exactness_class:
+      deep_ft_reach_percent: coverage_limited_exact
+      deep_ft_avg_stack_chips: coverage_limited_exact
+      deep_ft_avg_stack_bb: coverage_limited_exact
+      deep_ft_roi_pct: coverage_limited_exact
+    source_dependencies:
+      - derived.mbr_tournament_ft_helper.deepest_ft_size_reached
+      - derived.stage_predicates.is_stage_4_5
+      - core.tournament_entries.total_payout_money
+      - core.tournaments.buyin_total
+    nullability_rules:
+      deep_ft_reach_percent: "NULL when there are no HH-covered tournaments."
+      deep_ft_avg_stack_chips: "NULL when no tournament reaches deep FT exactly."
+      deep_ft_avg_stack_bb: "NULL when no tournament reaches deep FT exactly."
+      deep_ft_roi_pct: "NULL when the buy-in denominator is 0."
+    partial_coverage_behavior: "Mapped query-time from exact `deepest_ft_size_reached` plus exact deep-FT entry stacks. Tournaments with uncertain FT boundary or missing deep-FT entry stay out of the covered subset."
+    fixture_expectations:
+      - "Tournament that reaches 5-handed exactly increments deep_ft_reach_percent."
+      - "Tournament stuck in uncertain boundary does not enter any deep-FT denominator."
+
+  - legacy_module_id: early_ft_bust
+    legacy_name: "Early FT Bust"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - early_ft_bust_count
+      - early_ft_bust_per_tournament
+    formal_formula:
+      early_ft_bust_count: "count(hero bust events on hands where is_stage_6_9 = true)"
+      early_ft_bust_per_tournament: "count(hero bust events on hands where is_stage_6_9 = true) / count(tournaments where reached_ft_exact)"
+    numerator_definition:
+      early_ft_bust_count: "Count of tournaments where Hero's elimination occurs on a hand with exact `is_stage_6_9 = true`."
+      early_ft_bust_per_tournament: "Same count as `early_ft_bust_count`."
+    denominator_definition:
+      early_ft_bust_count: "Implicit denominator is the tournament set; this metric returns a count."
+      early_ft_bust_per_tournament: "Count of tournaments with `reached_ft_exact = true`."
+    units:
+      early_ft_bust_count: bust_events
+      early_ft_bust_per_tournament: bust_events_per_ft_tournament
+    grain: tournament_set
+    exactness_class:
+      early_ft_bust_count: coverage_limited_exact
+      early_ft_bust_per_tournament: coverage_limited_exact
+    source_dependencies:
+      - derived.stage_predicates.is_stage_6_9
+      - derived.hand_eliminations
+      - derived.mbr_tournament_ft_helper.reached_ft_exact
+    nullability_rules:
+      early_ft_bust_count: "0 when no exact early-FT bust exists."
+      early_ft_bust_per_tournament: "NULL when no tournament reaches FT exactly."
+    partial_coverage_behavior: "Mapped query-time from exact stage predicates and exact elimination timing. Only tournaments with exact FT reach enter the denominator for the per-tournament variant."
+    fixture_expectations:
+      - "Hero busting 7-handed increments early_ft_bust_count by 1."
+      - "Hero busting 5-handed must not count as early FT."
+
+  - legacy_module_id: early_ft_ko
+    legacy_name: "Early FT KO"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - early_ft_ko_event_count
+      - early_ft_ko_event_per_tournament
+    formal_formula:
+      early_ft_ko_event_count: "count(hero exact KO events on hands where is_stage_6_9 = true)"
+      early_ft_ko_event_per_tournament: "count(hero exact KO events on hands where is_stage_6_9 = true) / count(tournaments where reached_ft_exact)"
+    numerator_definition:
+      early_ft_ko_event_count: "Count of Hero exact KO events during exact stage 6-9."
+      early_ft_ko_event_per_tournament: "Same KO-event count as `early_ft_ko_event_count`."
+    denominator_definition:
+      early_ft_ko_event_count: "Implicit denominator is the tournament set; this metric returns a count."
+      early_ft_ko_event_per_tournament: "Count of tournaments with `reached_ft_exact = true`."
+    units:
+      early_ft_ko_event_count: ko_events
+      early_ft_ko_event_per_tournament: ko_events_per_ft_tournament
+    grain: tournament_set
+    exactness_class:
+      early_ft_ko_event_count: coverage_limited_exact
+      early_ft_ko_event_per_tournament: coverage_limited_exact
+    source_dependencies:
+      - derived.mbr_stage_resolution.is_stage_6_9
+      - derived.hand_eliminations.hero_involved
+      - derived.hand_eliminations.certainty_state
+      - derived.mbr_tournament_ft_helper.reached_ft_exact
+      - core.hands.tournament_id
+    nullability_rules:
+      early_ft_ko_event_count: "0 when no exact early-FT KO exists."
+      early_ft_ko_event_per_tournament: "NULL when no tournament reaches FT exactly."
+    partial_coverage_behavior: "Use only HH-covered tournaments. Numerator counts exact Hero KO events on hands where `is_stage_6_9 = true`; denominator counts tournaments where the helper proves `reached_ft_exact = true`."
+    fixture_expectations:
+      - "Hero KO at 8-handed increments the count."
+      - "Hero KO at 5-handed belongs to stage 5-6 or 4-5, not early FT."
+
+  - legacy_module_id: final_table_reach
+    legacy_name: "Final Table Reach"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - final_table_reach_percent
+    formal_formula:
+      final_table_reach_percent: "count(tournaments where reached_ft_exact) / count(hh_covered_tournaments)"
+    numerator_definition:
+      final_table_reach_percent: "Count of HH-covered tournaments where the tournament helper proves `reached_ft_exact = true`."
+    denominator_definition:
+      final_table_reach_percent: "Count of HH-covered tournaments."
+    units:
+      final_table_reach_percent: percent
+    grain: tournament_set
+    exactness_class:
+      final_table_reach_percent: coverage_limited_exact
+    source_dependencies:
+      - derived.mbr_tournament_ft_helper.reached_ft_exact
+      - core.hands.tournament_id
+    nullability_rules:
+      final_table_reach_percent: "NULL when the denominator is 0."
+    partial_coverage_behavior: "Use HH-covered tournaments only. Runtime now reads tournament-level `reached_ft_exact` directly from the FT helper."
+    fixture_expectations:
+      - "One FT-reached tournament out of four HH-covered tournaments produces 25%."
+      - "Summary-only tournament does not enter the denominator."
+
+  - legacy_module_id: ft_stack_conversion
+    legacy_name: "FT Stack Conversion"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ft_stack_conversion
+    formal_formula:
+      ft_stack_conversion: "sum(exact KO events on FT hands with is_stage_6_9 = true) / sum(hero_ft_entry_stack_bb where reached_ft_exact)"
+    numerator_definition:
+      ft_stack_conversion: "Total Hero exact KO events during early FT."
+    denominator_definition:
+      ft_stack_conversion: "Sum of Hero FT-entry stack in big blinds across tournaments with `reached_ft_exact = true`."
+    units:
+      ft_stack_conversion: ko_events_per_bb
+    grain: tournament_set
+    exactness_class:
+      ft_stack_conversion: coverage_limited_exact
+    source_dependencies:
+      - derived.stage_predicates.is_stage_6_9
+      - derived.hand_eliminations
+      - derived.mbr_tournament_ft_helper.hero_ft_entry_stack_bb
+    nullability_rules:
+      ft_stack_conversion: "NULL when the FT-entry stack denominator is 0."
+    partial_coverage_behavior: "Mapped query-time from exact early-FT KO events plus FT helper entry stacks; tournaments without exact FT-entry stack stay out of the denominator."
+    fixture_expectations:
+      - "Hero with 20bb FT-entry stack and two early-FT KOs produces 0.1."
+      - "Tournament with uncertain FT entry stack is excluded from the denominator."
+
+  - legacy_module_id: ft_stack_conversion_attempts
+    legacy_name: "FT Stack Conversion Attempts"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - avg_ko_attempts_per_ft
+      - ko_attempts_success_rate
+    formal_formula:
+      avg_ko_attempts_per_ft: "count(exact KO attempts on FT hands with is_stage_6_9 = true) / count(tournaments where reached_ft_exact)"
+      ko_attempts_success_rate: "count(exact KO events on FT hands with is_stage_6_9 = true) / count(exact KO attempts on FT hands with is_stage_6_9 = true)"
+    numerator_definition:
+      avg_ko_attempts_per_ft: "Total exact KO attempts during early FT."
+      ko_attempts_success_rate: "Total exact KO events during early FT."
+    denominator_definition:
+      avg_ko_attempts_per_ft: "Count of tournaments with `reached_ft_exact = true`."
+      ko_attempts_success_rate: "Count of exact early-FT KO attempts."
+    units:
+      avg_ko_attempts_per_ft: attempts_per_ft_tournament
+      ko_attempts_success_rate: ratio
+    grain: tournament_set
+    exactness_class:
+      avg_ko_attempts_per_ft: coverage_limited_exact
+      ko_attempts_success_rate: coverage_limited_exact
+    source_dependencies:
+      - core.hand_actions.is_all_in
+      - core.hand_pot_eligibility
+      - core.hand_seats.starting_stack
+      - derived.stage_predicates.is_stage_6_9
+      - derived.hand_eliminations
+      - derived.mbr_tournament_ft_helper.reached_ft_exact
+    nullability_rules:
+      avg_ko_attempts_per_ft: "NULL when no tournament reaches FT exactly."
+      ko_attempts_success_rate: "NULL when no exact early-FT KO attempts exist."
+    partial_coverage_behavior: "Mapped query-time from exact action/pot-derived KO attempts; no persisted attempt stats or legacy proxy bundle remains in runtime."
+    fixture_expectations:
+      - "Three attempts and one KO over one FT tournament produce avg_ko_attempts_per_ft = 3 and success_rate = 1/3."
+      - "No-attempt fixture returns NULL success rate, not 0."
+
+  - legacy_module_id: ft_stack_conversion_stage
+    legacy_name: "FT Stack Conversion Stage"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ft_stack_conversion_7_9
+      - ft_stack_conversion_7_9_attempts
+      - ft_stack_conversion_5_6
+      - ft_stack_conversion_5_6_attempts
+      - ft_stack_conversion_3_4
+      - ft_stack_conversion_3_4_attempts
+    formal_formula:
+      ft_stack_conversion_7_9: "count(exact KO events where is_stage_6_9 = true) / sum(hero_ft_entry_stack_bb where reached_ft_exact)"
+      ft_stack_conversion_7_9_attempts: "count(exact KO attempts where is_stage_6_9 = true) / count(tournaments where reached_ft_exact)"
+      ft_stack_conversion_5_6: "count(exact KO events where is_stage_5_6 = true) / sum(hero_stack_bb at first exact stage-5-6 hand)"
+      ft_stack_conversion_5_6_attempts: "count(exact KO attempts where is_stage_5_6 = true) / count(tournaments reaching exact stage 5-6)"
+      ft_stack_conversion_3_4: "count(exact KO events where is_stage_3_4 = true) / sum(hero_stack_bb at first exact stage-3-4 hand)"
+      ft_stack_conversion_3_4_attempts: "count(exact KO attempts where is_stage_3_4 = true) / count(tournaments reaching exact stage 3-4)"
+    numerator_definition:
+      ft_stack_conversion_7_9: "Exact KO-event count during stage 6-9."
+      ft_stack_conversion_7_9_attempts: "Exact KO-attempt count during stage 6-9."
+      ft_stack_conversion_5_6: "Exact KO-event count during stage 5-6."
+      ft_stack_conversion_5_6_attempts: "Exact KO-attempt count during stage 5-6."
+      ft_stack_conversion_3_4: "Exact KO-event count during stage 3-4."
+      ft_stack_conversion_3_4_attempts: "Exact KO-attempt count during stage 3-4."
+    denominator_definition:
+      ft_stack_conversion_7_9: "Sum of Hero FT-entry stack in bb across FT-reached tournaments."
+      ft_stack_conversion_7_9_attempts: "Count of FT-reached tournaments."
+      ft_stack_conversion_5_6: "Sum of Hero stack in bb at first exact stage-5-6 entry."
+      ft_stack_conversion_5_6_attempts: "Count of tournaments reaching exact stage 5-6."
+      ft_stack_conversion_3_4: "Sum of Hero stack in bb at first exact stage-3-4 entry."
+      ft_stack_conversion_3_4_attempts: "Count of tournaments reaching exact stage 3-4."
+    units:
+      ft_stack_conversion_7_9: ko_events_per_bb
+      ft_stack_conversion_7_9_attempts: attempts_per_tournament
+      ft_stack_conversion_5_6: ko_events_per_bb
+      ft_stack_conversion_5_6_attempts: attempts_per_tournament
+      ft_stack_conversion_3_4: ko_events_per_bb
+      ft_stack_conversion_3_4_attempts: attempts_per_tournament
+    grain: tournament_set
+    exactness_class:
+      ft_stack_conversion_7_9: coverage_limited_exact
+      ft_stack_conversion_7_9_attempts: coverage_limited_exact
+      ft_stack_conversion_5_6: coverage_limited_exact
+      ft_stack_conversion_5_6_attempts: coverage_limited_exact
+      ft_stack_conversion_3_4: coverage_limited_exact
+      ft_stack_conversion_3_4_attempts: coverage_limited_exact
+    source_dependencies:
+      - derived.stage_predicates.is_stage_6_9
+      - derived.stage_predicates.is_stage_5_6
+      - derived.stage_predicates.is_stage_3_4
+      - core.hand_actions.is_all_in
+      - core.hand_pot_eligibility
+      - core.hand_seats.starting_stack
+      - derived.hand_eliminations
+      - derived.mbr_tournament_ft_helper
+    nullability_rules:
+      ft_stack_conversion_7_9: "NULL when the stage-specific denominator is 0."
+      ft_stack_conversion_7_9_attempts: "NULL when no FT-reached tournament exists."
+      ft_stack_conversion_5_6: "NULL when the stage-specific denominator is 0."
+      ft_stack_conversion_5_6_attempts: "NULL when no exact stage-5-6 tournament exists."
+      ft_stack_conversion_3_4: "NULL when the stage-specific denominator is 0."
+      ft_stack_conversion_3_4_attempts: "NULL when no exact stage-3-4 tournament exists."
+    partial_coverage_behavior: "Mapped query-time from exact stage predicates, action/pot-derived KO attempts, and exact stage-entry stack denominators."
+    fixture_expectations:
+      - "Stage 6-9, 5-6, and 3-4 fixtures must be independently testable."
+      - "A tournament with only `ft_stage_bucket` data is insufficient."
+
+  - legacy_module_id: incomplete_ft_percent
+    legacy_name: "Incomplete FT Percent"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - incomplete_ft_percent
+    formal_formula:
+      incomplete_ft_percent: "count(tournaments where ft_started_incomplete = true) / count(tournaments where reached_ft_exact = true)"
+    numerator_definition:
+      incomplete_ft_percent: "Count of tournaments where the first exact FT hand started with fewer than nine players."
+    denominator_definition:
+      incomplete_ft_percent: "Count of tournaments where `reached_ft_exact = true`."
+    units:
+      incomplete_ft_percent: percent
+    grain: tournament_set
+    exactness_class:
+      incomplete_ft_percent: coverage_limited_exact
+    source_dependencies:
+      - derived.mbr_tournament_ft_helper.ft_started_incomplete
+      - derived.mbr_tournament_ft_helper.reached_ft_exact
+    nullability_rules:
+      incomplete_ft_percent: "NULL when no tournament reaches FT exactly."
+    partial_coverage_behavior: "Mapped query-time from the tournament-level FT helper. Only tournaments with exact FT reach enter the denominator."
+    fixture_expectations:
+      - "FT starting 8-handed increments the numerator."
+      - "Tournament without exact FT helper record does not enter the denominator."
+
+  - legacy_module_id: itm
+    legacy_name: "ITM"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - itm_percent
+    formal_formula:
+      itm_percent: "count(summary_covered_tournaments where regular_prize_money > 0) / count(summary_covered_tournaments)"
+    numerator_definition:
+      itm_percent: "Count of summary-covered tournaments where Hero receives positive `regular_prize_money`."
+    denominator_definition:
+      itm_percent: "Count of tournaments in `summary_covered_tournaments`."
+    units:
+      itm_percent: percent
+    grain: tournament_set
+    exactness_class:
+      itm_percent: coverage_limited_exact
+    source_dependencies:
+      - core.tournament_entries.regular_prize_money
+      - core.tournaments.buyin_total
+    nullability_rules:
+      itm_percent: "NULL when the denominator is 0."
+    partial_coverage_behavior: "Use only summary-covered tournaments with regular-prize decomposition. Tournament rank alone is insufficient."
+    fixture_expectations:
+      - "One ITM tournament out of four summary-covered tournaments produces 25%."
+      - "Mystery-only payout with zero regular prize does not count as ITM."
+
+  - legacy_module_id: ko_contribution
+    legacy_name: "KO Contribution"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ko_contribution_percent
+      - ko_contribution_adjusted_percent
+    formal_formula:
+      ko_contribution_percent: "(sum(ko_money_realized_total) / sum(total_payout_money)) * 100"
+      ko_contribution_adjusted_percent: "(sum(ko_money_estimated_total) / sum(total_payout_money)) * 100"
+    numerator_definition:
+      ko_contribution_percent: "Total realized tournament-level mystery money from summary-covered tournaments."
+      ko_contribution_adjusted_percent: "Total frequency-weighted expected KO-derived money across tournaments that have both summary coverage and supported exact Hero KO-share events."
+    denominator_definition:
+      ko_contribution_percent: "Sum of total tournament payouts across summary-covered tournaments."
+      ko_contribution_adjusted_percent: "Sum of total tournament payouts across tournaments that have both summary coverage and supported exact Hero KO-share events."
+    units:
+      ko_contribution_percent: percent
+      ko_contribution_adjusted_percent: percent
+    grain: tournament_set
+    exactness_class:
+      ko_contribution_percent: coverage_limited_exact
+      ko_contribution_adjusted_percent: estimated
+    source_dependencies:
+      - core.tournament_entries.mystery_money_total
+      - core.tournament_entries.total_payout_money
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+    nullability_rules:
+      ko_contribution_percent: "NULL when total payout denominator is 0."
+      ko_contribution_adjusted_percent: "NULL when the supported total payout denominator is 0."
+    partial_coverage_behavior: "The realized variant uses summary-covered tournaments and their stored tournament-level mystery totals. The adjusted variant uses only tournaments that have both summary coverage and supported exact Hero KO-share events, then projects KO money query-time from official envelope frequencies for the tournament buy-in."
+    fixture_expectations:
+      - "Tournament with payout 100 and KO-money 40 produces 40%."
+      - "Adjusted variant may differ from realized tournament totals because it is frequency-weighted from the official envelope table, not conditioned on realized mystery totals."
+
+  - legacy_module_id: ko_luck
+    legacy_name: "KO Luck"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ko_luck_money_delta
+    formal_formula:
+      ko_luck_money_delta: "sum(ko_money_realized_total - ko_money_estimated_total)"
+    numerator_definition:
+      ko_luck_money_delta: "Difference between realized tournament-level mystery money and frequency-weighted expected KO money on tournaments that have both summary coverage and supported exact Hero KO-share events."
+    denominator_definition:
+      ko_luck_money_delta: "Implicit denominator is the supported tournament set; the metric returns a money delta."
+    units:
+      ko_luck_money_delta: money
+    grain: tournament_set
+    exactness_class:
+      ko_luck_money_delta: estimated
+    source_dependencies:
+      - core.tournament_entries.mystery_money_total
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+    nullability_rules:
+      ko_luck_money_delta: "NULL when no tournament has both summary coverage and supported exact Hero KO-share events."
+    partial_coverage_behavior: "Mapped query-time on the supported tournament subset. Realized totals come from summary imports; the expected side uses official envelope-frequency weighting for the tournament buy-in and exact Hero KO-share events."
+    fixture_expectations:
+      - "Realized 12 and frequency-weighted expectation 8 produce +4."
+      - "Without supported summary-plus-HH overlap the metric is NULL, not zero."
+
+  - legacy_module_id: ko_stage_2_3
+    legacy_name: "KO Stage 2-3"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ko_stage_2_3_event_count
+      - ko_stage_2_3_money_total
+      - ko_stage_2_3_attempts_per_tournament
+    formal_formula:
+      ko_stage_2_3_event_count: "count(hero exact KO events on hands where is_stage_2_3 = true)"
+      ko_stage_2_3_money_total: "sum(expected_ko_money on supported exact Hero KO-money events where is_stage_2_3 = true)"
+      ko_stage_2_3_attempts_per_tournament: "count(exact KO attempts on hands where is_stage_2_3 = true) / count(tournaments reaching exact stage 2-3)"
+    numerator_definition:
+      ko_stage_2_3_event_count: "Count of Hero exact KO events during exact stage 2-3."
+      ko_stage_2_3_money_total: "Total KO money during exact stage 2-3."
+      ko_stage_2_3_attempts_per_tournament: "Total exact KO attempts during stage 2-3."
+    denominator_definition:
+      ko_stage_2_3_event_count: "Implicit denominator is the tournament set."
+      ko_stage_2_3_money_total: "Implicit denominator is the tournament set."
+      ko_stage_2_3_attempts_per_tournament: "Count of tournaments reaching exact stage 2-3."
+    units:
+      ko_stage_2_3_event_count: ko_events
+      ko_stage_2_3_money_total: money
+      ko_stage_2_3_attempts_per_tournament: attempts_per_tournament
+    grain: tournament_set
+    exactness_class:
+      ko_stage_2_3_event_count: coverage_limited_exact
+      ko_stage_2_3_money_total: estimated
+      ko_stage_2_3_attempts_per_tournament: coverage_limited_exact
+    source_dependencies:
+      - derived.stage_predicates.is_stage_2_3
+      - derived.hand_eliminations
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+      - core.hand_actions.is_all_in
+      - core.hand_pot_eligibility
+      - core.hand_seats.starting_stack
+    nullability_rules:
+      ko_stage_2_3_event_count: "0 when no exact stage-2-3 KO exists."
+      ko_stage_2_3_money_total: "0 when no supported exact stage-2-3 money event exists."
+      ko_stage_2_3_attempts_per_tournament: "NULL when no tournament reaches exact stage 2-3."
+    partial_coverage_behavior: "Event and attempt metrics stay exact query-time from stage predicates and exact elimination/attempt rows. Money total is query-time only and uses official envelope-frequency weighting over supported exact Hero KO-share events; it is never inferred from raw event count."
+    fixture_expectations:
+      - "Heads-up KO counts toward stage 2-3."
+      - "Attempt metric is NULL when no tournament reaches exact stage 2-3."
+
+  - legacy_module_id: ko_stage_3_4
+    legacy_name: "KO Stage 3-4"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ko_stage_3_4_event_count
+      - ko_stage_3_4_money_total
+      - ko_stage_3_4_attempts_per_tournament
+    formal_formula:
+      ko_stage_3_4_event_count: "count(hero exact KO events on hands where is_stage_3_4 = true)"
+      ko_stage_3_4_money_total: "sum(expected_ko_money on supported exact Hero KO-money events where is_stage_3_4 = true)"
+      ko_stage_3_4_attempts_per_tournament: "count(exact KO attempts on hands where is_stage_3_4 = true) / count(tournaments reaching exact stage 3-4)"
+    numerator_definition:
+      ko_stage_3_4_event_count: "Count of Hero exact KO events during exact stage 3-4."
+      ko_stage_3_4_money_total: "Total KO money during exact stage 3-4."
+      ko_stage_3_4_attempts_per_tournament: "Total exact KO attempts during stage 3-4."
+    denominator_definition:
+      ko_stage_3_4_event_count: "Implicit denominator is the tournament set."
+      ko_stage_3_4_money_total: "Implicit denominator is the tournament set."
+      ko_stage_3_4_attempts_per_tournament: "Count of tournaments reaching exact stage 3-4."
+    units:
+      ko_stage_3_4_event_count: ko_events
+      ko_stage_3_4_money_total: money
+      ko_stage_3_4_attempts_per_tournament: attempts_per_tournament
+    grain: tournament_set
+    exactness_class:
+      ko_stage_3_4_event_count: coverage_limited_exact
+      ko_stage_3_4_money_total: estimated
+      ko_stage_3_4_attempts_per_tournament: coverage_limited_exact
+    source_dependencies:
+      - derived.stage_predicates.is_stage_3_4
+      - derived.hand_eliminations
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+      - core.hand_actions.is_all_in
+      - core.hand_pot_eligibility
+      - core.hand_seats.starting_stack
+    nullability_rules:
+      ko_stage_3_4_event_count: "0 when no exact stage-3-4 KO exists."
+      ko_stage_3_4_money_total: "0 when no supported exact stage-3-4 money event exists."
+      ko_stage_3_4_attempts_per_tournament: "NULL when no tournament reaches exact stage 3-4."
+    partial_coverage_behavior: "Event and attempt metrics stay exact query-time from stage predicates and exact elimination/attempt rows. Money total is query-time only and uses official envelope-frequency weighting over supported exact Hero KO-share events; it is never inferred from raw event count."
+    fixture_expectations:
+      - "Four-handed KO counts toward stage 3-4."
+      - "Money total stays a frequency-weighted estimate and is never backfilled from raw event count."
+
+  - legacy_module_id: ko_stage_4_5
+    legacy_name: "KO Stage 4-5"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ko_stage_4_5_event_count
+      - ko_stage_4_5_money_total
+      - ko_stage_4_5_attempts_per_tournament
+    formal_formula:
+      ko_stage_4_5_event_count: "count(hero exact KO events on hands where is_stage_4_5 = true)"
+      ko_stage_4_5_money_total: "sum(expected_ko_money on supported exact Hero KO-money events where is_stage_4_5 = true)"
+      ko_stage_4_5_attempts_per_tournament: "count(exact KO attempts on hands where is_stage_4_5 = true) / count(tournaments reaching exact stage 4-5)"
+    numerator_definition:
+      ko_stage_4_5_event_count: "Count of Hero exact KO events during exact stage 4-5."
+      ko_stage_4_5_money_total: "Total KO money during exact stage 4-5."
+      ko_stage_4_5_attempts_per_tournament: "Total exact KO attempts during stage 4-5."
+    denominator_definition:
+      ko_stage_4_5_event_count: "Implicit denominator is the tournament set."
+      ko_stage_4_5_money_total: "Implicit denominator is the tournament set."
+      ko_stage_4_5_attempts_per_tournament: "Count of tournaments reaching exact stage 4-5."
+    units:
+      ko_stage_4_5_event_count: ko_events
+      ko_stage_4_5_money_total: money
+      ko_stage_4_5_attempts_per_tournament: attempts_per_tournament
+    grain: tournament_set
+    exactness_class:
+      ko_stage_4_5_event_count: coverage_limited_exact
+      ko_stage_4_5_money_total: estimated
+      ko_stage_4_5_attempts_per_tournament: coverage_limited_exact
+    source_dependencies:
+      - derived.stage_predicates.is_stage_4_5
+      - derived.hand_eliminations
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+      - core.hand_actions.is_all_in
+      - core.hand_pot_eligibility
+      - core.hand_seats.starting_stack
+    nullability_rules:
+      ko_stage_4_5_event_count: "0 when no exact stage-4-5 KO exists."
+      ko_stage_4_5_money_total: "0 when no supported exact stage-4-5 money event exists."
+      ko_stage_4_5_attempts_per_tournament: "NULL when no tournament reaches exact stage 4-5."
+    partial_coverage_behavior: "Event and attempt metrics stay exact query-time from stage predicates and exact elimination/attempt rows. Money total is query-time only and uses official envelope-frequency weighting over supported exact Hero KO-share events; it is never inferred from raw event count."
+    fixture_expectations:
+      - "Five-handed KO counts toward stage 4-5."
+      - "Boundary ambiguity must block the metric instead of backfilling from `ft_stage_bucket`."
+
+  - legacy_module_id: ko_stage_5_6
+    legacy_name: "KO Stage 5-6"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ko_stage_5_6_event_count
+      - ko_stage_5_6_money_total
+      - ko_stage_5_6_attempts_per_tournament
+    formal_formula:
+      ko_stage_5_6_event_count: "count(hero exact KO events on hands where is_stage_5_6 = true)"
+      ko_stage_5_6_money_total: "sum(expected_ko_money on supported exact Hero KO-money events where is_stage_5_6 = true)"
+      ko_stage_5_6_attempts_per_tournament: "count(exact KO attempts on hands where is_stage_5_6 = true) / count(tournaments reaching exact stage 5-6)"
+    numerator_definition:
+      ko_stage_5_6_event_count: "Count of Hero exact KO events during exact stage 5-6."
+      ko_stage_5_6_money_total: "Total KO money during exact stage 5-6."
+      ko_stage_5_6_attempts_per_tournament: "Total exact KO attempts during stage 5-6."
+    denominator_definition:
+      ko_stage_5_6_event_count: "Implicit denominator is the tournament set."
+      ko_stage_5_6_money_total: "Implicit denominator is the tournament set."
+      ko_stage_5_6_attempts_per_tournament: "Count of tournaments reaching exact stage 5-6."
+    units:
+      ko_stage_5_6_event_count: ko_events
+      ko_stage_5_6_money_total: money
+      ko_stage_5_6_attempts_per_tournament: attempts_per_tournament
+    grain: tournament_set
+    exactness_class:
+      ko_stage_5_6_event_count: coverage_limited_exact
+      ko_stage_5_6_money_total: estimated
+      ko_stage_5_6_attempts_per_tournament: coverage_limited_exact
+    source_dependencies:
+      - derived.stage_predicates.is_stage_5_6
+      - derived.hand_eliminations
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+      - core.hand_actions.is_all_in
+      - core.hand_pot_eligibility
+      - core.hand_seats.starting_stack
+    nullability_rules:
+      ko_stage_5_6_event_count: "0 when no exact stage-5-6 KO exists."
+      ko_stage_5_6_money_total: "0 when no supported exact stage-5-6 money event exists."
+      ko_stage_5_6_attempts_per_tournament: "NULL when no tournament reaches exact stage 5-6."
+    partial_coverage_behavior: "Event and attempt metrics stay exact query-time from stage predicates and exact elimination/attempt rows. Money total is query-time only and uses official envelope-frequency weighting over supported exact Hero KO-share events; it is never inferred from raw event count."
+    fixture_expectations:
+      - "Six-handed KO counts toward stage 5-6."
+      - "Tournament with unresolved stage boundary does not enter the denominator."
+
+  - legacy_module_id: ko_stage_6_9
+    legacy_name: "KO Stage 6-9"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ko_stage_6_9_event_count
+      - ko_stage_6_9_money_total
+    formal_formula:
+      ko_stage_6_9_event_count: "count(hero exact KO events on hands where is_stage_6_9 = true)"
+      ko_stage_6_9_money_total: "sum(expected_ko_money on supported exact Hero KO-money events where is_stage_6_9 = true)"
+    numerator_definition:
+      ko_stage_6_9_event_count: "Count of Hero exact KO events during exact stage 6-9."
+      ko_stage_6_9_money_total: "Total KO money during exact stage 6-9."
+    denominator_definition:
+      ko_stage_6_9_event_count: "Implicit denominator is the tournament set."
+      ko_stage_6_9_money_total: "Implicit denominator is the tournament set."
+    units:
+      ko_stage_6_9_event_count: ko_events
+      ko_stage_6_9_money_total: money
+    grain: tournament_set
+    exactness_class:
+      ko_stage_6_9_event_count: coverage_limited_exact
+      ko_stage_6_9_money_total: estimated
+    source_dependencies:
+      - derived.stage_predicates.is_stage_6_9
+      - derived.hand_eliminations
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+    nullability_rules:
+      ko_stage_6_9_event_count: "0 when no exact stage-6-9 KO exists."
+      ko_stage_6_9_money_total: "0 when no supported exact stage-6-9 money event exists."
+    partial_coverage_behavior: "Event metric stays exact query-time from stage predicates and exact elimination rows. Money total is query-time only and uses official envelope-frequency weighting over supported exact Hero KO-share events; it is never inferred from raw event count."
+    fixture_expectations:
+      - "Seven-, eight-, and nine-handed FT KOs all count toward stage 6-9."
+      - "Boundary-zone pre-FT KOs never count here."
+
+  - legacy_module_id: ko_stage_7_9
+    legacy_name: "KO Stage 7-9"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - ko_stage_7_9_event_count
+      - ko_stage_7_9_money_total
+      - ko_stage_7_9_attempts_per_tournament
+    formal_formula:
+      ko_stage_7_9_event_count: "count(hero exact KO events on hands where ft_players_remaining_exact in [7, 8, 9])"
+      ko_stage_7_9_money_total: "sum(expected_ko_money on supported exact Hero KO-money events where ft_players_remaining_exact in [7, 8, 9])"
+      ko_stage_7_9_attempts_per_tournament: "count(exact KO attempts on hands where ft_players_remaining_exact in [7, 8, 9]) / count(tournaments reaching exact stage 7-9)"
+    numerator_definition:
+      ko_stage_7_9_event_count: "Count of Hero exact KO events during exact 7-9-player FT hands."
+      ko_stage_7_9_money_total: "Total KO money during exact 7-9-player FT hands."
+      ko_stage_7_9_attempts_per_tournament: "Total exact KO attempts during exact 7-9-player FT hands."
+    denominator_definition:
+      ko_stage_7_9_event_count: "Implicit denominator is the tournament set."
+      ko_stage_7_9_money_total: "Implicit denominator is the tournament set."
+      ko_stage_7_9_attempts_per_tournament: "Count of tournaments reaching exact 7-9-player FT hands."
+    units:
+      ko_stage_7_9_event_count: ko_events
+      ko_stage_7_9_money_total: money
+      ko_stage_7_9_attempts_per_tournament: attempts_per_tournament
+    grain: tournament_set
+    exactness_class:
+      ko_stage_7_9_event_count: coverage_limited_exact
+      ko_stage_7_9_money_total: estimated
+      ko_stage_7_9_attempts_per_tournament: coverage_limited_exact
+    source_dependencies:
+      - derived.stage_predicates.ft_players_remaining_exact
+      - derived.hand_eliminations
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+      - core.hand_actions.is_all_in
+      - core.hand_pot_eligibility
+      - core.hand_seats.starting_stack
+    nullability_rules:
+      ko_stage_7_9_event_count: "0 when no exact stage-7-9 KO exists."
+      ko_stage_7_9_money_total: "0 when no supported exact stage-7-9 money event exists."
+      ko_stage_7_9_attempts_per_tournament: "NULL when no tournament reaches exact stage 7-9."
+    partial_coverage_behavior: "Event and attempt metrics stay exact query-time on exact 7-9-player FT hands. Money total is query-time only and uses official envelope-frequency weighting over supported exact Hero KO-share events; it is never inferred from raw event count."
+    fixture_expectations:
+      - "Seven-, eight-, and nine-handed KOs count here; six-handed KO does not."
+      - "Attempt metric is NULL when no tournament reaches exact stage 7-9."
+
+  - legacy_module_id: pre_ft_chipev
+    legacy_name: "Pre-FT ChipEV"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - pre_ft_chipev
+    formal_formula:
+      pre_ft_chipev: "sum(hero_chip_delta on hands where is_pre_ft_hand_exact = true) / count(tournaments with pre-FT coverage)"
+    numerator_definition:
+      pre_ft_chipev: "Total Hero net chip change on hands that are exact-known to occur before the first FT hand and outside unresolved boundary ambiguity."
+    denominator_definition:
+      pre_ft_chipev: "Count of tournaments with exact pre-FT coverage."
+    units:
+      pre_ft_chipev: chips_per_tournament
+    grain: tournament_set
+    exactness_class:
+      pre_ft_chipev: coverage_limited_exact
+    source_dependencies:
+      - derived.hand_state_resolutions.final_stacks
+      - derived.mbr_tournament_ft_helper.first_ft_hand_started_local
+      - derived.mbr_tournament_ft_helper.boundary_resolution_state
+      - derived.stage_predicates.is_boundary_hand
+    nullability_rules:
+      pre_ft_chipev: "NULL when no tournament has exact pre-FT coverage."
+    partial_coverage_behavior: "Mapped query-time on HH-covered tournaments whose FT boundary is exact, or on HH-covered tournaments with no FT at all. Boundary-zone hands are excluded instead of guessed."
+    fixture_expectations:
+      - "Tournament with +1500 chips before FT contributes +1500 to the numerator."
+      - "Boundary-ambiguous hand is excluded from the metric."
+
+  - legacy_module_id: pre_ft_ko
+    legacy_name: "Pre FT KO"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - pre_ft_ko_count
+    formal_formula:
+      pre_ft_ko_count: "count(hero exact KO events on hands where is_pre_ft_hand_exact = true)"
+    numerator_definition:
+      pre_ft_ko_count: "Count of Hero exact KO events before the first exact FT hand and outside the unresolved boundary zone."
+    denominator_definition:
+      pre_ft_ko_count: "Implicit denominator is the tournament set; this metric returns a count."
+    units:
+      pre_ft_ko_count: ko_events
+    grain: tournament_set
+    exactness_class:
+      pre_ft_ko_count: coverage_limited_exact
+    source_dependencies:
+      - derived.hand_eliminations
+      - derived.mbr_tournament_ft_helper.first_ft_hand_started_local
+      - derived.stage_predicates.is_boundary_hand
+    nullability_rules:
+      pre_ft_ko_count: "0 when no exact pre-FT KO exists."
+    partial_coverage_behavior: "Mapped query-time on exact pre-FT hands outside the boundary zone. Hands in the unresolved boundary window stay excluded instead of being guessed as pre-FT or FT."
+    fixture_expectations:
+      - "KO on the last exact rush hand before FT counts only if the hand is provably pre-FT."
+      - "Boundary candidate with unresolved status is excluded instead of guessed."
+
+  - legacy_module_id: roi
+    legacy_name: "ROI"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - roi_pct
+    formal_formula:
+      roi_pct: "((sum(total_payout_money) - sum(buyin_total)) / sum(buyin_total)) * 100"
+    numerator_definition:
+      roi_pct: "Net profit across tournaments in `summary_covered_tournaments`."
+    denominator_definition:
+      roi_pct: "Sum of buy-ins across `summary_covered_tournaments`."
+    units:
+      roi_pct: percent
+    grain: tournament_set
+    exactness_class:
+      roi_pct: coverage_limited_exact
+    source_dependencies:
+      - core.tournaments.buyin_total
+      - core.tournament_entries.total_payout_money
+    nullability_rules:
+      roi_pct: "NULL when the buy-in denominator is 0."
+    partial_coverage_behavior: "Use only summary-covered tournaments. Do not present this as full-lifetime ROI when summary coverage is partial."
+    fixture_expectations:
+      - "Buy-ins [10, 10] and payouts [30, 10] produce 100%."
+      - "Zero total buy-in returns NULL."
+
+  - legacy_module_id: roi_adj
+    legacy_name: "ROI Adjusted"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - roi_adj_pct
+    formal_formula:
+      roi_adj_pct: "((sum(regular_prize_money + ko_money_estimated_total) - sum(buyin_total)) / sum(buyin_total)) * 100"
+    numerator_definition:
+      roi_adj_pct: "Net profit using regular prizes plus frequency-weighted expected KO money."
+    denominator_definition:
+      roi_adj_pct: "Sum of buy-ins across summary-covered tournaments with adjusted KO-money support."
+    units:
+      roi_adj_pct: percent
+    grain: tournament_set
+    exactness_class:
+      roi_adj_pct: estimated
+    source_dependencies:
+      - core.tournament_entries.regular_prize_money
+      - core.tournaments.buyin_total
+      - derived.hand_eliminations.hero_ko_share_total
+      - derived.hand_eliminations.hero_share_fraction
+      - ref.mbr_mystery_envelopes.frequency_per_100m
+    nullability_rules:
+      roi_adj_pct: "NULL when the supported buy-in denominator is 0."
+    partial_coverage_behavior: "Mapped query-time only on tournaments that have both summary coverage and supported exact Hero KO-share events. The KO component is frequency-weighted from the official envelope table for the tournament buy-in."
+    fixture_expectations:
+      - "Regular prize 20 and frequency-weighted expected KO money 5 on buy-in 10 produce 150%."
+      - "Without supported summary-plus-HH overlap the metric is NULL."
+
+  - legacy_module_id: roi_on_ft
+    legacy_name: "ROI on FT"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - roi_on_ft_pct
+    formal_formula:
+      roi_on_ft_pct: "((sum(total_payout_money where reached_ft_exact) - sum(buyin_total where reached_ft_exact)) / sum(buyin_total where reached_ft_exact)) * 100"
+    numerator_definition:
+      roi_on_ft_pct: "Net profit across summary-covered tournaments where `reached_ft_exact = true`."
+    denominator_definition:
+      roi_on_ft_pct: "Sum of buy-ins across summary-covered tournaments where `reached_ft_exact = true`."
+    units:
+      roi_on_ft_pct: percent
+    grain: tournament_set
+    exactness_class:
+      roi_on_ft_pct: coverage_limited_exact
+    source_dependencies:
+      - core.tournament_entries.total_payout_money
+      - core.tournaments.buyin_total
+      - derived.mbr_tournament_ft_helper.reached_ft_exact
+    nullability_rules:
+      roi_on_ft_pct: "NULL when the FT-reached buy-in denominator is 0."
+    partial_coverage_behavior: "Mapped query-time on summary-covered tournaments where FT reach is exact at tournament grain."
+    fixture_expectations:
+      - "Two FT-reached tournaments with net +20 on total buy-in 40 produce 50%."
+      - "Tournament with unknown FT reach is excluded."
+
+  - legacy_module_id: total_ko
+    legacy_name: "Total KO"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - total_ko_event_count
+    formal_formula:
+      total_ko_event_count: "count(exact Hero KO events across hh_covered_tournaments)"
+    numerator_definition:
+      total_ko_event_count: "Total number of exact `derived.hand_eliminations` rows where `hero_involved = true` and `certainty_state = exact` across all HH-covered tournaments."
+    denominator_definition:
+      total_ko_event_count: "Implicit denominator is the covered tournament set; this metric returns a count."
+    units:
+      total_ko_event_count: ko_events
+    grain: tournament_set
+    exactness_class:
+      total_ko_event_count: coverage_limited_exact
+    source_dependencies:
+      - derived.hand_eliminations.hero_involved
+      - derived.hand_eliminations.certainty_state
+      - core.hands.tournament_id
+    nullability_rules:
+      total_ko_event_count: "0 when no exact Hero KO exists."
+    partial_coverage_behavior: "Use only HH-covered tournaments. Runtime now reads exact elimination rows directly, not the per-hand proxy feature key."
+    fixture_expectations:
+      - "Three exact Hero KO events across the covered set produce 3."
+      - "Ambiguous eliminations do not increment the count."
+
+  - legacy_module_id: winnings_from_itm_stat
+    legacy_name: "Winnings from ITM"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - winnings_from_itm
+    formal_formula:
+      winnings_from_itm: "sum(regular_prize_money)"
+    numerator_definition:
+      winnings_from_itm: "Sum of exact `regular_prize_money` across summary-covered tournaments."
+    denominator_definition:
+      winnings_from_itm: "Implicit denominator is the covered tournament set; this metric returns money."
+    units:
+      winnings_from_itm: money
+    grain: tournament_set
+    exactness_class:
+      winnings_from_itm: coverage_limited_exact
+    source_dependencies:
+      - core.tournament_entries.regular_prize_money
+    nullability_rules:
+      winnings_from_itm: "0 when no regular prize exists in the covered set."
+    partial_coverage_behavior: "Use tournament-level regular-prize decomposition only. Legacy output key `value` is retired as `legacy_only`."
+    fixture_expectations:
+      - "Regular prizes [15, 0, 30] produce 45."
+      - "Mystery payout with zero regular prize does not increment the metric."
+
+  - legacy_module_id: winnings_from_ko_stat
+    legacy_name: "Winnings from KO"
+    delivery_status: initial_tranche
+    current_runtime_status: mapped
+    new_stat_keys:
+      - winnings_from_ko_total
+    formal_formula:
+      winnings_from_ko_total: "sum(mystery_money_total)"
+    numerator_definition:
+      winnings_from_ko_total: "Sum of tournament-level `mystery_money_total` across summary-covered tournaments."
+    denominator_definition:
+      winnings_from_ko_total: "Implicit denominator is the covered tournament set; this metric returns money."
+    units:
+      winnings_from_ko_total: money
+    grain: tournament_set
+    exactness_class:
+      winnings_from_ko_total: coverage_limited_exact
+    source_dependencies:
+      - core.tournament_entries.mystery_money_total
+    nullability_rules:
+      winnings_from_ko_total: "0 when no mystery payout exists in the covered set."
+    partial_coverage_behavior: "First honest tranche uses realized tournament-level mystery totals only. It does not claim per-event KO-money attribution. Legacy keys `value` and `total_ko_amount` are legacy-only aliases."
+    fixture_expectations:
+      - "Mystery totals [0, 12.5, 7.5] produce 20."
+      - "Tournament without mystery payout contributes 0."

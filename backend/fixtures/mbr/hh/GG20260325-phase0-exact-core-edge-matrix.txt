@@ -1,0 +1,283 @@
+Poker Hand #BRCM0401: Tournament #999201, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 13:00:00
+Table '1' 4-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Sitout (1,000 in chips) is sitting out
+Seat 3: VillainDead (1,000 in chips)
+Seat 4: VillainMuck (1,000 in chips)
+VillainDead: posts dead 100
+VillainMuck: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Hero: folds
+VillainMuck: mucks hand
+*** SHOWDOWN ***
+VillainDead collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Hero folded before Flop
+Seat 3: VillainDead collected (200)
+Seat 4: VillainMuck mucked
+
+Poker Hand #BRCM0402: Tournament #999202, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 13:05:00
+Table '1' 3-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: VillainPartial (1,000 in chips)
+Seat 3: VillainNoShow (1,000 in chips)
+VillainPartial: posts small blind 50
+VillainNoShow: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Hero: calls 100
+VillainPartial: calls 50
+VillainNoShow: checks
+*** FLOP *** [2c 7d 9h]
+VillainPartial: checks
+VillainNoShow: checks
+Hero: checks
+*** TURN *** [2c 7d 9h] [Qs]
+VillainPartial: checks
+VillainNoShow: checks
+Hero: checks
+*** RIVER *** [2c 7d 9h Qs] [3c]
+*** SHOWDOWN ***
+VillainPartial: shows [5d]
+VillainNoShow: doesn't show hand
+Hero: shows [Ah Ad]
+Hero collected 300 from pot
+*** SUMMARY ***
+Total pot 300 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and won (300)
+Seat 2: VillainPartial (small blind) showed [5d] and lost
+Seat 3: VillainNoShow (big blind) lost
+
+Poker Hand #BRCM0403: Tournament #999203, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(100)) - 2026/03/16 13:10:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: ShortAnte (100 in chips)
+Seat 2: Hero (1,000 in chips)
+ShortAnte: posts the ante 100
+Hero: posts the ante 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Hero: checks
+*** FLOP *** [2c 7d 9h]
+*** TURN *** [2c 7d 9h] [Qs]
+*** RIVER *** [2c 7d 9h Qs] [3c]
+*** SHOWDOWN ***
+ShortAnte: shows [Kd Kh]
+Hero: shows [Ah Ad]
+Hero collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: ShortAnte (button) showed [Kd Kh] and lost
+Seat 2: Hero showed [Ah Ad] and won (200)
+
+Poker Hand #BRLEGAL2: Tournament #999006, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:25:00
+Table '5' 2-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Villain (1,000 in chips)
+Hero: posts small blind 50
+Villain: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [As Ac]
+Dealt to Villain
+Villain: checks
+Hero: calls 50
+*** FLOP *** [2c 7d 9h]
+Villain: checks
+Hero: checks
+*** TURN *** [2c 7d 9h] [Js]
+Villain: checks
+Hero: checks
+*** RIVER *** [2c 7d 9h Js] [3c]
+Villain: checks
+Hero: checks
+*** SHOWDOWN ***
+Hero: shows [As Ac]
+Villain: shows [Kd Kh]
+Hero collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Js 3c]
+Seat 1: Hero (button) showed [As Ac] and won (200)
+Seat 2: Villain (big blind) showed [Kd Kh] and lost
+
+Poker Hand #BRLEGAL3: Tournament #999007, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:30:00
+Table '6' 2-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Villain (1,000 in chips)
+Hero: posts small blind 50
+Villain: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [As Ac]
+Dealt to Villain
+Hero: calls 50
+Villain: checks
+*** FLOP *** [2c 7d 9h]
+Hero: bets 100
+Villain: folds
+Uncalled bet (100) returned to Hero
+Hero collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h]
+Seat 1: Hero (button) won (200)
+Seat 2: Villain (big blind) folded on the Flop
+
+Poker Hand #BRLEGAL4: Tournament #999008, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:35:00
+Table '7' 3-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: VillainA (1,000 in chips)
+Seat 3: Shorty (400 in chips)
+VillainA: posts small blind 50
+Shorty: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealt to VillainA
+Dealt to Shorty
+Hero: raises 200 to 300
+VillainA: calls 250
+Shorty: raises 300 to 400 and is all-in
+Hero: raises 400 to 800
+VillainA: folds
+Uncalled bet (400) returned to Hero
+*** FLOP *** [2c 7d 9h]
+*** TURN *** [2c 7d 9h] [Qs]
+*** RIVER *** [2c 7d 9h Qs] [3c]
+*** SHOWDOWN ***
+Hero: shows [Ah Ad]
+Shorty: shows [Kd Kh]
+Hero collected 1,100 from pot
+*** SUMMARY ***
+Total pot 1,100 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and won (1,100)
+Seat 2: VillainA (small blind) folded before Flop
+Seat 3: Shorty (big blind) showed [Kd Kh] and lost
+
+Poker Hand #BRSIDE1: Tournament #999002, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:05:00
+Table '2' 9-max Seat #1 is the button
+Seat 1: Shorty (500 in chips)
+Seat 2: Hero (1,000 in chips)
+Seat 3: Medium (1,000 in chips)
+Seat 4: BigStack (1,500 in chips)
+Shorty: posts small blind 50
+Hero: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Shorty
+Dealt to Hero [Ac Qc]
+Dealt to Medium
+Dealt to BigStack
+Medium: calls 100
+BigStack: raises 400 to 500
+Shorty: calls 450 and is all-in
+Hero: folds
+Medium: raises 500 to 1,000 and is all-in
+BigStack: calls 500
+*** FLOP *** [2h 7d Tc]
+*** TURN *** [2h 7d Tc] [3s]
+*** RIVER *** [2h 7d Tc 3s] [4d]
+*** SHOWDOWN ***
+Medium: shows [Jh Jc]
+BigStack: shows [As Ad]
+BigStack collected 400 from pot
+BigStack collected 1,200 from pot
+BigStack collected 1,000 from pot
+*** SUMMARY ***
+Total pot 2,600 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2h 7d Tc 3s 4d]
+Seat 1: Shorty (small blind) lost
+Seat 2: Hero (big blind) folded before Flop
+Seat 3: Medium showed [Jh Jc] and lost
+Seat 4: BigStack showed [As Ad] and collected (2,600)
+
+Poker Hand #BRCM0502: Tournament #999051, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(100)) - 2026/03/16 13:45:00
+Table '16' 4-max Seat #1 is the button
+Seat 1: ShortyA (100 in chips)
+Seat 2: ShortyB (100 in chips)
+Seat 3: Hero (300 in chips)
+Seat 4: Villain (300 in chips)
+ShortyA: posts the ante 100
+ShortyB: posts the ante 100
+Hero: posts the ante 100
+Villain: posts the ante 100
+*** HOLE CARDS ***
+Dealt to ShortyA
+Dealt to ShortyB
+Dealt to Hero [Ah Ad]
+Dealt to Villain
+Hero: bets 200 and is all-in
+Villain: calls 200 and is all-in
+Hero: shows [Ah Ad]
+*** SHOWDOWN ***
+Hero collected 400 from pot
+Villain collected 400 from pot
+*** SUMMARY ***
+Total pot 800 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: ShortyA lost
+Seat 2: ShortyB lost
+Seat 3: Hero showed [Ah Ad] and collected (400)
+Seat 4: Villain collected (400)
+
+Poker Hand #BRCM0503: Tournament #999052, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(1)) - 2026/03/16 13:50:00
+Table '17' 3-max Seat #1 is the button
+Seat 1: Hero (200 in chips)
+Seat 2: Villain (200 in chips)
+Seat 3: DeadMoney (1 in chips)
+Hero: posts the ante 1
+Villain: posts the ante 1
+DeadMoney: posts the ante 1
+*** HOLE CARDS ***
+Dealt to Hero [Ah Kd]
+Dealt to Villain
+Dealt to DeadMoney
+Villain: bets 199 and is all-in
+Hero: calls 199 and is all-in
+*** FLOP *** [2c 3d 4h]
+*** TURN *** [2c 3d 4h] [5s]
+*** RIVER *** [2c 3d 4h 5s] [6c]
+*** SHOWDOWN ***
+Hero: shows [Ah Kd]
+Villain: shows [As Qd]
+Hero collected 201 from pot
+Villain collected 200 from pot
+*** SUMMARY ***
+Total pot 401 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 3d 4h 5s 6c]
+Seat 1: Hero (button) showed [Ah Kd] and collected (201)
+Seat 2: Villain showed [As Qd] and collected (200)
+Seat 3: DeadMoney lost
+
+Poker Hand #BRCM0601: Tournament #999060, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 14:00:00
+Table '18' 3-max Seat #1 is the button
+Seat 1: Hero (1,500 in chips)
+Seat 2: Shorty (500 in chips)
+Seat 3: Medium (1,000 in chips)
+Shorty: posts small blind 50
+Medium: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealt to Shorty
+Dealt to Medium
+Hero: raises 400 to 500
+Shorty: calls 450 and is all-in
+Medium: calls 400
+*** FLOP *** [2c 7d 9h]
+Medium: bets 500 and is all-in
+Hero: calls 500
+*** TURN *** [2c 7d 9h] [Qs]
+*** RIVER *** [2c 7d 9h Qs] [3c]
+*** SHOWDOWN ***
+Hero: shows [Ah Ad]
+Shorty: shows [2h 2d]
+Medium: shows [Kc Qc]
+Shorty collected 1,500 from pot
+Hero collected 1,000 from pot
+*** SUMMARY ***
+Total pot 2,500 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and collected (1,000)
+Seat 2: Shorty (small blind) showed [2h 2d] and collected (1,500)
+Seat 3: Medium (big blind) showed [Kc Qc] and lost

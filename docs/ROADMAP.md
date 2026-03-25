@@ -19,11 +19,13 @@
 
 Acceptance criteria по фазам лежат в `docs/QUALITY_GATES.md`.
 
-Статус на `2026-03-24`:
-- Phase 1 schema hardening закрыта через `backend/migrations/0004_exact_core_schema_v2.sql`;
-- committed-pack slice для parser coverage и replay-grade exact core закрыт;
-- stage/economics foundation уже реализован;
-- следующий логический шаг после текущего exact-core hardening: **Фаза 6 / street hand strength v2**.
+Статус на `2026-03-25`:
+- schema hardening закрыта через `backend/migrations/0004_exact_core_schema_v2.sql`;
+- Phase 0 exact-core hardening из аудита `2026-03-25` закрыла summary results, positions, legality, forced-all-in surface, deterministic pot settlement, KO v2 и explicit proof-suite gates;
+- synthetic edge-corpus теперь зафиксирован отдельным fixture `backend/fixtures/mbr/hh/GG20260325-phase0-exact-core-edge-matrix.txt` и test-suite `tracker_parser_core/tests/phase0_exact_core_corpus.rs`;
+- committed-pack parser/normalizer/persistence gate теперь зафиксирован в `backend/scripts/run_backend_checks.sh` и `docs/QUALITY_GATES.md`;
+- финальный serial `bash backend/scripts/run_backend_checks.sh` на `2026-03-25` прошёл полностью, включая exact-core proof suite и ignored PostgreSQL smoke-тесты;
+- следующий логический шаг после exact-core hardening: **Phase 1 MBR/domain hardening из аудита (`CM-08+`)**, а не расширение UI/runtime поверх старых эвристик.
 
 ---
 
@@ -204,7 +206,8 @@ Parser не считает статы. Parser только строит кано
 - replay ledger остаётся source-of-truth для pots/contributions;
 - ambiguous winner mappings больше не materialize-ят guessed `hand_pot_winners`;
 - unsatisfied mappings уходят в `invariant_errors`;
-- committed pack и synthetic edge-pack держат invariants зелёными.
+- committed pack и synthetic edge-pack держат invariants зелёными;
+- synthetic edge-pack формализован в committed fixture `backend/fixtures/mbr/hh/GG20260325-phase0-exact-core-edge-matrix.txt`, чтобы gate ловил silent-ignore и guessed-fact regressions отдельно от real GG pack.
 
 ---
 

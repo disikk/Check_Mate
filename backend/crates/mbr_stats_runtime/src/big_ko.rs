@@ -1,7 +1,8 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-const SHARE_SCALE: i64 = 1_000_000;
 const MAX_RECORDED_ALLOCATIONS: usize = 64;
+
+use crate::split_bounty::project_split_bounty_share;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MysteryEnvelope {
@@ -34,6 +35,42 @@ pub struct BigKoDecodeResult {
     pub status: BigKoDecodeStatus,
     pub mystery_money_cents: i64,
     pub allocations: Vec<BigKoAllocation>,
+}
+
+pub fn expected_hero_mystery_cents(
+    share_micros: i64,
+    mystery_envelopes: &[MysteryEnvelope],
+) -> Option<f64> {
+    let total_frequency = total_frequency_weight(mystery_envelopes)?;
+    let weighted_sum = mystery_envelopes
+        .iter()
+        .map(|envelope| {
+            crate::split_bounty::project_split_bounty_share(envelope.payout_cents, share_micros)
+                .expected_cents
+                * envelope.frequency_per_100m as f64
+        })
+        .sum::<f64>();
+
+    Some(weighted_sum / total_frequency as f64)
+}
+
+pub fn expected_big_ko_bucket_probabilities(
+    mystery_envelopes: &[MysteryEnvelope],
+) -> BTreeMap<String, f64> {
+    let Some(total_frequency) = total_frequency_weight(mystery_envelopes) else {
+        return BTreeMap::new();
+    };
+
+    let mut probabilities = BTreeMap::new();
+    for envelope in mystery_envelopes {
+        let Some(bucket_key) = big_ko_bucket_key(envelope.sort_order) else {
+            continue;
+        };
+        *probabilities.entry(bucket_key.to_string()).or_insert(0.0) +=
+            envelope.frequency_per_100m as f64 / total_frequency as f64;
+    }
+
+    probabilities
 }
 
 pub fn decode_big_ko_allocations(
@@ -122,29 +159,50 @@ fn search_allocations(
     }
 
     for envelope in mystery_envelopes {
-        let contribution_numerator = envelope.payout_cents * hero_ko_shares[share_index].share_micros;
-        if contribution_numerator % SHARE_SCALE != 0 {
-            continue;
-        }
-
-        let hero_mystery_cents = contribution_numerator / SHARE_SCALE;
-        if hero_mystery_cents > remaining_mystery_cents {
-            continue;
-        }
-
-        current_envelopes.push(envelope.payout_cents);
-        current_mystery.push(hero_mystery_cents);
-        search_allocations(
-            share_index + 1,
-            remaining_mystery_cents - hero_mystery_cents,
-            hero_ko_shares,
-            mystery_envelopes,
-            current_envelopes,
-            current_mystery,
-            allocations,
+        let share_outcome = project_split_bounty_share(
+            envelope.payout_cents,
+            hero_ko_shares[share_index].share_micros,
         );
-        current_envelopes.pop();
-        current_mystery.pop();
+
+        for hero_mystery_cents in share_outcome.candidate_cents {
+            if hero_mystery_cents > remaining_mystery_cents {
+                continue;
+            }
+
+            current_envelopes.push(envelope.payout_cents);
+            current_mystery.push(hero_mystery_cents);
+            search_allocations(
+                share_index + 1,
+                remaining_mystery_cents - hero_mystery_cents,
+                hero_ko_shares,
+                mystery_envelopes,
+                current_envelopes,
+                current_mystery,
+                allocations,
+            );
+            current_envelopes.pop();
+            current_mystery.pop();
+        }
+    }
+}
+
+fn total_frequency_weight(mystery_envelopes: &[MysteryEnvelope]) -> Option<i64> {
+    let total = mystery_envelopes
+        .iter()
+        .map(|envelope| envelope.frequency_per_100m)
+        .sum::<i64>();
+    (total > 0).then_some(total)
+}
+
+fn big_ko_bucket_key(sort_order: i32) -> Option<&'static str> {
+    match sort_order {
+        1 => Some("big_ko_x10000_count"),
+        2 => Some("big_ko_x1000_count"),
+        3 => Some("big_ko_x100_count"),
+        4 => Some("big_ko_x10_count"),
+        5 => Some("big_ko_x2_count"),
+        6 => Some("big_ko_x1_5_count"),
+        _ => None,
     }
 }
 
@@ -152,13 +210,16 @@ fn search_allocations(
 mod tests {
     use super::{
         BigKoDecodeStatus, HeroKoShare, MysteryEnvelope, decode_big_ko_allocations,
+        expected_big_ko_bucket_probabilities, expected_hero_mystery_cents,
     };
 
     #[test]
     fn decodes_single_exact_knockout() {
         let result = decode_big_ko_allocations(
             10_500,
-            &[HeroKoShare { share_micros: 1_000_000 }],
+            &[HeroKoShare {
+                share_micros: 1_000_000,
+            }],
             &[
                 MysteryEnvelope {
                     sort_order: 1,
@@ -183,7 +244,9 @@ mod tests {
     fn decodes_split_knockout_from_shared_envelope() {
         let result = decode_big_ko_allocations(
             5_250,
-            &[HeroKoShare { share_micros: 500_000 }],
+            &[HeroKoShare {
+                share_micros: 500_000,
+            }],
             &[MysteryEnvelope {
                 sort_order: 1,
                 payout_cents: 10_500,
@@ -200,8 +263,12 @@ mod tests {
         let result = decode_big_ko_allocations(
             5_000,
             &[
-                HeroKoShare { share_micros: 1_000_000 },
-                HeroKoShare { share_micros: 1_000_000 },
+                HeroKoShare {
+                    share_micros: 1_000_000,
+                },
+                HeroKoShare {
+                    share_micros: 1_000_000,
+                },
             ],
             &[
                 MysteryEnvelope {
@@ -230,7 +297,9 @@ mod tests {
     fn marks_impossible_totals_as_infeasible() {
         let result = decode_big_ko_allocations(
             1_100,
-            &[HeroKoShare { share_micros: 1_000_000 }],
+            &[HeroKoShare {
+                share_micros: 1_000_000,
+            }],
             &[
                 MysteryEnvelope {
                     sort_order: 1,
@@ -250,10 +319,105 @@ mod tests {
     }
 
     #[test]
+    fn keeps_ugly_cent_single_split_out_of_infeasible() {
+        let result = decode_big_ko_allocations(
+            333,
+            &[HeroKoShare {
+                share_micros: 333_333,
+            }],
+            &[MysteryEnvelope {
+                sort_order: 1,
+                payout_cents: 1_000,
+                frequency_per_100m: 1,
+            }],
+        );
+
+        assert_ne!(result.status, BigKoDecodeStatus::Infeasible);
+        assert!(
+            result
+                .allocations
+                .iter()
+                .any(|allocation| allocation.hero_mystery_cents == vec![333])
+        );
+    }
+
+    #[test]
+    fn keeps_ugly_cent_three_way_paths_ambiguous_instead_of_infeasible() {
+        let result = decode_big_ko_allocations(
+            1_000,
+            &[
+                HeroKoShare {
+                    share_micros: 333_333,
+                },
+                HeroKoShare {
+                    share_micros: 333_333,
+                },
+                HeroKoShare {
+                    share_micros: 333_333,
+                },
+            ],
+            &[MysteryEnvelope {
+                sort_order: 1,
+                payout_cents: 1_000,
+                frequency_per_100m: 1,
+            }],
+        );
+
+        assert_eq!(result.status, BigKoDecodeStatus::Ambiguous);
+        assert!(!result.allocations.is_empty());
+    }
+
+    #[test]
     fn treats_zero_mystery_without_knockouts_as_zero_case() {
         let result = decode_big_ko_allocations(0, &[], &[]);
 
         assert_eq!(result.status, BigKoDecodeStatus::ZeroMystery);
         assert!(result.allocations.is_empty());
+    }
+
+    #[test]
+    fn computes_expected_hero_mystery_from_weighted_envelopes() {
+        let expected = expected_hero_mystery_cents(
+            1_000_000,
+            &[
+                MysteryEnvelope {
+                    sort_order: 4,
+                    payout_cents: 10_000,
+                    frequency_per_100m: 1,
+                },
+                MysteryEnvelope {
+                    sort_order: 5,
+                    payout_cents: 2_000,
+                    frequency_per_100m: 3,
+                },
+            ],
+        );
+
+        assert_eq!(expected, Some(4_000.0));
+    }
+
+    #[test]
+    fn maps_big_ko_bucket_weights_from_reference_frequencies() {
+        let probabilities = expected_big_ko_bucket_probabilities(&[
+            MysteryEnvelope {
+                sort_order: 4,
+                payout_cents: 10_000,
+                frequency_per_100m: 1,
+            },
+            MysteryEnvelope {
+                sort_order: 5,
+                payout_cents: 2_000,
+                frequency_per_100m: 3,
+            },
+            MysteryEnvelope {
+                sort_order: 8,
+                payout_cents: 750,
+                frequency_per_100m: 2,
+            },
+        ]);
+
+        assert_eq!(probabilities["big_ko_x10_count"], 0.16666666666666666);
+        assert_eq!(probabilities["big_ko_x2_count"], 0.5);
+        assert!(!probabilities.contains_key("big_ko_x1_5_count"));
     }
 }

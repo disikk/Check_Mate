@@ -2,12 +2,14 @@ use std::collections::BTreeMap;
 
 use crate::{
     ParserError,
+    betting_rules::evaluate_action_legality,
     models::{
         ActionType, CanonicalParsedHand, CertaintyState, FinalPot, HandElimination,
         HandOutcomeActual, HandReturn, NormalizationInvariants, NormalizedHand, ParsedHandSeat,
         PlayerNodeState, PlayerStatus, PotContribution, PotSlice, PotWinner,
         ResolutionNodeSnapshot, Street,
     },
+    pot_resolution::resolve_hand_pots,
 };
 
 #[derive(Debug, Clone)]
@@ -24,20 +26,6 @@ struct ReplayState {
     snapshot: Option<ResolutionNodeSnapshot>,
 }
 
-#[derive(Debug, Clone)]
-struct ResolvedPotState {
-    pot_no: u8,
-    amount: i64,
-    is_main: bool,
-    eligible_players: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct PotAllocation {
-    pot_no: u8,
-    shares: Vec<(String, i64)>,
-}
-
 struct SnapshotBuildContext<'a> {
     ordered_seats: &'a [ParsedHandSeat],
     stack_current: &'a BTreeMap<String, i64>,
@@ -52,6 +40,7 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         .clone()
         .ok_or(ParserError::MissingLine("hero_name"))?;
     let warnings = hand.parse_warnings.clone();
+    let mut legality_errors = evaluate_action_legality(hand)?;
 
     let ordered_seats = {
         let mut seats = hand.seats.clone();
@@ -79,18 +68,12 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
     };
     let rake_amount = hand.summary_rake_amount.unwrap_or(0);
     let returns = build_returns(hand, &seat_by_player)?;
-    let (resolved_pots, pot_contributions) =
-        build_resolved_pots(&ordered_seats, &replay.committed_total, &replay.status);
-    let final_pots = resolved_pots
-        .iter()
-        .map(|pot| FinalPot {
-            pot_no: pot.pot_no,
-            amount: pot.amount,
-            is_main: pot.is_main,
-        })
-        .collect::<Vec<_>>();
-    let (pot_winners, winner_mapping_state, winner_mapping_errors) =
-        resolve_pot_winners(&resolved_pots, &hand.collected_amounts, &seat_by_player)?;
+    let pot_resolution = resolve_hand_pots(
+        hand,
+        &ordered_seats,
+        &replay.committed_total,
+        &replay.status,
+    )?;
 
     let stacks_after_actual = player_order
         .iter()
@@ -103,7 +86,9 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
 
     let total_committed = replay.committed_total.values().sum::<i64>();
     let total_collected = hand.collected_amounts.values().sum::<i64>();
-    let mut invariant_errors = winner_mapping_errors;
+    let mut invariant_errors = Vec::new();
+    invariant_errors.append(&mut legality_errors);
+    invariant_errors.extend(pot_resolution.invariant_errors.clone());
 
     let eliminations = ordered_seats
         .iter()
@@ -116,10 +101,10 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
                 build_elimination(
                     hand,
                     seat,
-                    &pot_contributions,
-                    &final_pots,
-                    &pot_winners,
-                    winner_mapping_state,
+                    &pot_resolution.pot_contributions,
+                    &pot_resolution.final_pots,
+                    &pot_resolution.pot_winners,
+                    pot_resolution.certainty_state,
                 )
             })
         })
@@ -153,9 +138,10 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         hand_id: hand.header.hand_id.clone(),
         player_order,
         snapshot: replay.snapshot,
-        final_pots,
-        pot_contributions,
-        pot_winners,
+        final_pots: pot_resolution.final_pots,
+        pot_contributions: pot_resolution.pot_contributions,
+        pot_eligibilities: pot_resolution.pot_eligibilities,
+        pot_winners: pot_resolution.pot_winners,
         returns,
         actual: HandOutcomeActual {
             committed_total_by_player: replay.committed_total,
@@ -169,6 +155,7 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
             chip_conservation_ok,
             pot_conservation_ok,
             invariant_errors,
+            uncertain_reason_codes: pot_resolution.uncertain_reason_codes,
         },
         warnings,
     })
@@ -198,8 +185,9 @@ impl ReplayState {
             .collect::<BTreeMap<_, _>>();
         let status = player_order
             .iter()
-            .map(|player| {
-                let player_status = if starting_stack[player] > 0 {
+            .zip(ordered_seats.iter())
+            .map(|(player, seat)| {
+                let player_status = if starting_stack[player] > 0 && !seat.is_sitting_out {
                     PlayerStatus::Live
                 } else {
                     PlayerStatus::Eliminated
@@ -412,348 +400,6 @@ fn build_returns(
         .collect()
 }
 
-fn build_resolved_pots(
-    ordered_seats: &[ParsedHandSeat],
-    committed_total: &BTreeMap<String, i64>,
-    status: &BTreeMap<String, PlayerStatus>,
-) -> (Vec<ResolvedPotState>, Vec<PotContribution>) {
-    let mut levels = committed_total
-        .values()
-        .copied()
-        .filter(|amount| *amount > 0)
-        .collect::<Vec<_>>();
-    levels.sort_unstable();
-    levels.dedup();
-
-    let mut pots = Vec::new();
-    let mut contributions = Vec::new();
-    let mut previous_level = 0_i64;
-
-    for level in levels {
-        let contributors = ordered_seats
-            .iter()
-            .filter(|seat| committed_total.get(&seat.player_name).copied().unwrap_or(0) >= level)
-            .collect::<Vec<_>>();
-        if contributors.is_empty() {
-            continue;
-        }
-
-        let increment = level - previous_level;
-        if increment <= 0 {
-            previous_level = level;
-            continue;
-        }
-
-        let pot_no = (pots.len() + 1) as u8;
-        let amount = increment * contributors.len() as i64;
-        let eligible_players = contributors
-            .iter()
-            .filter(|seat| status[seat.player_name.as_str()] != PlayerStatus::Folded)
-            .map(|seat| seat.player_name.clone())
-            .collect::<Vec<_>>();
-
-        pots.push(ResolvedPotState {
-            pot_no,
-            amount,
-            is_main: pots.is_empty(),
-            eligible_players,
-        });
-        contributions.extend(contributors.into_iter().map(|seat| PotContribution {
-            pot_no,
-            seat_no: seat.seat_no,
-            player_name: seat.player_name.clone(),
-            amount: increment,
-        }));
-        previous_level = level;
-    }
-
-    (pots, contributions)
-}
-
-fn resolve_pot_winners(
-    pots: &[ResolvedPotState],
-    winner_collections: &BTreeMap<String, i64>,
-    seat_by_player: &BTreeMap<String, u8>,
-) -> Result<(Vec<PotWinner>, CertaintyState, Vec<String>), ParserError> {
-    if pots.is_empty() {
-        let has_collections = winner_collections.values().any(|amount| *amount > 0);
-        return Ok((
-            Vec::new(),
-            if has_collections {
-                CertaintyState::Inconsistent
-            } else {
-                CertaintyState::Exact
-            },
-            if has_collections {
-                vec!["collect_events_without_pots".to_string()]
-            } else {
-                Vec::new()
-            },
-        ));
-    }
-
-    let mut remaining = winner_collections
-        .iter()
-        .filter(|(_, amount)| **amount > 0)
-        .map(|(player, amount)| (player.clone(), *amount))
-        .collect::<BTreeMap<_, _>>();
-
-    if remaining.is_empty() {
-        return Ok((
-            Vec::new(),
-            CertaintyState::Inconsistent,
-            vec!["pot_winners_missing_collections".to_string()],
-        ));
-    }
-
-    let mut pot_order = pots.to_vec();
-    pot_order.sort_by(|left, right| {
-        right
-            .amount
-            .cmp(&left.amount)
-            .then(
-                left.eligible_players
-                    .len()
-                    .cmp(&right.eligible_players.len()),
-            )
-            .then(left.pot_no.cmp(&right.pot_no))
-    });
-
-    let mut current = Vec::new();
-    let mut solutions = Vec::new();
-    search_pot_allocations(
-        &pot_order,
-        0,
-        &mut remaining,
-        &mut current,
-        &mut solutions,
-        2,
-    );
-
-    let Some(first_solution) = solutions.first().cloned() else {
-        return Ok((
-            Vec::new(),
-            CertaintyState::Inconsistent,
-            vec!["collect_mapping_unsatisfied".to_string()],
-        ));
-    };
-
-    if solutions.len() == 1 {
-        return Ok((
-            allocations_to_pot_winners(&first_solution, seat_by_player)?,
-            CertaintyState::Exact,
-            Vec::new(),
-        ));
-    }
-
-    // When multiple valid mappings exist we keep the hand uncertain and avoid
-    // materializing guessed winners into exact downstream tables.
-    Ok((Vec::new(), CertaintyState::Uncertain, Vec::new()))
-}
-
-fn search_pot_allocations(
-    pots: &[ResolvedPotState],
-    index: usize,
-    remaining: &mut BTreeMap<String, i64>,
-    current: &mut Vec<PotAllocation>,
-    solutions: &mut Vec<Vec<PotAllocation>>,
-    limit: usize,
-) {
-    if solutions.len() >= limit {
-        return;
-    }
-
-    if index == pots.len() {
-        if remaining.values().all(|amount| *amount == 0) {
-            solutions.push(current.clone());
-        }
-        return;
-    }
-
-    let pot = &pots[index];
-    let candidates = candidate_allocations_for_pot(pot, remaining);
-    for shares in candidates {
-        if !apply_allocation(remaining, &shares) {
-            continue;
-        }
-
-        current.push(PotAllocation {
-            pot_no: pot.pot_no,
-            shares: shares.clone(),
-        });
-        search_pot_allocations(pots, index + 1, remaining, current, solutions, limit);
-        current.pop();
-        revert_allocation(remaining, &shares);
-
-        if solutions.len() >= limit {
-            return;
-        }
-    }
-}
-
-fn candidate_allocations_for_pot(
-    pot: &ResolvedPotState,
-    remaining: &BTreeMap<String, i64>,
-) -> Vec<Vec<(String, i64)>> {
-    let eligible_positive = pot
-        .eligible_players
-        .iter()
-        .filter(|player| remaining.get(player.as_str()).copied().unwrap_or(0) > 0)
-        .cloned()
-        .collect::<Vec<_>>();
-
-    if eligible_positive.is_empty() {
-        return Vec::new();
-    }
-
-    let positive_total = eligible_positive
-        .iter()
-        .map(|player| remaining.get(player.as_str()).copied().unwrap_or(0))
-        .sum::<i64>();
-    if positive_total < pot.amount {
-        return Vec::new();
-    }
-
-    let mut candidates = Vec::new();
-
-    for player in &eligible_positive {
-        if remaining.get(player.as_str()).copied().unwrap_or(0) >= pot.amount {
-            candidates.push(vec![(player.clone(), pot.amount)]);
-        }
-    }
-
-    for winner_count in 2..=eligible_positive.len() {
-        if pot.amount < winner_count as i64 {
-            break;
-        }
-
-        let base_share = pot.amount / winner_count as i64;
-        if base_share == 0 {
-            continue;
-        }
-
-        let remainder = (pot.amount % winner_count as i64) as usize;
-        for subset in combinations(&eligible_positive, winner_count) {
-            if remainder == 0 {
-                let shares = subset
-                    .iter()
-                    .map(|player| (player.clone(), base_share))
-                    .collect::<Vec<_>>();
-                if allocation_fits(remaining, &shares) {
-                    candidates.push(shares);
-                }
-                continue;
-            }
-
-            for bonus_receivers in combinations(&subset, remainder) {
-                let shares = subset
-                    .iter()
-                    .map(|player| {
-                        let bonus = if bonus_receivers.contains(player) {
-                            1
-                        } else {
-                            0
-                        };
-                        (player.clone(), base_share + bonus)
-                    })
-                    .collect::<Vec<_>>();
-                if allocation_fits(remaining, &shares) {
-                    candidates.push(shares);
-                }
-            }
-        }
-    }
-
-    candidates.sort();
-    candidates.dedup();
-    candidates
-}
-
-fn allocation_fits(remaining: &BTreeMap<String, i64>, shares: &[(String, i64)]) -> bool {
-    shares.iter().all(|(player, share)| {
-        *share > 0 && remaining.get(player.as_str()).copied().unwrap_or(0) >= *share
-    })
-}
-
-fn apply_allocation(remaining: &mut BTreeMap<String, i64>, shares: &[(String, i64)]) -> bool {
-    if !allocation_fits(remaining, shares) {
-        return false;
-    }
-
-    for (player, share) in shares {
-        *remaining.entry(player.clone()).or_default() -= *share;
-    }
-    true
-}
-
-fn revert_allocation(remaining: &mut BTreeMap<String, i64>, shares: &[(String, i64)]) {
-    for (player, share) in shares {
-        *remaining.entry(player.clone()).or_default() += *share;
-    }
-}
-
-fn combinations(items: &[String], k: usize) -> Vec<Vec<String>> {
-    if k == 0 {
-        return vec![Vec::new()];
-    }
-    if items.len() < k {
-        return Vec::new();
-    }
-
-    let mut result = Vec::new();
-    let mut current = Vec::new();
-    combinations_recursive(items, k, 0, &mut current, &mut result);
-    result
-}
-
-fn combinations_recursive(
-    items: &[String],
-    k: usize,
-    start: usize,
-    current: &mut Vec<String>,
-    result: &mut Vec<Vec<String>>,
-) {
-    if current.len() == k {
-        result.push(current.clone());
-        return;
-    }
-
-    for index in start..items.len() {
-        current.push(items[index].clone());
-        combinations_recursive(items, k, index + 1, current, result);
-        current.pop();
-    }
-}
-
-fn allocations_to_pot_winners(
-    allocations: &[PotAllocation],
-    seat_by_player: &BTreeMap<String, u8>,
-) -> Result<Vec<PotWinner>, ParserError> {
-    let mut winners = Vec::new();
-    let mut ordered_allocations = allocations.to_vec();
-    ordered_allocations.sort_by_key(|allocation| allocation.pot_no);
-
-    for allocation in ordered_allocations {
-        for (player_name, share_amount) in allocation.shares {
-            let seat_no = seat_by_player.get(&player_name).copied().ok_or_else(|| {
-                ParserError::InvalidField {
-                    field: "collect_player_missing_seat",
-                    value: player_name.clone(),
-                }
-            })?;
-
-            winners.push(PotWinner {
-                pot_no: allocation.pot_no,
-                seat_no,
-                player_name,
-                share_amount,
-            });
-        }
-    }
-
-    Ok(winners)
-}
-
 fn build_elimination(
     hand: &CanonicalParsedHand,
     seat: &ParsedHandSeat,
@@ -762,16 +408,21 @@ fn build_elimination(
     pot_winners: &[PotWinner],
     winner_mapping_state: CertaintyState,
 ) -> HandElimination {
-    let resolved_by_pot_no = pot_contributions
+    let resolved_by_pot_nos = pot_contributions
         .iter()
         .filter(|contribution| contribution.seat_no == seat.seat_no)
         .map(|contribution| contribution.pot_no)
-        .max();
+        .collect::<Vec<_>>();
+    let resolved_by_pot_nos = dedup_preserving_order(resolved_by_pot_nos);
 
-    let Some(pot_no) = resolved_by_pot_no else {
+    if resolved_by_pot_nos.is_empty() {
         return HandElimination {
             eliminated_seat_no: seat.seat_no,
             eliminated_player_name: seat.player_name.clone(),
+            resolved_by_pot_nos: Vec::new(),
+            ko_involved_winners: Vec::new(),
+            hero_ko_share_total: None,
+            joint_ko: false,
             resolved_by_pot_no: None,
             ko_involved_winner_count: 0,
             hero_involved: false,
@@ -781,17 +432,17 @@ fn build_elimination(
             is_sidepot_based: false,
             certainty_state: CertaintyState::Uncertain,
         };
-    };
+    }
 
     let resolved_winners = pot_winners
         .iter()
-        .filter(|winner| winner.pot_no == pot_no)
+        .filter(|winner| resolved_by_pot_nos.contains(&winner.pot_no))
         .collect::<Vec<_>>();
     let resolved_pot_amount = final_pots
         .iter()
-        .find(|pot| pot.pot_no == pot_no)
+        .filter(|pot| resolved_by_pot_nos.contains(&pot.pot_no))
         .map(|pot| pot.amount)
-        .unwrap_or(0);
+        .sum::<i64>();
     let hero_share = resolved_winners
         .iter()
         .filter(|winner| winner.player_name == hand.hero_name.as_deref().unwrap_or_default())
@@ -803,24 +454,54 @@ fn build_elimination(
     } else {
         None
     };
-    let split_n = (!resolved_winners.is_empty()).then_some(resolved_winners.len() as u8);
+    let ko_involved_winners = dedup_preserving_order(
+        resolved_winners
+            .iter()
+            .map(|winner| winner.player_name.clone())
+            .collect::<Vec<_>>(),
+    );
+    let split_n = (!ko_involved_winners.is_empty()).then_some(ko_involved_winners.len() as u8);
+    let resolved_by_pot_no = (resolved_by_pot_nos.len() == 1).then_some(resolved_by_pot_nos[0]);
+    let joint_ko = ko_involved_winners.len() > 1;
 
     HandElimination {
         eliminated_seat_no: seat.seat_no,
         eliminated_player_name: seat.player_name.clone(),
-        resolved_by_pot_no: Some(pot_no),
-        ko_involved_winner_count: resolved_winners.len() as u8,
+        resolved_by_pot_nos: resolved_by_pot_nos.clone(),
+        ko_involved_winners: ko_involved_winners.clone(),
+        hero_ko_share_total: share_fraction,
+        joint_ko,
+        resolved_by_pot_no,
+        ko_involved_winner_count: ko_involved_winners.len() as u8,
         hero_involved: hero_share > 0,
         hero_share_fraction: share_fraction,
-        is_split_ko: resolved_winners.len() > 1,
+        is_split_ko: ko_involved_winners.len() > 1,
         split_n,
-        is_sidepot_based: pot_no > 1,
+        is_sidepot_based: resolved_by_pot_nos.iter().any(|pot_no| *pot_no > 1),
         certainty_state: if resolved_winners.is_empty() {
-            CertaintyState::Uncertain
+            if winner_mapping_state == CertaintyState::Inconsistent {
+                CertaintyState::Inconsistent
+            } else {
+                CertaintyState::Uncertain
+            }
         } else {
             winner_mapping_state
         },
     }
+}
+
+fn dedup_preserving_order<T>(items: Vec<T>) -> Vec<T>
+where
+    T: Ord + Clone,
+{
+    let mut seen = std::collections::BTreeSet::new();
+    let mut unique = Vec::new();
+    for item in items {
+        if seen.insert(item.clone()) {
+            unique.push(item);
+        }
+    }
+    unique
 }
 
 fn build_snapshot(
