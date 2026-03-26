@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use mbr_stats_runtime::materialize_player_hand_features;
+use mbr_stats_runtime::{GG_MBR_FT_MAX_PLAYERS, materialize_player_hand_features};
 use postgres::{Client, NoTls, Transaction};
 use sha2::{Digest, Sha256};
 use tracker_parser_core::{
@@ -71,7 +71,8 @@ struct HandSeatRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct HandPositionRow {
     seat_no: i32,
-    position_code: String,
+    position_index: i32,
+    position_label: String,
     preflop_act_order_index: i32,
     postflop_act_order_index: i32,
 }
@@ -186,6 +187,7 @@ struct HandEliminationRow {
     eliminated_seat_no: i32,
     eliminated_player_name: String,
     resolved_by_pot_nos: Vec<i32>,
+    ko_credit_pot_no: Option<i32>,
     ko_involved_winners: Vec<String>,
     hero_ko_share_total: Option<String>,
     joint_ko: bool,
@@ -736,6 +738,26 @@ fn import_hand_history(
         ));
     }
 
+    // F2-T2: Compute stable tournament_hand_order for all hands in this tournament.
+    // Uses the same sort criteria as Rust-side chronological sort: timestamp + external_hand_id + id.
+    tx.execute(
+        "WITH ordered AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       ORDER BY hand_started_at_local NULLS LAST,
+                                external_hand_id,
+                                id
+                   )::int AS computed_order
+            FROM core.hands
+            WHERE tournament_id = $1
+        )
+        UPDATE core.hands h
+        SET tournament_hand_order = ordered.computed_order
+        FROM ordered
+        WHERE h.id = ordered.id",
+        &[&tournament_id],
+    )?;
+
     let tournament_ft_helper_row = build_mbr_tournament_ft_helper_row(
         tournament_id,
         context.player_profile_id,
@@ -883,15 +905,17 @@ fn persist_canonical_hand(
             "INSERT INTO core.hand_positions (
                 hand_id,
                 seat_no,
-                position_code,
+                position_index,
+                position_label,
                 preflop_act_order_index,
                 postflop_act_order_index
             )
-            VALUES ($1, $2, $3, $4, $5)",
+            VALUES ($1, $2, $3, $4, $5, $6)",
             &[
                 &hand_id,
                 &position.seat_no,
-                &position.position_code,
+                &position.position_index,
+                &position.position_label,
                 &position.preflop_act_order_index,
                 &position.postflop_act_order_index,
             ],
@@ -1189,6 +1213,7 @@ fn persist_normalized_hand(
                 eliminated_seat_no,
                 eliminated_player_name,
                 resolved_by_pot_nos,
+                ko_credit_pot_no,
                 ko_involved_winners,
                 hero_ko_share_total,
                 joint_ko,
@@ -1208,16 +1233,17 @@ fn persist_normalized_hand(
                 certainty_state
             )
             VALUES (
-                $1, $2, $3, $4, $5, ($6::text)::numeric(12,6), $7, $8, $9, $10,
-                ($11::text)::numeric(12,6), $12, $13, ($14::text)::numeric(12,6),
-                ($15::text)::numeric(12,6), ($16::text)::numeric(12,6),
-                ($17::text)::numeric(12,6), $18, $19, $20, $21
+                $1, $2, $3, $4, $5, $6, ($7::text)::numeric(12,6), $8, $9, $10, $11,
+                ($12::text)::numeric(12,6), $13, $14, ($15::text)::numeric(12,6),
+                ($16::text)::numeric(12,6), ($17::text)::numeric(12,6),
+                ($18::text)::numeric(12,6), $19, $20, $21, $22
             )",
             &[
                 &hand_id,
                 &elimination_row.eliminated_seat_no,
                 &elimination_row.eliminated_player_name,
                 &elimination_row.resolved_by_pot_nos,
+                &elimination_row.ko_credit_pot_no,
                 &elimination_row.ko_involved_winners,
                 &elimination_row.hero_ko_share_total,
                 &elimination_row.joint_ko,
@@ -1651,6 +1677,7 @@ fn build_hand_elimination_rows(
                     .copied()
                     .map(i32::from)
                     .collect(),
+                ko_credit_pot_no: elimination.ko_credit_pot_no.map(i32::from),
                 ko_involved_winners: elimination.ko_involved_winners.clone(),
                 hero_ko_share_total: format_fraction(elimination.hero_ko_share_total),
                 joint_ko: elimination.joint_ko,
@@ -1703,7 +1730,7 @@ fn resolve_boundary_candidates(facts: &[StageHandFact]) -> BoundaryResolution {
             .then_with(|| left.hand_id.cmp(&right.hand_id))
     });
 
-    let Some(first_ft_index) = chronological.iter().position(|hand| hand.max_players == 9) else {
+    let Some(first_ft_index) = chronological.iter().position(|hand| hand.max_players == GG_MBR_FT_MAX_PLAYERS as u8) else {
         return BoundaryResolution {
             candidate_hand_ids: BTreeSet::new(),
             resolution_state: "uncertain".to_string(),
@@ -1756,7 +1783,7 @@ fn build_mbr_stage_resolutions_from_facts(
     facts
         .iter()
         .map(|fact| {
-            let played_ft_hand = fact.max_players == 9;
+            let played_ft_hand = fact.max_players == GG_MBR_FT_MAX_PLAYERS as u8;
             let ft_players_remaining_exact = played_ft_hand.then_some(fact.seat_count as i32);
             let is_stage_2 = ft_players_remaining_exact == Some(2);
             let is_stage_3_4 = matches!(ft_players_remaining_exact, Some(3 | 4));
@@ -1914,7 +1941,7 @@ fn build_mbr_tournament_ft_helper_row(
                 Some(first_ft_hand.hand_id),
                 Some(first_ft_hand.hand_started_at_local.clone()),
                 first_ft_table_size,
-                first_ft_table_size.map(|table_size| table_size < 9),
+                first_ft_table_size.map(|table_size| table_size < GG_MBR_FT_MAX_PLAYERS),
                 first_ft_hand.hero_starting_stack,
                 hero_ft_entry_stack_bb,
             )
@@ -2198,7 +2225,8 @@ fn build_position_rows(hand: &CanonicalParsedHand) -> Result<Vec<HandPositionRow
         .into_iter()
         .map(|position| HandPositionRow {
             seat_no: i32::from(position.seat_no),
-            position_code: position.position_code.as_str().to_string(),
+            position_index: i32::from(position.position_index),
+            position_label: position.position_label.as_str().to_string(),
             preflop_act_order_index: i32::from(position.preflop_act_order_index),
             postflop_act_order_index: i32::from(position.postflop_act_order_index),
         })
@@ -2254,6 +2282,12 @@ fn parse_warning_to_issue(warning: &str) -> ParseIssueRow {
     } else if let Some(raw_line) = warning.strip_prefix("unparsed_summary_seat_line: ") {
         warning_parse_issue(
             "unparsed_summary_seat_line",
+            warning.to_string(),
+            Some(raw_line.to_string()),
+        )
+    } else if let Some(raw_line) = warning.strip_prefix("unparsed_summary_seat_tail: ") {
+        warning_parse_issue(
+            "unparsed_summary_seat_tail",
             warning.to_string(),
             Some(raw_line.to_string()),
         )
@@ -2833,7 +2867,7 @@ mod tests {
                 && issue.raw_line.as_deref() == Some("Seat 2: Hero lost")
         }));
         assert!(rows.parse_issues.iter().any(|issue| {
-            issue.code == "unparsed_summary_seat_line"
+            issue.code == "unparsed_summary_seat_tail"
                 && issue.raw_line.as_deref() == Some("Seat 9: VillainX (button) ???")
         }));
     }
@@ -2927,19 +2961,25 @@ mod tests {
             .find(|row| row.eliminated_player_name == "Medium")
             .unwrap();
 
+        // resolved_by_pot_nos — диагностический след: Medium внёсся в оба pot'а.
         assert_eq!(medium.resolved_by_pot_nos, vec![1, 2]);
+        // ko_credit_pot_no — highest pot (GG rule: bounty идёт winners последнего side pot).
+        assert_eq!(medium.ko_credit_pot_no, Some(2));
+        // KO-credit считается ТОЛЬКО по credit pot (pot 2), где Hero — единственный winner.
         assert_eq!(
             medium.ko_involved_winners,
-            vec!["Shorty".to_string(), "Hero".to_string()]
+            vec!["Hero".to_string()]
         );
-        assert_eq!(medium.hero_ko_share_total.as_deref(), Some("0.400000"));
-        assert!(medium.joint_ko);
+        // Hero share = 1000/1000 = 1.0 (full credit pot).
+        assert_eq!(medium.hero_ko_share_total.as_deref(), Some("1.000000"));
+        // Только 1 winner в credit pot → не joint KO.
+        assert!(!medium.joint_ko);
         assert_eq!(medium.resolved_by_pot_no, None);
-        assert_eq!(medium.ko_involved_winner_count, 2);
+        assert_eq!(medium.ko_involved_winner_count, 1);
         assert!(medium.hero_involved);
-        assert_eq!(medium.hero_share_fraction.as_deref(), Some("0.400000"));
-        assert!(medium.is_split_ko);
-        assert_eq!(medium.split_n, Some(2));
+        assert_eq!(medium.hero_share_fraction.as_deref(), Some("1.000000"));
+        assert!(!medium.is_split_ko);
+        assert_eq!(medium.split_n, Some(1));
         assert!(medium.is_sidepot_based);
         assert_eq!(medium.certainty_state, "exact");
     }
@@ -3576,6 +3616,228 @@ mod tests {
         assert_eq!(second.boundary_candidate_count, 2);
         assert!(second.boundary_ko_ev.is_none());
         assert_eq!(second.boundary_ko_state, "uncertain");
+    }
+
+    // --- F3-T1: Synthetic edge-case tests for boundary/stage/pre-FT ---
+
+    #[test]
+    fn synthetic_no_ft_tournament_has_no_boundary_and_no_stage_predicates() {
+        // Tournament where all hands are rush (non-FT): no boundary, no played_ft_hand
+        let rows = build_mbr_stage_resolutions_from_facts(
+            Uuid::nil(),
+            &[
+                StageHandFact {
+                    hand_id: "rush-1".to_string(),
+                    played_at: "2026/03/16 10:00:00".to_string(),
+                    max_players: 4,
+                    seat_count: 4,
+                    exact_hero_boundary_ko_share: None,
+                },
+                StageHandFact {
+                    hand_id: "rush-2".to_string(),
+                    played_at: "2026/03/16 10:01:00".to_string(),
+                    max_players: 3,
+                    seat_count: 3,
+                    exact_hero_boundary_ko_share: None,
+                },
+            ],
+        );
+
+        for row in rows.values() {
+            assert!(!row.played_ft_hand, "no rush hand should be played_ft_hand");
+            assert!(!row.entered_boundary_zone, "no boundary zone in no-FT tournament");
+            assert!(row.ft_table_size.is_none(), "ft_table_size null for non-FT");
+            assert!(!row.is_ft_hand);
+            assert!(!row.is_stage_2);
+            assert!(!row.is_stage_3_4);
+            assert!(!row.is_stage_4_5);
+            assert!(!row.is_stage_5_6);
+            assert!(!row.is_stage_6_9);
+            assert!(!row.is_boundary_hand);
+        }
+    }
+
+    #[test]
+    fn synthetic_single_candidate_boundary_is_exact() {
+        // One rush hand, then one FT hand — boundary resolution is exact
+        let rows = build_mbr_stage_resolutions_from_facts(
+            Uuid::nil(),
+            &[
+                StageHandFact {
+                    hand_id: "boundary".to_string(),
+                    played_at: "2026/03/16 10:00:00".to_string(),
+                    max_players: 4,
+                    seat_count: 4,
+                    exact_hero_boundary_ko_share: Some(1.0),
+                },
+                StageHandFact {
+                    hand_id: "ft-first".to_string(),
+                    played_at: "2026/03/16 10:01:00".to_string(),
+                    max_players: 9,
+                    seat_count: 9,
+                    exact_hero_boundary_ko_share: None,
+                },
+            ],
+        );
+
+        let boundary = rows.get("boundary").unwrap();
+        assert!(boundary.entered_boundary_zone);
+        assert!(boundary.is_boundary_hand);
+        assert_eq!(boundary.boundary_resolution_state, "exact");
+        assert_eq!(boundary.boundary_confidence_class, "single_candidate");
+        assert_eq!(boundary.boundary_candidate_count, 1);
+        // Boundary KO share should propagate for exact single candidate
+        assert!(boundary.boundary_ko_ev.is_some());
+    }
+
+    #[test]
+    fn synthetic_ft_hand_has_correct_stage_predicates_by_seat_count() {
+        // FT hands with varying seat counts to verify all stage predicates
+        let rows = build_mbr_stage_resolutions_from_facts(
+            Uuid::nil(),
+            &[
+                StageHandFact {
+                    hand_id: "ft-9".to_string(),
+                    played_at: "2026/03/16 10:00:00".to_string(),
+                    max_players: 9,
+                    seat_count: 9,
+                    exact_hero_boundary_ko_share: None,
+                },
+                StageHandFact {
+                    hand_id: "ft-6".to_string(),
+                    played_at: "2026/03/16 10:01:00".to_string(),
+                    max_players: 9,
+                    seat_count: 6,
+                    exact_hero_boundary_ko_share: None,
+                },
+                StageHandFact {
+                    hand_id: "ft-4".to_string(),
+                    played_at: "2026/03/16 10:02:00".to_string(),
+                    max_players: 9,
+                    seat_count: 4,
+                    exact_hero_boundary_ko_share: None,
+                },
+                StageHandFact {
+                    hand_id: "ft-2".to_string(),
+                    played_at: "2026/03/16 10:03:00".to_string(),
+                    max_players: 9,
+                    seat_count: 2,
+                    exact_hero_boundary_ko_share: None,
+                },
+            ],
+        );
+
+        // 9-player: is_stage_6_9 = true, is_ft_hand = true
+        let ft9 = rows.get("ft-9").unwrap();
+        assert!(ft9.played_ft_hand);
+        assert!(ft9.is_ft_hand);
+        assert!(ft9.is_stage_6_9);
+        assert!(!ft9.is_stage_5_6);
+        assert!(!ft9.is_stage_3_4);
+        assert!(!ft9.is_stage_2);
+        assert_eq!(ft9.ft_players_remaining_exact, Some(9));
+
+        // 6-player: is_stage_5_6 = true, is_stage_6_9 = true
+        let ft6 = rows.get("ft-6").unwrap();
+        assert!(ft6.is_stage_5_6);
+        assert!(ft6.is_stage_6_9);
+        assert!(!ft6.is_stage_3_4);
+        assert_eq!(ft6.ft_players_remaining_exact, Some(6));
+
+        // 4-player: is_stage_3_4 = true, is_stage_4_5 = true
+        let ft4 = rows.get("ft-4").unwrap();
+        assert!(ft4.is_stage_3_4);
+        assert!(ft4.is_stage_4_5);
+        assert!(!ft4.is_stage_5_6);
+        assert!(!ft4.is_stage_2);
+        assert_eq!(ft4.ft_players_remaining_exact, Some(4));
+
+        // 2-player: is_stage_2 = true
+        let ft2 = rows.get("ft-2").unwrap();
+        assert!(ft2.is_stage_2);
+        assert!(!ft2.is_stage_3_4);
+        assert_eq!(ft2.ft_players_remaining_exact, Some(2));
+    }
+
+    #[test]
+    fn synthetic_ft_helper_with_incomplete_start_detects_fewer_than_nine() {
+        // First FT hand has only 7 seats — ft_started_incomplete = true
+        let helper = build_mbr_tournament_ft_helper_row(
+            Uuid::nil(),
+            Uuid::nil(),
+            &[
+                TournamentFtHelperSourceHand {
+                    hand_id: Uuid::from_u128(1),
+                    external_hand_id: "ft-1".to_string(),
+                    hand_started_at_local: "2026/03/16 10:00:00".to_string(),
+                    played_ft_hand: true,
+                    played_ft_hand_state: "exact".to_string(),
+                    ft_table_size: Some(7),
+                    entered_boundary_zone: false,
+                    boundary_resolution_state: "exact".to_string(),
+                    hero_starting_stack: Some(5000),
+                    big_blind: 200,
+                },
+            ],
+        );
+
+        assert!(helper.reached_ft_exact);
+        assert_eq!(helper.first_ft_table_size, Some(7));
+        assert_eq!(helper.ft_started_incomplete, Some(true));
+        assert_eq!(helper.deepest_ft_size_reached, Some(7));
+    }
+
+    #[test]
+    fn synthetic_pre_ft_helper_tracks_deepest_ft_size() {
+        // Tournament that goes from 9 → 5 → 2 — deepest should be 2
+        let helper = build_mbr_tournament_ft_helper_row(
+            Uuid::nil(),
+            Uuid::nil(),
+            &[
+                TournamentFtHelperSourceHand {
+                    hand_id: Uuid::from_u128(1),
+                    external_hand_id: "ft-a".to_string(),
+                    hand_started_at_local: "2026/03/16 10:00:00".to_string(),
+                    played_ft_hand: true,
+                    played_ft_hand_state: "exact".to_string(),
+                    ft_table_size: Some(9),
+                    entered_boundary_zone: false,
+                    boundary_resolution_state: "exact".to_string(),
+                    hero_starting_stack: Some(10000),
+                    big_blind: 200,
+                },
+                TournamentFtHelperSourceHand {
+                    hand_id: Uuid::from_u128(2),
+                    external_hand_id: "ft-b".to_string(),
+                    hand_started_at_local: "2026/03/16 10:05:00".to_string(),
+                    played_ft_hand: true,
+                    played_ft_hand_state: "exact".to_string(),
+                    ft_table_size: Some(5),
+                    entered_boundary_zone: false,
+                    boundary_resolution_state: "exact".to_string(),
+                    hero_starting_stack: Some(15000),
+                    big_blind: 400,
+                },
+                TournamentFtHelperSourceHand {
+                    hand_id: Uuid::from_u128(3),
+                    external_hand_id: "ft-c".to_string(),
+                    hand_started_at_local: "2026/03/16 10:10:00".to_string(),
+                    played_ft_hand: true,
+                    played_ft_hand_state: "exact".to_string(),
+                    ft_table_size: Some(2),
+                    entered_boundary_zone: false,
+                    boundary_resolution_state: "exact".to_string(),
+                    hero_starting_stack: Some(25000),
+                    big_blind: 800,
+                },
+            ],
+        );
+
+        assert!(helper.reached_ft_exact);
+        assert_eq!(helper.first_ft_table_size, Some(9));
+        assert_eq!(helper.ft_started_incomplete, Some(false));
+        assert_eq!(helper.deepest_ft_size_reached, Some(2));
+        assert_eq!(helper.hero_ft_entry_stack_chips, Some(10000));
     }
 
     #[test]
@@ -5958,7 +6220,7 @@ mod tests {
                 "SELECT COUNT(*)
                  FROM core.parse_issues
                  WHERE hand_id = $1
-                   AND code = 'unparsed_summary_seat_line'",
+                   AND code = 'unparsed_summary_seat_tail'",
                 &[&hand_id],
             )
             .unwrap()
@@ -6055,7 +6317,12 @@ mod tests {
             .get(0);
         let position_rows = client
             .query(
-                "SELECT seat_no, position_code, preflop_act_order_index, postflop_act_order_index
+                "SELECT
+                     seat_no,
+                     position_index,
+                     position_label,
+                     preflop_act_order_index,
+                     postflop_act_order_index
                  FROM core.hand_positions
                  WHERE hand_id = $1
                  ORDER BY seat_no",
@@ -6066,13 +6333,15 @@ mod tests {
         assert_eq!(position_count, 2);
         assert_eq!(position_rows.len(), 2);
         assert_eq!(position_rows[0].get::<_, i32>(0), 3);
-        assert_eq!(position_rows[0].get::<_, String>(1), "BTN");
-        assert_eq!(position_rows[0].get::<_, i32>(2), 1);
-        assert_eq!(position_rows[0].get::<_, i32>(3), 2);
+        assert_eq!(position_rows[0].get::<_, i32>(1), 1);
+        assert_eq!(position_rows[0].get::<_, String>(2), "BTN");
+        assert_eq!(position_rows[0].get::<_, i32>(3), 1);
+        assert_eq!(position_rows[0].get::<_, i32>(4), 2);
         assert_eq!(position_rows[1].get::<_, i32>(0), 7);
-        assert_eq!(position_rows[1].get::<_, String>(1), "BB");
-        assert_eq!(position_rows[1].get::<_, i32>(2), 2);
-        assert_eq!(position_rows[1].get::<_, i32>(3), 1);
+        assert_eq!(position_rows[1].get::<_, i32>(1), 2);
+        assert_eq!(position_rows[1].get::<_, String>(2), "BB");
+        assert_eq!(position_rows[1].get::<_, i32>(3), 2);
+        assert_eq!(position_rows[1].get::<_, i32>(4), 1);
     }
 
     #[test]
@@ -6568,8 +6837,7 @@ mod tests {
                    AND msr.ft_players_remaining_exact IS NOT NULL
                    AND msr.ft_players_remaining_exact <= 5
                  ORDER BY
-                    h.hand_started_at_local NULLS LAST,
-                    h.external_hand_id,
+                    h.tournament_hand_order NULLS LAST,
                     h.id
                  LIMIT 1",
                 &[&ts_report.tournament_id, &player_profile_id],
@@ -6616,10 +6884,14 @@ mod tests {
                     COUNT(*) FILTER (
                         WHERE he.hero_involved IS TRUE
                           AND he.certainty_state = 'exact'
-                          AND helper.first_ft_hand_started_local IS NOT NULL
-                          AND h.hand_started_at_local IS NOT NULL
+                          AND helper.first_ft_hand_id IS NOT NULL
+                          AND h.tournament_hand_order IS NOT NULL
                           AND COALESCE(msr.is_boundary_hand, FALSE) IS FALSE
-                          AND h.hand_started_at_local < helper.first_ft_hand_started_local
+                          AND h.tournament_hand_order < (
+                              SELECT fh.tournament_hand_order
+                              FROM core.hands fh
+                              WHERE fh.id = helper.first_ft_hand_id
+                          )
                     )::bigint
                  FROM core.hands h
                  LEFT JOIN derived.mbr_stage_resolution msr
@@ -6747,8 +7019,7 @@ mod tests {
                           AND h.player_profile_id = helper.player_profile_id
                           AND msr.is_stage_5_6
                         ORDER BY
-                            h.hand_started_at_local NULLS LAST,
-                            h.external_hand_id,
+                            h.tournament_hand_order NULLS LAST,
                             h.id
                         LIMIT 1
                     ) AS hero_stage_5_6_stack_bb,
@@ -6765,8 +7036,7 @@ mod tests {
                           AND h.player_profile_id = helper.player_profile_id
                           AND msr.is_stage_3_4
                         ORDER BY
-                            h.hand_started_at_local NULLS LAST,
-                            h.external_hand_id,
+                            h.tournament_hand_order NULLS LAST,
                             h.id
                         LIMIT 1
                     ) AS hero_stage_3_4_stack_bb
@@ -6914,17 +7184,20 @@ mod tests {
                     WHERE h.tournament_id = helper.tournament_id
                       AND h.player_profile_id = helper.player_profile_id
                       AND (
-                          helper.first_ft_hand_started_local IS NULL
+                          helper.first_ft_hand_id IS NULL
                           OR (
                               helper.boundary_resolution_state = 'exact'
-                              AND h.hand_started_at_local IS NOT NULL
-                              AND h.hand_started_at_local < helper.first_ft_hand_started_local
+                              AND h.tournament_hand_order IS NOT NULL
+                              AND h.tournament_hand_order < (
+                                  SELECT fh.tournament_hand_order
+                                  FROM core.hands fh
+                                  WHERE fh.id = helper.first_ft_hand_id
+                              )
                               AND COALESCE(msr.is_boundary_hand, FALSE) IS FALSE
                           )
                       )
                     ORDER BY
-                        h.hand_started_at_local DESC NULLS LAST,
-                        h.external_hand_id DESC,
+                        h.tournament_hand_order DESC NULLS LAST,
                         h.id DESC
                     LIMIT 1
                  ) AS pre_ft_snapshot
@@ -7575,10 +7848,10 @@ mod tests {
                     FilterCondition {
                         feature: FeatureRef::Street {
                             street: "seat".to_string(),
-                            feature_key: "position_code".to_string(),
+                            feature_key: "position_index".to_string(),
                         },
                         operator: FilterOperator::Eq,
-                        value: FilterValue::Enum("SB".to_string()),
+                        value: FilterValue::Num(2.0),
                     },
                     FilterCondition {
                         feature: FeatureRef::Street {
@@ -7602,14 +7875,15 @@ mod tests {
             organization_id,
             player_profile_id,
             &RuntimeFilterSet {
-                hero_filters: vec![
+                hero_filters: vec![],
+                opponent_filters: vec![
                     FilterCondition {
                         feature: FeatureRef::Street {
                             street: "seat".to_string(),
-                            feature_key: "position_code".to_string(),
+                            feature_key: "position_label".to_string(),
                         },
                         operator: FilterOperator::Eq,
-                        value: FilterValue::Enum("BB".to_string()),
+                        value: FilterValue::Enum("BTN".to_string()),
                     },
                     FilterCondition {
                         feature: FeatureRef::Street {
@@ -7617,10 +7891,9 @@ mod tests {
                             feature_key: "summary_outcome_kind".to_string(),
                         },
                         operator: FilterOperator::Eq,
-                        value: FilterValue::Enum("showed_won".to_string()),
+                        value: FilterValue::Enum("showed_lost".to_string()),
                     },
                 ],
-                opponent_filters: vec![],
             },
         )
         .unwrap();
@@ -8012,6 +8285,10 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
     fn apply_core_schema_migrations(client: &mut Client) {
         apply_sql_file(
             client,
+            &fixture_path("../../migrations/0001_init_source_of_truth.sql"),
+        );
+        apply_sql_file(
+            client,
             &fixture_path("../../migrations/0002_exact_pot_ko_core.sql"),
         );
         apply_sql_file(
@@ -8033,6 +8310,18 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
         apply_sql_file(
             client,
             &fixture_path("../../migrations/0007_hand_action_all_in_metadata.sql"),
+        );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0016_ko_credit_pot_no.sql"),
+        );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0017_tournament_hand_order.sql"),
+        );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0018_hand_positions_v2.sql"),
         );
         apply_sql_file(
             client,

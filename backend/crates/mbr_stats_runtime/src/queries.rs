@@ -432,8 +432,7 @@ fn load_deep_ft_entry_facts(
            AND msr.ft_players_remaining_exact <= 5
          ORDER BY
             h.tournament_id,
-            h.hand_started_at_local NULLS LAST,
-            h.external_hand_id,
+            h.tournament_hand_order NULLS LAST,
             h.id",
         &[&organization_id, &player_profile_id],
     )?;
@@ -494,10 +493,14 @@ fn load_stage_event_facts(
             COUNT(*) FILTER (
                 WHERE he.hero_involved IS TRUE
                   AND he.certainty_state = 'exact'
-                  AND helper.first_ft_hand_started_local IS NOT NULL
-                  AND h.hand_started_at_local IS NOT NULL
+                  AND helper.first_ft_hand_id IS NOT NULL
+                  AND h.tournament_hand_order IS NOT NULL
                   AND COALESCE(msr.is_boundary_hand, FALSE) IS FALSE
-                  AND h.hand_started_at_local < helper.first_ft_hand_started_local
+                  AND h.tournament_hand_order < (
+                      SELECT fh.tournament_hand_order
+                      FROM core.hands fh
+                      WHERE fh.id = helper.first_ft_hand_id
+                  )
             )::bigint AS pre_ft_ko_count
          FROM core.hands h
          LEFT JOIN derived.mbr_stage_resolution msr
@@ -538,6 +541,12 @@ fn load_stage_attempt_facts(
     organization_id: Uuid,
     player_profile_id: Uuid,
 ) -> Result<Vec<TournamentStageAttemptFact>> {
+    // Formal KO attempt contract (F1-T3):
+    // A KO attempt is counted per (hand_id, target_seat) when ALL of:
+    //   1. target has an explicit all-in action
+    //   2. hero starting_stack >= target starting_stack (hero covers)
+    //   3. hero is eligible for the target's credit pot (highest pot_no)
+    //   4. hero did NOT fold in this hand (hero remains live until resolution)
     let rows = client.query(
         "WITH attempt_targets AS (
             SELECT DISTINCT
@@ -555,6 +564,7 @@ fn load_stage_attempt_facts(
               AND hero_seat.starting_stack >= target.starting_stack
              WHERE h.organization_id = $1
                AND h.player_profile_id = $2
+               -- target went all-in
                AND EXISTS (
                    SELECT 1
                    FROM core.hand_actions target_action
@@ -562,15 +572,26 @@ fn load_stage_attempt_facts(
                      AND target_action.seat_no = target.seat_no
                      AND target_action.is_all_in IS TRUE
                )
+               -- hero is eligible for target's credit pot (highest pot_no)
                AND EXISTS (
                    SELECT 1
                    FROM core.hand_pot_eligibility hero_pe
-                   INNER JOIN core.hand_pot_eligibility target_pe
-                     ON target_pe.hand_id = hero_pe.hand_id
-                    AND target_pe.pot_no = hero_pe.pot_no
                    WHERE hero_pe.hand_id = h.id
                      AND hero_pe.seat_no = hero_seat.seat_no
-                     AND target_pe.seat_no = target.seat_no
+                     AND hero_pe.pot_no = (
+                         SELECT MAX(target_pe.pot_no)
+                         FROM core.hand_pot_eligibility target_pe
+                         WHERE target_pe.hand_id = h.id
+                           AND target_pe.seat_no = target.seat_no
+                     )
+               )
+               -- hero did NOT fold (remains live until resolution)
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM core.hand_actions hero_fold
+                   WHERE hero_fold.hand_id = h.id
+                     AND hero_fold.seat_no = hero_seat.seat_no
+                     AND hero_fold.action_type = 'fold'
                )
          )
          SELECT
@@ -657,8 +678,7 @@ fn load_stage_entry_facts(
                AND msr.is_stage_5_6
              ORDER BY
                 h.tournament_id,
-                h.hand_started_at_local NULLS LAST,
-                h.external_hand_id,
+                h.tournament_hand_order NULLS LAST,
                 h.id
          ),
          first_stage_3_4_entries AS (
@@ -681,8 +701,7 @@ fn load_stage_entry_facts(
                AND msr.is_stage_3_4
              ORDER BY
                 h.tournament_id,
-                h.hand_started_at_local NULLS LAST,
-                h.external_hand_id,
+                h.tournament_hand_order NULLS LAST,
                 h.id
          )
          SELECT
@@ -796,7 +815,7 @@ fn load_pre_ft_chip_facts(
     let rows = client.query(
         "SELECT
             helper.tournament_id,
-            COALESCE(pre_ft_snapshot.hero_final_stack, 1000::bigint) - 1000::bigint
+            pre_ft_snapshot.hero_final_stack - 1000::bigint
          FROM derived.mbr_tournament_ft_helper helper
          INNER JOIN core.tournaments t
            ON t.id = helper.tournament_id
@@ -816,17 +835,20 @@ fn load_pre_ft_chip_facts(
             WHERE h.tournament_id = helper.tournament_id
               AND h.player_profile_id = helper.player_profile_id
               AND (
-                  helper.first_ft_hand_started_local IS NULL
+                  helper.first_ft_hand_id IS NULL
                   OR (
                       helper.boundary_resolution_state = 'exact'
-                      AND h.hand_started_at_local IS NOT NULL
-                      AND h.hand_started_at_local < helper.first_ft_hand_started_local
+                      AND h.tournament_hand_order IS NOT NULL
+                      AND h.tournament_hand_order < (
+                          SELECT fh.tournament_hand_order
+                          FROM core.hands fh
+                          WHERE fh.id = helper.first_ft_hand_id
+                      )
                       AND COALESCE(msr.is_boundary_hand, FALSE) IS FALSE
                   )
               )
             ORDER BY
-                h.hand_started_at_local DESC NULLS LAST,
-                h.external_hand_id DESC,
+                h.tournament_hand_order DESC NULLS LAST,
                 h.id DESC
             LIMIT 1
          ) AS pre_ft_snapshot
@@ -836,7 +858,8 @@ fn load_pre_ft_chip_facts(
            AND (
                helper.first_ft_hand_started_local IS NULL
                OR helper.boundary_resolution_state = 'exact'
-           )",
+           )
+           AND pre_ft_snapshot.hero_final_stack IS NOT NULL",
         &[&organization_id, &player_profile_id],
     )?;
 

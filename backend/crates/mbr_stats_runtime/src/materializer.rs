@@ -10,7 +10,8 @@ use crate::{
         MaterializedStreetFeatures, StreetFeatureFacts, StreetFeatureParticipant,
     },
     registry::{
-        FEATURE_VERSION, FeatureGrain, FeatureTableFamily, feature_registry, ft_stage_bucket,
+        FEATURE_VERSION, GG_MBR_FT_MAX_PLAYERS, FeatureGrain, FeatureTableFamily, feature_registry,
+        ft_stage_bucket,
     },
 };
 
@@ -253,7 +254,7 @@ pub(crate) fn build_feature_rows(facts: &[HandFeatureFacts]) -> Vec<Materialized
             );
             bool_values.insert(
                 "is_stage_6_9".to_string(),
-                matches!(fact.ft_table_size, Some(6..=9)),
+                matches!(fact.ft_table_size, Some(6..=GG_MBR_FT_MAX_PLAYERS)),
             );
             bool_values.insert("is_boundary_hand".to_string(), fact.is_boundary_hand);
             bool_values.insert("has_exact_ko_event".to_string(), fact.exact_ko_count > 0);

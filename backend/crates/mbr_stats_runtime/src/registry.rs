@@ -1,5 +1,9 @@
 pub const FEATURE_VERSION: &str = "mbr_runtime_v1";
 
+/// GG MBR: финальный стол начинается, когда max_players == 9.
+/// Единая константа для FT detection — заменяет разбросанные по коду магические `9`.
+pub const GG_MBR_FT_MAX_PLAYERS: i32 = 9;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureTableFamily {
     Bool,
@@ -184,7 +188,7 @@ pub fn ft_stage_bucket(played_ft_hand: bool, ft_table_size: Option<i32>) -> FtSt
     }
 
     match ft_table_size {
-        Some(7..=9) => FtStageBucket::Ft79,
+        Some(7..=GG_MBR_FT_MAX_PLAYERS) => FtStageBucket::Ft79,
         Some(5..=6) => FtStageBucket::Ft56,
         Some(3..=4) => FtStageBucket::Ft34,
         Some(2) => FtStageBucket::Ft23,
@@ -195,8 +199,8 @@ pub fn ft_stage_bucket(played_ft_hand: bool, ft_table_size: Option<i32>) -> FtSt
 #[cfg(test)]
 mod tests {
     use super::{
-        FEATURE_VERSION, FeatureGrain, FeatureTableFamily, FtStageBucket, feature_registry,
-        ft_stage_bucket,
+        FEATURE_VERSION, GG_MBR_FT_MAX_PLAYERS, FeatureGrain, FeatureTableFamily, FtStageBucket,
+        feature_registry, ft_stage_bucket,
     };
 
     #[test]
@@ -287,5 +291,59 @@ mod tests {
         assert_eq!(ft_stage_bucket(true, Some(6)), FtStageBucket::Ft56);
         assert_eq!(ft_stage_bucket(true, Some(3)), FtStageBucket::Ft34);
         assert_eq!(ft_stage_bucket(true, Some(2)), FtStageBucket::Ft23);
+    }
+
+    // --- F3-T1: Synthetic edge-case tests for FT detection and stage buckets ---
+
+    #[test]
+    fn ft_stage_bucket_covers_all_seat_count_boundaries() {
+        // Exhaustive boundary test: every seat count from 1 to 10
+        assert_eq!(ft_stage_bucket(true, Some(1)), FtStageBucket::NotFt);
+        assert_eq!(ft_stage_bucket(true, Some(2)), FtStageBucket::Ft23);
+        assert_eq!(ft_stage_bucket(true, Some(3)), FtStageBucket::Ft34);
+        assert_eq!(ft_stage_bucket(true, Some(4)), FtStageBucket::Ft34);
+        assert_eq!(ft_stage_bucket(true, Some(5)), FtStageBucket::Ft56);
+        assert_eq!(ft_stage_bucket(true, Some(6)), FtStageBucket::Ft56);
+        assert_eq!(ft_stage_bucket(true, Some(7)), FtStageBucket::Ft79);
+        assert_eq!(ft_stage_bucket(true, Some(8)), FtStageBucket::Ft79);
+        assert_eq!(
+            ft_stage_bucket(true, Some(GG_MBR_FT_MAX_PLAYERS)),
+            FtStageBucket::Ft79
+        );
+        assert_eq!(ft_stage_bucket(true, Some(10)), FtStageBucket::NotFt);
+    }
+
+    #[test]
+    fn ft_stage_bucket_not_ft_when_played_ft_hand_is_false_regardless_of_table_size() {
+        // Even if table_size is 9, played_ft_hand=false means NotFt
+        assert_eq!(ft_stage_bucket(false, Some(9)), FtStageBucket::NotFt);
+        assert_eq!(ft_stage_bucket(false, Some(2)), FtStageBucket::NotFt);
+        assert_eq!(ft_stage_bucket(false, Some(5)), FtStageBucket::NotFt);
+    }
+
+    #[test]
+    fn ft_stage_bucket_not_ft_when_table_size_is_none() {
+        assert_eq!(ft_stage_bucket(true, None), FtStageBucket::NotFt);
+    }
+
+    #[test]
+    fn ft_stage_bucket_as_str_roundtrips_all_variants() {
+        let variants = [
+            FtStageBucket::NotFt,
+            FtStageBucket::Ft79,
+            FtStageBucket::Ft56,
+            FtStageBucket::Ft34,
+            FtStageBucket::Ft23,
+        ];
+        let expected_strs = ["not_ft", "ft_7_9", "ft_5_6", "ft_3_4", "ft_2_3"];
+        for (variant, expected) in variants.iter().zip(expected_strs.iter()) {
+            assert_eq!(variant.as_str(), *expected);
+        }
+    }
+
+    #[test]
+    fn gg_mbr_ft_max_players_is_nine() {
+        // Freeze the FT detection constant — changing this should be an explicit decision
+        assert_eq!(GG_MBR_FT_MAX_PLAYERS, 9);
     }
 }

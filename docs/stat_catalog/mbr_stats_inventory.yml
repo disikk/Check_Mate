@@ -1,565 +1,512 @@
-- legacy_module: "avg_finish_place"
-  legacy_name: "Avg Finish Place"
-  legacy_description: "Плагин для подсчёта среднего занятого места Hero по всем турнирам."
+- legacy_module: avg_finish_place
+  legacy_name: Avg Finish Place
+  legacy_description: Плагин для подсчёта среднего занятого места Hero по всем турнирам.
   legacy_output_keys:
-    - "avg_finish_place"
+  - avg_finish_place
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-  status: "inventory_only"
-  blockers:
-    - "Needs tournament-summary import and finish_place fields in the new core model."
-
-- legacy_module: "avg_finish_place_ft"
-  legacy_name: "Avg Finish Place FT"
-  legacy_description: "Плагин для подсчёта среднего занятого места Hero на финальном столе (позиции 1-9)."
+  - core.tournaments
+  - core.tournament_entries
+  status: mapped
+- legacy_module: avg_finish_place_ft
+  legacy_name: Avg Finish Place FT
+  legacy_description: Плагин для подсчёта среднего занятого места Hero на финальном столе (позиции 1-9).
   legacy_output_keys:
-    - "avg_finish_place_ft"
+  - avg_finish_place_ft
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-    - "derived.mbr_stage_resolution"
-  status: "inventory_only"
-  blockers:
-    - "Needs explicit FT-stage resolution and finished-place data from the new core model."
-
-- legacy_module: "avg_finish_place_no_ft"
-  legacy_name: "Avg Finish Place No FT"
-  legacy_description: "Плагин для подсчёта среднего занятого места Hero когда не дошел до финального стола."
+  - core.tournaments
+  - core.tournament_entries
+  - derived.mbr_stage_resolution
+  status: mapped
+- legacy_module: avg_finish_place_no_ft
+  legacy_name: Avg Finish Place No FT
+  legacy_description: Плагин для подсчёта среднего занятого места Hero когда не дошел до финального стола.
   legacy_output_keys:
-    - "avg_finish_place_no_ft"
+  - avg_finish_place_no_ft
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
-    - "kwargs"
+  - tournaments
+  - final_table_hands
+  - sessions
+  - kwargs
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-    - "derived.mbr_stage_resolution"
-  status: "inventory_only"
-  blockers:
-    - "Needs explicit non-FT classification derived from the new stage model."
-
-- legacy_module: "avg_ft_initial_stack"
-  legacy_name: "Avg FT Initial Stack"
-  legacy_description: "Плагин для подсчёта среднего стека Hero в начале финального стола."
+  - core.tournaments
+  - core.tournament_entries
+  - derived.mbr_stage_resolution
+  status: mapped
+- legacy_module: avg_ft_initial_stack
+  legacy_name: Avg FT Initial Stack
+  legacy_description: Плагин для подсчёта среднего стека Hero в начале финального стола.
   legacy_output_keys:
-    - "avg_ft_initial_stack_bb"
-    - "avg_ft_initial_stack_chips"
+  - avg_ft_initial_stack_bb
+  - avg_ft_initial_stack_chips
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "derived.mbr_stage_resolution"
-    - "core.hands"
-  status: "inventory_only"
-  blockers:
-    - "Needs exact FT entry-stack extraction from the new hand/stage model."
-
-- legacy_module: "avg_ko_per_tournament"
-  legacy_name: "Avg KO Per Tournament"
-  legacy_description: "Плагин для подсчёта среднего количества нокаутов Hero за турнир."
+  - core.tournaments
+  - derived.mbr_stage_resolution
+  - core.hands
+  status: mapped
+- legacy_module: avg_ko_per_tournament
+  legacy_name: Avg KO Per Tournament
+  legacy_description: Плагин для подсчёта среднего количества нокаутов Hero за турнир.
   legacy_output_keys:
-    - "avg_ko_per_tournament"
+  - avg_ko_per_tournament
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "derived.hand_eliminations"
-    - "derived.hand_state_resolutions"
-  status: "inventory_only"
+  - core.tournaments
+  - derived.hand_eliminations
+  - derived.hand_state_resolutions
+  status: mapped
   blockers:
-    - "Needs exact KO attribution from parsed HH instead of legacy tournament counters."
-
-- legacy_module: "big_ko"
-  legacy_name: "Big KO"
-  legacy_description: "Жадная декомпозиция KO Hero: сколько раз получал KO суммой x1.5, x2, x10, x100, x1000, x10000 бай-ина."
+  - 'CM-P0-01: KO-credit semantics в side-pot кейсах; hero_involved может быть загрязнён.'
+- legacy_module: big_ko
+  legacy_name: Big KO
+  legacy_description: 'Жадная декомпозиция KO Hero: сколько раз получал KO суммой x1.5, x2, x10, x100, x1000, x10000 бай-ина.'
   legacy_output_keys:
-    - "x1.5"
-    - "x2"
-    - "x10"
-    - "x100"
-    - "x1000"
-    - "x10000"
+  - x1.5
+  - x2
+  - x10
+  - x100
+  - x1000
+  - x10000
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
-    - "kwargs"
+  - tournaments
+  - final_table_hands
+  - sessions
+  - kwargs
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.tournaments
+  - core.tournament_entries
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact KO payout decomposition; the legacy greedy split is not safe to port as-is."
-
-- legacy_module: "deep_ft_stat"
-  legacy_name: "Deep FT"
-  legacy_description: "Проходы в глубокую стадию финалки (≤5 игроков), средний стек и ROI в таких турнирах."
+  - 'CM-P0-01: KO-share semantics под риском из-за side-pot кейсов.'
+- legacy_module: deep_ft_stat
+  legacy_name: Deep FT
+  legacy_description: Проходы в глубокую стадию финалки (≤5 игроков), средний стек и ROI в таких турнирах.
   legacy_output_keys:
-    - "deep_ft_reach_percent"
-    - "deep_ft_avg_stack_chips"
-    - "deep_ft_avg_stack_bb"
-    - "deep_ft_roi"
+  - deep_ft_reach_percent
+  - deep_ft_avg_stack_chips
+  - deep_ft_avg_stack_bb
+  - deep_ft_roi
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
-    - "kwargs"
+  - tournaments
+  - final_table_hands
+  - sessions
+  - kwargs
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "core.tournament_entries"
-  status: "inventory_only"
-  blockers:
-    - "Needs FT boundary handling and player-count-at-hand slices from the new stage model."
-
-- legacy_module: "early_ft_bust"
-  legacy_name: "Early FT Bust"
-  legacy_description: "Плагин для подсчёта количества вылетов Hero на ранней стадии финального стола и среднего их числа на турнир с финалкой."
+  - core.tournaments
+  - core.hands
+  - derived.mbr_stage_resolution
+  - core.tournament_entries
+  status: mapped
+- legacy_module: early_ft_bust
+  legacy_name: Early FT Bust
+  legacy_description: Плагин для подсчёта количества вылетов Hero на ранней стадии финального стола и среднего их числа на
+    турнир с финалкой.
   legacy_output_keys:
-    - "early_ft_bust_count"
-    - "early_ft_bust_per_tournament"
+  - early_ft_bust_count
+  - early_ft_bust_per_tournament
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
-  blockers:
-    - "Needs exact elimination attribution and the FT-stage hand layer."
-
-- legacy_module: "early_ft_ko"
-  legacy_name: "Early FT KO"
-  legacy_description: "Плагин для подсчёта количества и среднего KO Hero в ранней стадии финального стола."
+  - core.tournaments
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
+- legacy_module: early_ft_ko
+  legacy_name: Early FT KO
+  legacy_description: Плагин для подсчёта количества и среднего KO Hero в ранней стадии финального стола.
   legacy_output_keys:
-    - "early_ft_ko_count"
-    - "early_ft_ko_per_tournament"
+  - early_ft_ko_count
+  - early_ft_ko_per_tournament
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.tournaments
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact KO attribution per elimination pot and explicit FT-stage resolution."
-
-- legacy_module: "final_table_reach"
-  legacy_name: "Final Table Reach"
-  legacy_description: "Плагин для подсчёта процента попадания Hero на финальный стол."
+  - 'CM-P0-01: Exact KO event substrate под risk из-за side-pot KO-credit semantics.'
+- legacy_module: final_table_reach
+  legacy_name: Final Table Reach
+  legacy_description: Плагин для подсчёта процента попадания Hero на финальный стол.
   legacy_output_keys:
-    - "final_table_reach_percent"
+  - final_table_reach_percent
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "derived.mbr_stage_resolution"
-  status: "inventory_only"
-  blockers:
-    - "Needs explicit FT reach semantics instead of legacy reached_final_table flags."
-
-- legacy_module: "ft_stack_conversion"
-  legacy_name: "FT Stack Conversion"
-  legacy_description: "Статистика эффективности конверсии стека в ранние KO на финальном столе."
+  - core.tournaments
+  - derived.mbr_stage_resolution
+  status: mapped
+- legacy_module: ft_stack_conversion
+  legacy_name: FT Stack Conversion
+  legacy_description: Статистика эффективности конверсии стека в ранние KO на финальном столе.
   legacy_output_keys:
-    - "ft_stack_conversion"
+  - ft_stack_conversion
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.tournaments
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact FT stack entry data and KO attribution; legacy heuristic ratio is not a source-of-truth metric."
-
-- legacy_module: "ft_stack_conversion_attempts"
-  legacy_name: "FT Stack Conversion Attempts"
-  legacy_description: "Статистика эффективности конверсии стека с учетом попыток выбить соперников."
+  - 'CM-P0-01: Зависит от early FT KO event counts, загрязнённых side-pot KO-credit.'
+- legacy_module: ft_stack_conversion_attempts
+  legacy_name: FT Stack Conversion Attempts
+  legacy_description: Статистика эффективности конверсии стека с учетом попыток выбить соперников.
   legacy_output_keys:
-    - "ft_stack_conversion_attempts"
-    - "avg_ko_attempts_per_ft"
-    - "ko_attempts_success_rate"
+  - ft_stack_conversion_attempts
+  - avg_ko_attempts_per_ft
+  - ko_attempts_success_rate
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.hands"
-    - "core.hand_actions"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.tournaments
+  - core.hands
+  - core.hand_actions
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact action-level attempt counting and FT-stage resolution."
-
-- legacy_module: "ft_stack_conversion_stage"
-  legacy_name: "FT Stack Conversion Stage"
-  legacy_description: "Статистика конверсии стека в KO по стадиям финального стола."
+  - 'CM-P0-01: KO-credit risk.'
+  - 'CM-P1-03: Attempt model — heuristic, а не formal exact.'
+- legacy_module: ft_stack_conversion_stage
+  legacy_name: FT Stack Conversion Stage
+  legacy_description: Статистика конверсии стека в KO по стадиям финального стола.
   legacy_output_keys:
-    - "ft_stack_conversion_7_9"
-    - "ft_stack_conversion_7_9_attempts"
-    - "ft_stack_conversion_5_6"
-    - "ft_stack_conversion_5_6_attempts"
-    - "ft_stack_conversion_3_4"
-    - "ft_stack_conversion_3_4_attempts"
+  - ft_stack_conversion_7_9
+  - ft_stack_conversion_7_9_attempts
+  - ft_stack_conversion_5_6
+  - ft_stack_conversion_5_6_attempts
+  - ft_stack_conversion_3_4
+  - ft_stack_conversion_3_4_attempts
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.tournaments
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Module bundles three legacy stat classes and needs split handling during migration."
-    - "Needs exact stage-aware hand slices instead of the legacy players_count heuristics."
-
-- legacy_module: "incomplete_ft_percent"
-  legacy_name: "Incomplete FT Percent"
-  legacy_description: "Плагин для подсчёта процента финальных столов, начавшихся неполным составом."
+  - 'CM-P0-01: KO-credit risk.'
+  - 'CM-P1-03: Attempt model — heuristic.'
+- legacy_module: incomplete_ft_percent
+  legacy_name: Incomplete FT Percent
+  legacy_description: Плагин для подсчёта процента финальных столов, начавшихся неполным составом.
   legacy_output_keys:
-    - "incomplete_ft_percent"
+  - incomplete_ft_percent
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "derived.mbr_stage_resolution"
-  status: "inventory_only"
-  blockers:
-    - "Needs explicit FT-start player counts and exact stage boundary semantics."
-
-- legacy_module: "itm"
-  legacy_name: "ITM"
-  legacy_description: "ITM% — процент попадания Hero в топ-3 (призовые места)."
+  - core.tournaments
+  - derived.mbr_stage_resolution
+  status: mapped
+- legacy_module: itm
+  legacy_name: ITM
+  legacy_description: ITM% — процент попадания Hero в топ-3 (призовые места).
   legacy_output_keys:
-    - "itm_percent"
+  - itm_percent
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-  status: "inventory_only"
-  blockers:
-    - "Needs tournament-entry prize data to be carried into the new core model."
-
-- legacy_module: "ko_contribution"
-  legacy_name: "KO Contribution"
-  legacy_description: "Доля выплат за нокауты (факт / adj)."
+  - core.tournaments
+  - core.tournament_entries
+  status: mapped
+- legacy_module: ko_contribution
+  legacy_name: KO Contribution
+  legacy_description: Доля выплат за нокауты (факт / adj).
   legacy_output_keys:
-    - "ko_contribution"
-    - "ko_contribution_adj"
+  - ko_contribution
+  - ko_contribution_adj
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.tournaments
+  - core.tournament_entries
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact KO payout attribution and payout decomposition by elimination source."
-
-- legacy_module: "ko_luck"
-  legacy_name: "KO Luck"
-  legacy_description: "Отклонение полученных денег от нокаутов относительно среднего значения."
+  - 'CM-P0-01: ko_contribution_adjusted_percent зависит от KO-money posterior и side-pot semantics.'
+- legacy_module: ko_luck
+  legacy_name: KO Luck
+  legacy_description: Отклонение полученных денег от нокаутов относительно среднего значения.
   legacy_output_keys:
-    - "ko_luck"
+  - ko_luck
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.tournaments
+  - core.tournament_entries
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact KO money attribution; the legacy average-KO heuristic is not stable enough for the new core."
-
-- legacy_module: "ko_stage_2_3"
-  legacy_name: "KO Stage 2-3"
-  legacy_description: "Количество нокаутов в стадии 2-3 человека."
+  - 'CM-P0-01: Полностью зависит от KO-money semantics.'
+- legacy_module: ko_stage_2_3
+  legacy_name: KO Stage 2-3
+  legacy_description: Количество нокаутов в стадии 2-3 человека.
   legacy_output_keys:
-    - "ko_stage_2_3"
-    - "ko_stage_2_3_amount"
-    - "ko_stage_2_3_attempts_per_tournament"
+  - ko_stage_2_3
+  - ko_stage_2_3_amount
+  - ko_stage_2_3_attempts_per_tournament
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact stage-aware elimination attribution."
-
-- legacy_module: "ko_stage_3_4"
-  legacy_name: "KO Stage 3-4"
-  legacy_description: "Количество нокаутов в стадии 3-4 человека."
+  - 'CM-P0-01: Event part зависит от KO-credit; money part — от KO-share semantics.'
+- legacy_module: ko_stage_3_4
+  legacy_name: KO Stage 3-4
+  legacy_description: Количество нокаутов в стадии 3-4 человека.
   legacy_output_keys:
-    - "ko_stage_3_4"
-    - "ko_stage_3_4_amount"
-    - "ko_stage_3_4_attempts_per_tournament"
+  - ko_stage_3_4
+  - ko_stage_3_4_amount
+  - ko_stage_3_4_attempts_per_tournament
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact stage-aware elimination attribution."
-
-- legacy_module: "ko_stage_4_5"
-  legacy_name: "KO Stage 4-5"
-  legacy_description: "Количество нокаутов в стадии 4-5 человека."
+  - 'CM-P0-01: Event part зависит от KO-credit; money part — от KO-share semantics.'
+- legacy_module: ko_stage_4_5
+  legacy_name: KO Stage 4-5
+  legacy_description: Количество нокаутов в стадии 4-5 человека.
   legacy_output_keys:
-    - "ko_stage_4_5"
-    - "ko_stage_4_5_amount"
-    - "ko_stage_4_5_attempts_per_tournament"
+  - ko_stage_4_5
+  - ko_stage_4_5_amount
+  - ko_stage_4_5_attempts_per_tournament
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact stage-aware elimination attribution."
-
-- legacy_module: "ko_stage_5_6"
-  legacy_name: "KO Stage 5-6"
-  legacy_description: "Количество нокаутов в стадии 5-6 человек."
+  - 'CM-P0-01: Event part зависит от KO-credit; money part — от KO-share semantics.'
+- legacy_module: ko_stage_5_6
+  legacy_name: KO Stage 5-6
+  legacy_description: Количество нокаутов в стадии 5-6 человек.
   legacy_output_keys:
-    - "ko_stage_5_6"
-    - "ko_stage_5_6_amount"
-    - "ko_stage_5_6_attempts_per_tournament"
+  - ko_stage_5_6
+  - ko_stage_5_6_amount
+  - ko_stage_5_6_attempts_per_tournament
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact stage-aware elimination attribution."
-
-- legacy_module: "ko_stage_6_9"
-  legacy_name: "KO Stage 6-9"
-  legacy_description: "Количество нокаутов в стадии 6-9 человек (ранняя стадия финального стола)."
+  - 'CM-P0-01: Event part зависит от KO-credit; money part — от KO-share semantics.'
+- legacy_module: ko_stage_6_9
+  legacy_name: KO Stage 6-9
+  legacy_description: Количество нокаутов в стадии 6-9 человек (ранняя стадия финального стола).
   legacy_output_keys:
-    - "ko_stage_6_9"
-    - "ko_stage_6_9_amount"
+  - ko_stage_6_9
+  - ko_stage_6_9_amount
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact FT-stage KO attribution and player-count slices."
-
-- legacy_module: "ko_stage_7_9"
-  legacy_name: "KO Stage 7-9"
-  legacy_description: "Количество нокаутов в стадии 7-9 человек."
+  - 'CM-P0-01: Event part зависит от KO-credit; money part — от KO-share semantics.'
+- legacy_module: ko_stage_7_9
+  legacy_name: KO Stage 7-9
+  legacy_description: Количество нокаутов в стадии 7-9 человек.
   legacy_output_keys:
-    - "ko_stage_7_9"
-    - "ko_stage_7_9_amount"
-    - "ko_stage_7_9_attempts_per_tournament"
+  - ko_stage_7_9
+  - ko_stage_7_9_amount
+  - ko_stage_7_9_attempts_per_tournament
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact FT-stage KO attribution and player-count slices."
-
-- legacy_module: "pre_ft_chipev"
-  legacy_name: "Pre-FT ChipEV"
-  legacy_description: "Средний выигрыш фишек до финального стола."
+  - 'CM-P0-01: Event part зависит от KO-credit; money part — от KO-share semantics.'
+- legacy_module: pre_ft_chipev
+  legacy_name: Pre-FT ChipEV
+  legacy_description: Средний выигрыш фишек до финального стола.
   legacy_output_keys:
-    - "pre_ft_chipev"
+  - pre_ft_chipev
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_state_resolutions"
-  status: "inventory_only"
+  - core.tournaments
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_state_resolutions
+  status: mapped
   blockers:
-    - "Needs exact pre-FT hand resolution and FT boundary handling."
-
-- legacy_module: "pre_ft_ko"
-  legacy_name: "Pre FT KO"
-  legacy_description: "Плагин для подсчёта количества KO, сделанных перед началом финального стола."
+  - 'CM-P0-02: Bias bug — COALESCE fallback даёт synthetic zero delta.'
+- legacy_module: pre_ft_ko
+  legacy_name: Pre FT KO
+  legacy_description: Плагин для подсчёта количества KO, сделанных перед началом финального стола.
   legacy_output_keys:
-    - "pre_ft_ko_count"
+  - pre_ft_ko_count
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.hands"
-    - "derived.mbr_stage_resolution"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.hands
+  - derived.mbr_stage_resolution
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact boundary-zone handling for the last rush hand before FT."
-
-- legacy_module: "roi"
-  legacy_name: "ROI"
-  legacy_description: "Return On Investment (ROI) — средний возврат на вложенный бай-ин для Hero."
+  - 'CM-P0-01: KO-credit risk.'
+  - 'CM-P1-04: Stage/boundary ordering на raw local timestamps.'
+- legacy_module: roi
+  legacy_name: ROI
+  legacy_description: Return On Investment (ROI) — средний возврат на вложенный бай-ин для Hero.
   legacy_output_keys:
-    - "roi"
+  - roi
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-  status: "inventory_only"
-  blockers:
-    - "Needs tournament-entry payout and buy-in fields to be carried into the new core model."
-
-- legacy_module: "roi_adj"
-  legacy_name: "ROI Adjusted"
-  legacy_description: "ROI с поправкой на KO Luck."
+  - core.tournaments
+  - core.tournament_entries
+  status: mapped
+- legacy_module: roi_adj
+  legacy_name: ROI Adjusted
+  legacy_description: ROI с поправкой на KO Luck.
   legacy_output_keys:
-    - "roi_adj"
+  - roi_adj
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
+  - core.tournaments
+  - core.tournament_entries
+  - derived.hand_eliminations
+  status: mapped
   blockers:
-    - "Needs exact KO-value attribution before any adjusted ROI can be trusted."
-
-- legacy_module: "roi_on_ft"
-  legacy_name: "roi_on_ft"
-  legacy_description: "Средний ROI в турнирах с достижением финального стола."
+  - 'CM-P0-01: Полностью зависит от adjusted KO-money.'
+- legacy_module: roi_on_ft
+  legacy_name: roi_on_ft
+  legacy_description: Средний ROI в турнирах с достижением финального стола.
   legacy_output_keys:
-    - "roi_on_ft"
+  - roi_on_ft
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-    - "derived.mbr_stage_resolution"
-  status: "inventory_only"
-  blockers:
-    - "Needs explicit FT reach semantics and finished-place data in the new core model."
-
-- legacy_module: "total_ko"
-  legacy_name: "Total KO"
-  legacy_description: "Плагин для подсчёта общего количества нокаутов, совершённых Hero."
+  - core.tournaments
+  - core.tournament_entries
+  - derived.mbr_stage_resolution
+  status: mapped
+- legacy_module: total_ko
+  legacy_name: Total KO
+  legacy_description: Плагин для подсчёта общего количества нокаутов, совершённых Hero.
   legacy_output_keys:
-    - "total_ko"
+  - total_ko
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.hands"
-    - "derived.hand_eliminations"
-    - "derived.hand_state_resolutions"
-  status: "inventory_only"
+  - core.hands
+  - derived.hand_eliminations
+  - derived.hand_state_resolutions
+  status: mapped
   blockers:
-    - "Needs exact elimination counts from HH-derived source-of-truth rows."
-
-- legacy_module: "winnings_from_itm_stat"
-  legacy_name: "Выигрыш от ITM"
-  legacy_description: "Сумма, полученная от попадания в регулярные призы (1-3 места)."
+  - 'CM-P0-01: exact KO event count зависит от hero_involved semantics.'
+- legacy_module: winnings_from_itm_stat
+  legacy_name: Выигрыш от ITM
+  legacy_description: Сумма, полученная от попадания в регулярные призы (1-3 места).
   legacy_output_keys:
-    - "winnings_from_itm"
-    - "value"
+  - winnings_from_itm
+  - value
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-  status: "inventory_only"
-  blockers:
-    - "Needs regular-prize decomposition in tournament entries."
-
-- legacy_module: "winnings_from_ko_stat"
-  legacy_name: "Выигрыш от KO"
-  legacy_description: "Сумма, полученная от нокаутов."
+  - core.tournaments
+  - core.tournament_entries
+  status: mapped
+- legacy_module: winnings_from_ko_stat
+  legacy_name: Выигрыш от KO
+  legacy_description: Сумма, полученная от нокаутов.
   legacy_output_keys:
-    - "winnings_from_ko"
-    - "value"
-    - "total_ko_amount"
+  - winnings_from_ko
+  - value
+  - total_ko_amount
   legacy_inputs:
-    - "tournaments"
-    - "final_table_hands"
-    - "sessions"
+  - tournaments
+  - final_table_hands
+  - sessions
   new_core_dependencies:
-    - "core.tournaments"
-    - "core.tournament_entries"
-    - "derived.hand_eliminations"
-  status: "inventory_only"
-  blockers:
-    - "Needs exact KO payout decomposition and elimination-linked prize attribution."
+  - core.tournaments
+  - core.tournament_entries
+  - derived.hand_eliminations
+  status: mapped

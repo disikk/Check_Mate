@@ -17,15 +17,15 @@ pub use filters::{
 };
 pub use materializer::materialize_player_hand_features;
 pub use models::{
-    CanonicalStatNumericValue, CanonicalStatPoint, CanonicalStatSnapshot, CanonicalStatState,
-    HandFeatureFacts, MaterializationReport, MaterializedHandFeatures, MaterializedStreetFeatures,
-    SeedStatCoverage, SeedStatSnapshot, SeedStatsFilters, StreetFeatureFacts,
-    StreetFeatureParticipant,
+    CANONICAL_STAT_KEYS, EXPECTED_KEY_COUNT, EXPECTED_MODULE_COUNT, CanonicalStatNumericValue,
+    CanonicalStatPoint, CanonicalStatSnapshot, CanonicalStatState, HandFeatureFacts,
+    MaterializationReport, MaterializedHandFeatures, MaterializedStreetFeatures, SeedStatCoverage,
+    SeedStatSnapshot, SeedStatsFilters, StreetFeatureFacts, StreetFeatureParticipant,
 };
 pub use queries::{query_canonical_stats, query_seed_stats};
 pub use registry::{
-    FEATURE_VERSION, FeatureGrain, FeatureSpec, FeatureTableFamily, FtStageBucket,
-    feature_registry, ft_stage_bucket,
+    FEATURE_VERSION, GG_MBR_FT_MAX_PLAYERS, FeatureGrain, FeatureSpec, FeatureTableFamily,
+    FtStageBucket, feature_registry, ft_stage_bucket,
 };
 pub use split_bounty::{SplitBountyShareKind, SplitBountyShareOutcome, project_split_bounty_share};
 pub use street_buckets::{StreetBucketInput, StreetStrengthBucket, project_street_bucket};

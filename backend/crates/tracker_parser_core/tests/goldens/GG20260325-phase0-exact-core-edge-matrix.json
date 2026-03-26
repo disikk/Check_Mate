@@ -1,0 +1,2043 @@
+{
+  "fixture_file": "GG20260325-phase0-exact-core-edge-matrix.txt",
+  "hand_count": 12,
+  "hands": {
+    "BRCM0401": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 0,
+          "Sitout": 0,
+          "VillainDead": 100,
+          "VillainMuck": 100
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 1000,
+          "Sitout": 1000,
+          "VillainDead": 1100,
+          "VillainMuck": 900
+        },
+        "winner_collections": {
+          "VillainDead": 200
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 200,
+          "is_main": true,
+          "pot_no": 1
+        }
+      ],
+      "hand_id": "BRCM0401",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [
+          "premature_street_close: street=preflop pending=VillainDead,VillainMuck"
+        ],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "Sitout",
+        "VillainDead",
+        "VillainMuck"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 100,
+          "player_name": "VillainDead",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 100,
+          "player_name": "VillainMuck",
+          "pot_no": 1,
+          "seat_no": 4
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "VillainDead",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "VillainMuck",
+          "pot_no": 1,
+          "seat_no": 4
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "VillainDead",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 200
+        }
+      ],
+      "returns": [],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BRCM0402": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 100,
+          "VillainNoShow": 100,
+          "VillainPartial": 100
+        },
+        "final_board_cards": [
+          "2c",
+          "7d",
+          "9h",
+          "Qs",
+          "3c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 1200,
+          "VillainNoShow": 900,
+          "VillainPartial": 900
+        },
+        "winner_collections": {
+          "Hero": 300
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 300,
+          "is_main": true,
+          "pot_no": 1
+        }
+      ],
+      "hand_id": "BRCM0402",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "VillainPartial",
+        "VillainNoShow"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 100,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 100,
+          "player_name": "VillainPartial",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 100,
+          "player_name": "VillainNoShow",
+          "pot_no": 1,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "VillainPartial",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "player_name": "VillainNoShow",
+          "pot_no": 1,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1,
+          "share_amount": 300
+        }
+      ],
+      "returns": [],
+      "snapshot": null,
+      "warnings": [
+        "unsupported_no_show_line: VillainNoShow: doesn't show hand",
+        "partial_reveal_show_line: VillainPartial: shows [5d]",
+        "partial_reveal_summary_show_surface: Seat 2: VillainPartial (small blind) showed [5d] and lost"
+      ]
+    },
+    "BRCM0403": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 100,
+          "ShortAnte": 100
+        },
+        "final_board_cards": [
+          "2c",
+          "7d",
+          "9h",
+          "Qs",
+          "3c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 1100,
+          "ShortAnte": 0
+        },
+        "winner_collections": {
+          "Hero": 200
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "ShortAnte",
+          "eliminated_seat_no": 1,
+          "hero_involved": true,
+          "hero_ko_share_total": 1.0,
+          "hero_share_fraction": 1.0,
+          "is_sidepot_based": false,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 1,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "Hero"
+          ],
+          "resolved_by_pot_no": 1,
+          "resolved_by_pot_nos": [
+            1
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 200,
+          "is_main": true,
+          "pot_no": 1
+        }
+      ],
+      "hand_id": "BRCM0403",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "ShortAnte",
+        "Hero"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 100,
+          "player_name": "ShortAnte",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 100,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "ShortAnte",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2,
+          "share_amount": 200
+        }
+      ],
+      "returns": [],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BRCM0403",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 100,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 100,
+            "hole_cards": [
+              "Kd",
+              "Kh"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "ShortAnte",
+            "seat_no": 1,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 100,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 100,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 100,
+            "hole_cards": [
+              "Ah",
+              "Ad"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 2,
+            "stack_at_snapshot": 900,
+            "stack_before_hand": 1000,
+            "status": "live"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 200,
+            "eligible_players": [
+              "ShortAnte",
+              "Hero"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          }
+        ],
+        "snapshot_event_seq": 2,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BRCM0404": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 60,
+          "ShortBb": 60
+        },
+        "final_board_cards": [
+          "2c",
+          "7d",
+          "9h",
+          "Qs",
+          "3c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 1060,
+          "ShortBb": 0
+        },
+        "winner_collections": {
+          "Hero": 120
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "ShortBb",
+          "eliminated_seat_no": 2,
+          "hero_involved": true,
+          "hero_ko_share_total": 1.0,
+          "hero_share_fraction": 1.0,
+          "is_sidepot_based": false,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 1,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "Hero"
+          ],
+          "resolved_by_pot_no": 1,
+          "resolved_by_pot_nos": [
+            1
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 120,
+          "is_main": true,
+          "pot_no": 1
+        }
+      ],
+      "hand_id": "BRCM0404",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "ShortBb"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 60,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 60,
+          "player_name": "ShortBb",
+          "pot_no": 1,
+          "seat_no": 2
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "ShortBb",
+          "pot_no": 1,
+          "seat_no": 2
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1,
+          "share_amount": 120
+        }
+      ],
+      "returns": [],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BRCM0404",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 60,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 60,
+            "hole_cards": [
+              "Ah",
+              "Ad"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 1,
+            "stack_at_snapshot": 940,
+            "stack_before_hand": 1000,
+            "status": "live"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 60,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 60,
+            "hole_cards": [
+              "Kd",
+              "Kh"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "ShortBb",
+            "seat_no": 2,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 60,
+            "status": "all_in"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 120,
+            "eligible_players": [
+              "Hero",
+              "ShortBb"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          }
+        ],
+        "snapshot_event_seq": 2,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BRCM0405": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 20,
+          "VillainDead": 120,
+          "VillainMuck": 120
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 980,
+          "VillainDead": 880,
+          "VillainMuck": 1140
+        },
+        "winner_collections": {
+          "VillainMuck": 260
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 60,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 200,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BRCM0405",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "VillainDead",
+        "VillainMuck"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 20,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 20,
+          "player_name": "VillainDead",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "VillainMuck",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 100,
+          "player_name": "VillainDead",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 100,
+          "player_name": "VillainMuck",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "VillainMuck",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "VillainMuck",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "VillainMuck",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 60
+        },
+        {
+          "player_name": "VillainMuck",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 200
+        }
+      ],
+      "returns": [],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BRCM0502": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 300,
+          "ShortyA": 100,
+          "ShortyB": 100,
+          "Villain": 300
+        },
+        "final_board_cards": [
+          "2c",
+          "7d",
+          "9h",
+          "Qs",
+          "3c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 400,
+          "ShortyA": 0,
+          "ShortyB": 0,
+          "Villain": 400
+        },
+        "winner_collections": {
+          "Hero": 400,
+          "Villain": 400
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "uncertain",
+          "eliminated_player_name": "ShortyA",
+          "eliminated_seat_no": 1,
+          "hero_involved": false,
+          "hero_ko_share_total": null,
+          "hero_share_fraction": null,
+          "is_sidepot_based": false,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 1,
+          "ko_involved_winner_count": 0,
+          "ko_involved_winners": [],
+          "resolved_by_pot_no": 1,
+          "resolved_by_pot_nos": [
+            1
+          ],
+          "split_n": null
+        },
+        {
+          "certainty_state": "uncertain",
+          "eliminated_player_name": "ShortyB",
+          "eliminated_seat_no": 2,
+          "hero_involved": false,
+          "hero_ko_share_total": null,
+          "hero_share_fraction": null,
+          "is_sidepot_based": false,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 1,
+          "ko_involved_winner_count": 0,
+          "ko_involved_winners": [],
+          "resolved_by_pot_no": 1,
+          "resolved_by_pot_nos": [
+            1
+          ],
+          "split_n": null
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 400,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 400,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BRCM0502",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": [
+          "pot_settlement_ambiguous_hidden_showdown: pot_no=1, eligible_players=Hero|Villain",
+          "pot_settlement_ambiguous_hidden_showdown: pot_no=2, eligible_players=Hero|Villain"
+        ]
+      },
+      "player_order": [
+        "ShortyA",
+        "ShortyB",
+        "Hero",
+        "Villain"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 100,
+          "player_name": "ShortyA",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 100,
+          "player_name": "ShortyB",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 100,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 100,
+          "player_name": "Villain",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 200,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 200,
+          "player_name": "Villain",
+          "pot_no": 2,
+          "seat_no": 4
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "ShortyA",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "ShortyB",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "Villain",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "Villain",
+          "pot_no": 2,
+          "seat_no": 4
+        }
+      ],
+      "pot_winners": [],
+      "returns": [],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BRCM0502",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 100,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 100,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "ShortyA",
+            "seat_no": 1,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 100,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 100,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 100,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "ShortyB",
+            "seat_no": 2,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 100,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 300,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 300,
+            "hole_cards": [
+              "Ah",
+              "Ad"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 3,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 300,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 300,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 300,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "Villain",
+            "seat_no": 4,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 300,
+            "status": "all_in"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 400,
+            "eligible_players": [
+              "ShortyA",
+              "ShortyB",
+              "Hero",
+              "Villain"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 400,
+            "eligible_players": [
+              "Hero",
+              "Villain"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          }
+        ],
+        "snapshot_event_seq": 5,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BRCM0503": {
+      "actual": {
+        "committed_total_by_player": {
+          "DeadMoney": 1,
+          "Hero": 200,
+          "Villain": 200
+        },
+        "final_board_cards": [
+          "2c",
+          "3d",
+          "4h",
+          "5s",
+          "6c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "DeadMoney": 0,
+          "Hero": 201,
+          "Villain": 200
+        },
+        "winner_collections": {
+          "Hero": 201,
+          "Villain": 200
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "DeadMoney",
+          "eliminated_seat_no": 3,
+          "hero_involved": true,
+          "hero_ko_share_total": 0.6666666666666666,
+          "hero_share_fraction": 0.6666666666666666,
+          "is_sidepot_based": false,
+          "is_split_ko": true,
+          "joint_ko": true,
+          "ko_credit_pot_no": 1,
+          "ko_involved_winner_count": 2,
+          "ko_involved_winners": [
+            "Hero",
+            "Villain"
+          ],
+          "resolved_by_pot_no": 1,
+          "resolved_by_pot_nos": [
+            1
+          ],
+          "split_n": 2
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 3,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 398,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BRCM0503",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "Villain",
+        "DeadMoney"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 1,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 1,
+          "player_name": "Villain",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 1,
+          "player_name": "DeadMoney",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 199,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 199,
+          "player_name": "Villain",
+          "pot_no": 2,
+          "seat_no": 2
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Villain",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "player_name": "DeadMoney",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Villain",
+          "pot_no": 2,
+          "seat_no": 2
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1,
+          "share_amount": 2
+        },
+        {
+          "player_name": "Villain",
+          "pot_no": 1,
+          "seat_no": 2,
+          "share_amount": 1
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1,
+          "share_amount": 199
+        },
+        {
+          "player_name": "Villain",
+          "pot_no": 2,
+          "seat_no": 2,
+          "share_amount": 199
+        }
+      ],
+      "returns": [],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BRCM0503",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 200,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 200,
+            "hole_cards": [
+              "Ah",
+              "Kd"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 1,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 200,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 200,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 200,
+            "hole_cards": [
+              "As",
+              "Qd"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "Villain",
+            "seat_no": 2,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 200,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 1,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 1,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "DeadMoney",
+            "seat_no": 3,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 1,
+            "status": "all_in"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 3,
+            "eligible_players": [
+              "Hero",
+              "Villain",
+              "DeadMoney"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 398,
+            "eligible_players": [
+              "Hero",
+              "Villain"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          }
+        ],
+        "snapshot_event_seq": 4,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BRCM0601": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 1000,
+          "Medium": 1000,
+          "Shorty": 500
+        },
+        "final_board_cards": [
+          "2c",
+          "7d",
+          "9h",
+          "Qs",
+          "3c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 1500,
+          "Medium": 0,
+          "Shorty": 1500
+        },
+        "winner_collections": {
+          "Hero": 1000,
+          "Shorty": 1500
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "Medium",
+          "eliminated_seat_no": 3,
+          "hero_involved": true,
+          "hero_ko_share_total": 1.0,
+          "hero_share_fraction": 1.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 2,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "Hero"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 1500,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 1000,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BRCM0601",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "Shorty",
+        "Medium"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 500,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 500,
+          "player_name": "Shorty",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 500,
+          "player_name": "Medium",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 500,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 500,
+          "player_name": "Medium",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Shorty",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "player_name": "Medium",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Medium",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Shorty",
+          "pot_no": 1,
+          "seat_no": 2,
+          "share_amount": 1500
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1,
+          "share_amount": 1000
+        }
+      ],
+      "returns": [],
+      "snapshot": {
+        "future_board_cards_count": 2,
+        "hand_id": "BRCM0601",
+        "hero_name": "Hero",
+        "known_board_cards": [
+          "2c",
+          "7d",
+          "9h"
+        ],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 500,
+              "preflop": 500,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 1000,
+            "hole_cards": [
+              "Ah",
+              "Ad"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 1,
+            "stack_at_snapshot": 500,
+            "stack_before_hand": 1500,
+            "status": "live"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 500,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 500,
+            "hole_cards": [
+              "2h",
+              "2d"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "Shorty",
+            "seat_no": 2,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 500,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 500,
+              "preflop": 500,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 1000,
+            "hole_cards": [
+              "Kc",
+              "Qc"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "Medium",
+            "seat_no": 3,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 1000,
+            "status": "all_in"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 1500,
+            "eligible_players": [
+              "Hero",
+              "Shorty",
+              "Medium"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 1000,
+            "eligible_players": [
+              "Hero",
+              "Medium"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          }
+        ],
+        "snapshot_event_seq": 6,
+        "snapshot_street": "flop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BRLEGAL2": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 100,
+          "Villain": 100
+        },
+        "final_board_cards": [
+          "2c",
+          "7d",
+          "9h",
+          "Js",
+          "3c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 1100,
+          "Villain": 900
+        },
+        "winner_collections": {
+          "Hero": 200
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 200,
+          "is_main": true,
+          "pot_no": 1
+        }
+      ],
+      "hand_id": "BRLEGAL2",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [
+          "illegal_actor_order: street=preflop seq=2 expected=Hero actual=Villain raw_line=Villain: checks"
+        ],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "Villain"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 100,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 100,
+          "player_name": "Villain",
+          "pot_no": 1,
+          "seat_no": 2
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Villain",
+          "pot_no": 1,
+          "seat_no": 2
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1,
+          "share_amount": 200
+        }
+      ],
+      "returns": [],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BRLEGAL3": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 100,
+          "Villain": 100
+        },
+        "final_board_cards": [
+          "2c",
+          "7d",
+          "9h"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 1100,
+          "Villain": 900
+        },
+        "winner_collections": {
+          "Hero": 200
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 200,
+          "is_main": true,
+          "pot_no": 1
+        }
+      ],
+      "hand_id": "BRLEGAL3",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [
+          "illegal_actor_order: street=flop seq=4 expected=Villain actual=Hero raw_line=Hero: bets 100"
+        ],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "Villain"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 100,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 100,
+          "player_name": "Villain",
+          "pot_no": 1,
+          "seat_no": 2
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1,
+          "share_amount": 200
+        }
+      ],
+      "returns": [
+        {
+          "amount": 100,
+          "player_name": "Hero",
+          "reason": "uncalled",
+          "seat_no": 1
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BRLEGAL4": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 400,
+          "Shorty": 400,
+          "VillainA": 300
+        },
+        "final_board_cards": [
+          "2c",
+          "7d",
+          "9h",
+          "Qs",
+          "3c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 1700,
+          "Shorty": 0,
+          "VillainA": 700
+        },
+        "winner_collections": {
+          "Hero": 1100
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "Shorty",
+          "eliminated_seat_no": 3,
+          "hero_involved": true,
+          "hero_ko_share_total": 1.0,
+          "hero_share_fraction": 1.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 2,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "Hero"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 900,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 200,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BRLEGAL4",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [
+          "action_not_reopened_after_short_all_in: street=preflop seq=5 player=Hero raw_line=Hero: raises 400 to 800"
+        ],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "VillainA",
+        "Shorty"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 300,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 300,
+          "player_name": "VillainA",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 300,
+          "player_name": "Shorty",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 100,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 100,
+          "player_name": "Shorty",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Shorty",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Shorty",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1,
+          "share_amount": 900
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1,
+          "share_amount": 200
+        }
+      ],
+      "returns": [
+        {
+          "amount": 400,
+          "player_name": "Hero",
+          "reason": "uncalled",
+          "seat_no": 1
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BRSIDE1": {
+      "actual": {
+        "committed_total_by_player": {
+          "BigStack": 1000,
+          "Hero": 100,
+          "Medium": 1000,
+          "Shorty": 500
+        },
+        "final_board_cards": [
+          "2h",
+          "7d",
+          "Tc",
+          "3s",
+          "4d"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "BigStack": 3100,
+          "Hero": 900,
+          "Medium": 0,
+          "Shorty": 0
+        },
+        "winner_collections": {
+          "BigStack": 2600
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "Shorty",
+          "eliminated_seat_no": 1,
+          "hero_involved": false,
+          "hero_ko_share_total": 0.0,
+          "hero_share_fraction": 0.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 2,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "BigStack"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2
+          ],
+          "split_n": 1
+        },
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "Medium",
+          "eliminated_seat_no": 3,
+          "hero_involved": false,
+          "hero_ko_share_total": 0.0,
+          "hero_share_fraction": 0.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 3,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "BigStack"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2,
+            3
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 400,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 1200,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 1000,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BRSIDE1",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [
+          "illegal_small_blind_actor: seq=0 expected=Hero actual=Shorty raw_line=Shorty: posts small blind 50",
+          "illegal_big_blind_actor: seq=1 expected=Medium actual=Hero raw_line=Hero: posts big blind 100",
+          "illegal_actor_order: street=preflop seq=2 expected=BigStack actual=Medium raw_line=Medium: calls 100"
+        ],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Shorty",
+        "Hero",
+        "Medium",
+        "BigStack"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 100,
+          "player_name": "Shorty",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 100,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 100,
+          "player_name": "Medium",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 100,
+          "player_name": "BigStack",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 400,
+          "player_name": "Shorty",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 400,
+          "player_name": "Medium",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 400,
+          "player_name": "BigStack",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "amount": 500,
+          "player_name": "Medium",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "amount": 500,
+          "player_name": "BigStack",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Shorty",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Medium",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "BigStack",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "player_name": "Shorty",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Medium",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "BigStack",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "player_name": "Medium",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "player_name": "BigStack",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "BigStack",
+          "pot_no": 1,
+          "seat_no": 4,
+          "share_amount": 400
+        },
+        {
+          "player_name": "BigStack",
+          "pot_no": 2,
+          "seat_no": 4,
+          "share_amount": 1200
+        },
+        {
+          "player_name": "BigStack",
+          "pot_no": 3,
+          "seat_no": 4,
+          "share_amount": 1000
+        }
+      ],
+      "returns": [],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BRSIDE1",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 500,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 500,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "Shorty",
+            "seat_no": 1,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 500,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 100,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 100,
+            "hole_cards": [
+              "Ac",
+              "Qc"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 2,
+            "stack_at_snapshot": 900,
+            "stack_before_hand": 1000,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 1000,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 1000,
+            "hole_cards": [
+              "Jh",
+              "Jc"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "Medium",
+            "seat_no": 3,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 1000,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 1000,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 1000,
+            "hole_cards": [
+              "As",
+              "Ad"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "BigStack",
+            "seat_no": 4,
+            "stack_at_snapshot": 500,
+            "stack_before_hand": 1500,
+            "status": "live"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 400,
+            "eligible_players": [
+              "Shorty",
+              "Medium",
+              "BigStack"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 1200,
+            "eligible_players": [
+              "Shorty",
+              "Medium",
+              "BigStack"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          },
+          {
+            "amount": 1000,
+            "eligible_players": [
+              "Medium",
+              "BigStack"
+            ],
+            "is_main": false,
+            "pot_index": 2
+          }
+        ],
+        "snapshot_event_seq": 7,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    }
+  }
+}

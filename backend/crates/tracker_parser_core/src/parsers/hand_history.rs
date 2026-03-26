@@ -9,6 +9,43 @@ use crate::{
 use regex::Regex;
 use std::sync::OnceLock;
 
+enum SummarySeatOutcomeParseResult {
+    Parsed(SummarySeatOutcome),
+    UnknownTail,
+    InvalidHead,
+}
+
+struct ParsedSummarySeatHead {
+    seat_no: u8,
+    player_name: String,
+    position_marker: Option<SummarySeatMarker>,
+    tail: String,
+}
+
+enum SummarySeatTailAst {
+    Folded {
+        street: Street,
+    },
+    ShowedWon {
+        shown_cards: Vec<String>,
+        won_amount: i64,
+        hand_class: Option<String>,
+    },
+    ShowedLost {
+        shown_cards: Vec<String>,
+        hand_class: Option<String>,
+    },
+    Lost,
+    Mucked,
+    Won {
+        won_amount: i64,
+        hand_class: Option<String>,
+    },
+    Collected {
+        won_amount: i64,
+    },
+}
+
 pub fn split_hand_history(input: &str) -> Result<Vec<HandRecord>, ParserError> {
     let normalized = normalize_newlines(input);
     if normalized.trim().is_empty() {
@@ -159,10 +196,16 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
         }
 
         if street == Street::Summary && line.starts_with("Seat ") {
-            if let Some(outcome) = parse_summary_seat_outcome_line(line) {
-                summary_seat_outcomes.push(outcome);
-            } else {
-                parse_warnings.push(format!("unparsed_summary_seat_line: {line}"));
+            match parse_summary_seat_outcome_line(line) {
+                SummarySeatOutcomeParseResult::Parsed(outcome) => {
+                    summary_seat_outcomes.push(outcome)
+                }
+                SummarySeatOutcomeParseResult::UnknownTail => {
+                    parse_warnings.push(format!("unparsed_summary_seat_tail: {line}"));
+                }
+                SummarySeatOutcomeParseResult::InvalidHead => {
+                    parse_warnings.push(format!("unparsed_summary_seat_line: {line}"));
+                }
             }
             continue;
         }
@@ -370,139 +413,191 @@ fn parse_summary_board_line(line: &str) -> Option<Vec<String>> {
     Some(split_cards(&captures["cards"]))
 }
 
-fn parse_summary_seat_outcome_line(line: &str) -> Option<SummarySeatOutcome> {
+fn parse_summary_seat_outcome_line(line: &str) -> SummarySeatOutcomeParseResult {
+    let Some(head) = parse_summary_seat_head(line) else {
+        return SummarySeatOutcomeParseResult::InvalidHead;
+    };
+    let Some(tail_ast) = parse_summary_seat_tail_ast(&head.tail) else {
+        return SummarySeatOutcomeParseResult::UnknownTail;
+    };
+
+    SummarySeatOutcomeParseResult::Parsed(map_summary_seat_outcome(line, head, tail_ast))
+}
+
+fn parse_summary_seat_head(line: &str) -> Option<ParsedSummarySeatHead> {
     let seat_payload = line.strip_prefix("Seat ")?;
     let (seat_no_raw, rest) = seat_payload.split_once(": ")?;
     let seat_no = parse_u8(seat_no_raw, "summary_seat_no").ok()?;
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let captures = REGEX
+        .get_or_init(|| {
+            Regex::new(
+                r"^(?P<player_name>.+?)(?: \((?P<marker>button|small blind|big blind)\))? (?P<tail>.+)$",
+            )
+            .expect("summary seat head regex must compile")
+        })
+        .captures(rest)?;
 
-    let tail_prefixes = [
-        " folded before Flop",
-        " folded on the Flop",
-        " folded on the Turn",
-        " folded on the River",
-        " showed [",
-        " won (",
-        " collected (",
-        " lost",
-        " mucked",
-    ];
-    let tail_start = tail_prefixes
-        .iter()
-        .filter_map(|prefix| rest.find(prefix))
-        .min()?;
-    let player_section = &rest[..tail_start];
-    let tail = &rest[tail_start + 1..];
+    let position_marker = match captures.name("marker").map(|marker| marker.as_str()) {
+        Some("button") => Some(SummarySeatMarker::Button),
+        Some("small blind") => Some(SummarySeatMarker::SmallBlind),
+        Some("big blind") => Some(SummarySeatMarker::BigBlind),
+        Some(_) => return None,
+        None => None,
+    };
 
-    let (player_name, position_marker) =
-        if let Some(player_name) = player_section.strip_suffix(" (button)") {
-            (player_name.to_string(), Some(SummarySeatMarker::Button))
-        } else if let Some(player_name) = player_section.strip_suffix(" (small blind)") {
-            (player_name.to_string(), Some(SummarySeatMarker::SmallBlind))
-        } else if let Some(player_name) = player_section.strip_suffix(" (big blind)") {
-            (player_name.to_string(), Some(SummarySeatMarker::BigBlind))
-        } else {
-            (player_section.to_string(), None)
-        };
+    Some(ParsedSummarySeatHead {
+        seat_no,
+        player_name: captures["player_name"].to_string(),
+        position_marker,
+        tail: captures["tail"].to_string(),
+    })
+}
 
-    if let Some(folded_at) = parse_summary_folded_tail(tail) {
-        return Some(SummarySeatOutcome {
-            seat_no,
-            player_name,
-            position_marker,
+fn parse_summary_seat_tail_ast(tail: &str) -> Option<SummarySeatTailAst> {
+    if let Some(street) = parse_summary_folded_tail(tail) {
+        return Some(SummarySeatTailAst::Folded { street });
+    }
+
+    if let Some((shown_cards, won_amount, hand_class)) = parse_summary_showed_won_tail(tail) {
+        return Some(SummarySeatTailAst::ShowedWon {
+            shown_cards,
+            won_amount,
+            hand_class,
+        });
+    }
+
+    if let Some((shown_cards, won_amount, hand_class)) = parse_summary_showed_collected_tail(tail) {
+        return Some(SummarySeatTailAst::ShowedWon {
+            shown_cards,
+            won_amount,
+            hand_class,
+        });
+    }
+
+    if let Some((shown_cards, hand_class)) = parse_summary_showed_lost_tail(tail) {
+        return Some(SummarySeatTailAst::ShowedLost {
+            shown_cards,
+            hand_class,
+        });
+    }
+
+    if tail == "lost" {
+        return Some(SummarySeatTailAst::Lost);
+    }
+
+    if tail == "mucked" {
+        return Some(SummarySeatTailAst::Mucked);
+    }
+
+    if let Some((won_amount, hand_class)) = parse_summary_won_tail(tail) {
+        return Some(SummarySeatTailAst::Won {
+            won_amount,
+            hand_class,
+        });
+    }
+
+    if let Some(won_amount) = parse_summary_collected_tail(tail) {
+        return Some(SummarySeatTailAst::Collected { won_amount });
+    }
+
+    None
+}
+
+fn map_summary_seat_outcome(
+    line: &str,
+    head: ParsedSummarySeatHead,
+    tail_ast: SummarySeatTailAst,
+) -> SummarySeatOutcome {
+    match tail_ast {
+        SummarySeatTailAst::Folded { street } => SummarySeatOutcome {
+            seat_no: head.seat_no,
+            player_name: head.player_name,
+            position_marker: head.position_marker,
             outcome_kind: SummarySeatOutcomeKind::Folded,
-            folded_at: Some(folded_at),
+            folded_at: Some(street),
             shown_cards: None,
             won_amount: None,
             hand_class: None,
             raw_line: line.to_string(),
-        });
-    }
-
-    if let Some((shown_cards, won_amount, hand_class)) = parse_summary_showed_won_tail(tail) {
-        return Some(SummarySeatOutcome {
-            seat_no,
-            player_name,
-            position_marker,
+        },
+        SummarySeatTailAst::ShowedWon {
+            shown_cards,
+            won_amount,
+            hand_class,
+        } => SummarySeatOutcome {
+            seat_no: head.seat_no,
+            player_name: head.player_name,
+            position_marker: head.position_marker,
             outcome_kind: SummarySeatOutcomeKind::ShowedWon,
             folded_at: None,
             shown_cards: Some(shown_cards),
             won_amount: Some(won_amount),
             hand_class,
             raw_line: line.to_string(),
-        });
-    }
-
-    if let Some((shown_cards, hand_class)) = parse_summary_showed_lost_tail(tail) {
-        return Some(SummarySeatOutcome {
-            seat_no,
-            player_name,
-            position_marker,
+        },
+        SummarySeatTailAst::ShowedLost {
+            shown_cards,
+            hand_class,
+        } => SummarySeatOutcome {
+            seat_no: head.seat_no,
+            player_name: head.player_name,
+            position_marker: head.position_marker,
             outcome_kind: SummarySeatOutcomeKind::ShowedLost,
             folded_at: None,
             shown_cards: Some(shown_cards),
             won_amount: None,
             hand_class,
             raw_line: line.to_string(),
-        });
-    }
-
-    if tail == "lost" {
-        return Some(SummarySeatOutcome {
-            seat_no,
-            player_name,
-            position_marker,
+        },
+        SummarySeatTailAst::Lost => SummarySeatOutcome {
+            seat_no: head.seat_no,
+            player_name: head.player_name,
+            position_marker: head.position_marker,
             outcome_kind: SummarySeatOutcomeKind::Lost,
             folded_at: None,
             shown_cards: None,
             won_amount: None,
             hand_class: None,
             raw_line: line.to_string(),
-        });
-    }
-
-    if tail == "mucked" {
-        return Some(SummarySeatOutcome {
-            seat_no,
-            player_name,
-            position_marker,
+        },
+        SummarySeatTailAst::Mucked => SummarySeatOutcome {
+            seat_no: head.seat_no,
+            player_name: head.player_name,
+            position_marker: head.position_marker,
             outcome_kind: SummarySeatOutcomeKind::Mucked,
             folded_at: None,
             shown_cards: None,
             won_amount: None,
             hand_class: None,
             raw_line: line.to_string(),
-        });
-    }
-
-    if let Some((won_amount, hand_class)) = parse_summary_won_tail(tail) {
-        return Some(SummarySeatOutcome {
-            seat_no,
-            player_name,
-            position_marker,
+        },
+        SummarySeatTailAst::Won {
+            won_amount,
+            hand_class,
+        } => SummarySeatOutcome {
+            seat_no: head.seat_no,
+            player_name: head.player_name,
+            position_marker: head.position_marker,
             outcome_kind: SummarySeatOutcomeKind::Won,
             folded_at: None,
             shown_cards: None,
             won_amount: Some(won_amount),
             hand_class,
             raw_line: line.to_string(),
-        });
-    }
-
-    if let Some(won_amount) = parse_summary_collected_tail(tail) {
-        return Some(SummarySeatOutcome {
-            seat_no,
-            player_name,
-            position_marker,
+        },
+        SummarySeatTailAst::Collected { won_amount } => SummarySeatOutcome {
+            seat_no: head.seat_no,
+            player_name: head.player_name,
+            position_marker: head.position_marker,
             outcome_kind: SummarySeatOutcomeKind::Collected,
             folded_at: None,
             shown_cards: None,
             won_amount: Some(won_amount),
             hand_class: None,
             raw_line: line.to_string(),
-        });
+        },
     }
-
-    None
 }
 
 fn parse_summary_folded_tail(tail: &str) -> Option<Street> {
@@ -554,6 +649,25 @@ fn parse_summary_showed_lost_tail(tail: &str) -> Option<(Vec<String>, Option<Str
         .captures(tail)?;
     Some((
         split_cards(&captures["cards"]),
+        captures
+            .name("hand_class")
+            .map(|hand_class| hand_class.as_str().to_string()),
+    ))
+}
+
+fn parse_summary_showed_collected_tail(tail: &str) -> Option<(Vec<String>, i64, Option<String>)> {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let captures = REGEX
+        .get_or_init(|| {
+            Regex::new(
+                r"^showed \[(?P<cards>[^\]]+)\] and collected \((?P<amount>[\d,]+)\)(?: with (?P<hand_class>.+))?$",
+            )
+            .expect("summary showed collected tail regex must compile")
+        })
+        .captures(tail)?;
+    Some((
+        split_cards(&captures["cards"]),
+        parse_i64(&captures["amount"], "summary_collected_amount").ok()?,
         captures
             .name("hand_class")
             .map(|hand_class| hand_class.as_str().to_string()),

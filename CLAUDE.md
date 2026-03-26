@@ -158,12 +158,12 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - decoder output is typed as `Exact`, `Ambiguous`, `Infeasible`, or `ZeroMystery`;
   - decoder is deterministic and search-based, with no greedy fallback path.
 - Current elimination persistence behavior:
-  - `normalize_hand` now derives eliminations for players whose starting stack was positive and whose final stack after the hand is zero, using the full set of bust-relevant pots instead of collapsing attribution to the highest contributed pot only;
-  - `parser_worker import-local` now persists those rows into `derived.hand_eliminations`;
-  - migration `backend/migrations/0010_hand_eliminations_ko_v2.sql` extends the persisted contract with `resolved_by_pot_nos`, `ko_involved_winners`, `hero_ko_share_total`, and `joint_ko`;
-  - the backward-compat projection still keeps `resolved_by_pot_no`, `hero_involved`, `hero_share_fraction`, `is_split_ko`, `split_n`, `is_sidepot_based`, and `certainty_state`, but `resolved_by_pot_no` is now populated only for single-pot KOs; multi-pot joint busts intentionally leave it `NULL`;
-  - `hero_share_fraction` now means Hero's exact share of the total amount across all bust-relevant pots; for the current exact-core phase it is the compatibility projection of the same evidence as `hero_ko_share_total`;
-  - `joint_ko = true` marks eliminations whose bust-relevant pot set has more than one distinct winner, including main+side splits across different players;
+  - `normalize_hand` now derives eliminations for players whose starting stack was positive and whose final stack after the hand is zero;
+  - **KO-credit semantics (CM-P0-01 fix)**: `build_elimination()` now computes KO-credit attribution from the highest `pot_no` among bust-relevant pots (`ko_credit_pot_no`), not from the union of all pots; this matches the official GG MBR rule: bounty goes to winners of the last side pot containing the busted player's chips;
+  - `HandElimination` now carries `ko_credit_pot_no: Option<u8>` — the authoritative pot for KO-credit; `resolved_by_pot_nos` remains as a diagnostic trace of all pots the busted player contributed to;
+  - `hero_involved`, `hero_share_fraction`, `ko_involved_winners`, `joint_ko`, `split_n`, `is_split_ko`, and `ko_involved_winner_count` are now computed exclusively from credit pot winners;
+  - migration `backend/migrations/0016_ko_credit_pot_no.sql` adds the `ko_credit_pot_no` column to `derived.hand_eliminations`;
+  - `parser_worker import-local` now persists `ko_credit_pot_no` into `derived.hand_eliminations`;
   - when settlement is ambiguous or inconsistent, elimination rows still keep the busted seat context but intentionally omit guessed exact winner attribution details.
 - Current street-strength persistence behavior:
   - `tracker_parser_core` now exposes a pure `street_strength` evaluator over `CanonicalParsedHand`;
@@ -177,17 +177,29 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current canonical parser correction:
   - repeated GG `collected ... from pot` lines for the same player are now accumulated instead of overwritten;
   - this was required for exact multi-pot final stacks, pot conservation, and future side-pot/KO derivations.
+- `backend/docs/exact_core_contract.md` is now the canonical exact-core contract for parser/normalizer/pot-resolution semantics and must be updated whenever those semantics change.
+- Current phase0 exact-core proof pack:
+  - `backend/fixtures/mbr/hh/GG20260325-phase0-exact-core-edge-matrix.txt` is the canonical 12-hand exact-core edge matrix for forced all-in, blinds/antes, dead blind, actor-order, uncalled-return, side-pot, odd-chip, and ambiguity regressions;
+  - `tracker_parser_core/tests/phase0_exact_core_corpus.rs` now enforces manifest-style per-hand contracts over action stream facts (`seq`, `street`, `player_name`, `action_type`, `is_forced`, `is_all_in`, `all_in_reason`, `forced_all_in_preflop`) and normalization facts (`committed_total`, `returns`, `final_pots`, `pot_contributions`, `pot_eligibilities`, invariant/uncertainty codes);
+  - new canonical rows `BRCM0404` and `BRCM0405` lock in `short BB forced all-in` and `dead blind + ante`; the 3-level side-pot ladder proof stays anchored on `BRSIDE1`.
+- Current normalized-hand golden regression:
+  - `tracker_parser_core/tests/normalized_hand_golden.rs` now snapshots the full serialized `NormalizedHand` output for the entire committed HH pack under `tracker_parser_core/tests/goldens/`;
+  - goldens are stored per committed HH fixture file, not per hand;
+  - ordinary test runs are read-only; refreshing goldens requires explicit `UPDATE_GOLDENS=1`.
 - Current canonical summary-result persistence:
   - summary seat-result prose in `*** SUMMARY ***` is now parsed into dedicated `core.hand_summary_results` rows instead of being silently ignored or mixed with action rows;
   - summary rows are validated against `core.hand_seats(hand_id, seat_no)` rather than being remapped by player name;
   - malformed summary seat lines now surface as structured parse issues with code `unparsed_summary_seat_line`;
+  - summary seat lines whose `Seat N / player / marker` head is valid but whose tail grammar is still unsupported now surface as `unparsed_summary_seat_tail` instead of collapsing into the coarse malformed-line warning;
+  - summary tails `showed [...] and collected (...)` are now normalized into the existing structured `showed_won` surface instead of being dropped as parser gaps;
   - summary outcomes whose seat number conflicts with the canonical seat map surface as `summary_seat_outcome_seat_mismatch`;
   - summary outcomes that cannot attach to a seat row surface as `summary_seat_outcome_missing_seat`.
 - Current canonical position persistence:
   - `tracker_parser_core::positions` now owns the pure active-seat position engine;
   - position facts are persisted into dedicated `core.hand_positions` rows, separate from `core.hand_actions` and `core.hand_seats`;
-  - persisted rows carry `position_code`, `preflop_act_order_index`, and `postflop_act_order_index`;
-  - heads-up stays compact as `BTN` / `BB` with act-order indexes, without a dedicated `BTN_SB` code.
+  - persisted rows carry machine-safe `position_index`, human-readable `position_label`, `preflop_act_order_index`, and `postflop_act_order_index`;
+  - the canonical label table now covers `2..=10` active players, including `UTG+2` and `MP+1` for future 10-max support;
+  - heads-up stays compact as `BTN` / `BB`; the seat posting the small blind in HU still persists as `position_label = BTN`, without a dedicated `BTN_SB` code.
 - Current betting legality engine:
   - `tracker_parser_core::betting_rules` now validates the canonical action stream before pot resolution and feeds reason-coded legality issues into `NormalizationInvariants.invariant_errors`;
   - the legality layer covers heads-up preflop/postflop order, legal actor order, illegal checks/calls/raises, short-all-in non-reopen, full-raise reopen, and premature street close;
@@ -207,6 +219,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current stat runtime foundation:
   - `backend/crates/mbr_stats_runtime` now owns the first backend-only stat runtime slice;
   - `FEATURE_VERSION = mbr_runtime_v1`;
+  - `GG_MBR_FT_MAX_PLAYERS = 9` — единая константа для FT detection; заменяет все magic `9` хардкоды в Rust-коде parser_worker и mbr_stats_runtime;
   - `parser_worker import-local` now calls the runtime materializer inside the same PostgreSQL transaction after TS/HH persistence and full-refreshes analytics features for the affected `player_profile_id`;
   - the runtime materializes dense per-hand features for every imported hand:
     - bool: `played_ft_hand`, `is_ft_hand`, `is_stage_2`, `is_stage_3_4`, `is_stage_4_5`, `is_stage_5_6`, `is_stage_6_9`, `is_boundary_hand`, `has_exact_ko_event`, `has_split_ko_event`, `has_sidepot_ko_event`;
@@ -228,6 +241,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
     - runtime filters now also read sparse exact-core descriptors directly from `core/derived` without routing them through guessed analytics backfills:
       - hand-level presence keys `has_uncertain_reason_code:*`, `has_action_legality_issue:*`, `has_invariant_error_code:*` come from `derived.hand_state_resolutions`;
       - synthetic participant facet `street = seat` exposes seat-level exact facts from `core.hand_positions`, `core.hand_actions`, `core.hand_summary_results`, and `derived.hand_eliminations`;
+      - the seat facet now publishes `position_label` as enum and `position_index`, `preflop_act_order_index`, `postflop_act_order_index` as numeric facts from `core.hand_positions`;
       - missing sparse exact-core presence facts evaluate as honest `false`, not as a fatal runtime filter error;
     - `is_nut_hand` / `is_nut_draw` remain honest `unsupported`, not silent `false`;
   - `mbr_stats_runtime::street_buckets` now exposes a runtime/UI-only projection `best | good | weak | trash` over exact street descriptors; this bucket layer is heuristic aggregation and is never written back into analytics tables or canonical exact tables;
@@ -262,11 +276,19 @@ Backend foundation живёт в `backend/` и на текущем этапе в
     - the true room-specific posterior reconstruction problem still remains deferred; current Big KO and adjusted-money stats are official-frequency-weighted estimates, not posterior-conditioned reconstructions of realized tournament mystery totals;
   - `SeedStatSnapshot` still exists as a backward-compatible narrow projection, and always carries both `summary_tournament_count` and `hand_tournament_count` so callers can see the coverage basis explicitly.
 - Current stat-layer handoff artifact:
-  - `docs/stat_catalog/mbr_stats_inventory.yml` inventories all 31 legacy `MBR_Stats` modules as a dependency map for future stat-layer redesign;
+  - `docs/stat_catalog/mbr_stats_inventory.yml` inventories all 31 legacy `MBR_Stats` modules with `status: mapped` and active P0/P1 blocker references from the 2026-03-25 audit;
   - `docs/stat_catalog/mbr_stats_spec_v1.yml` is now the frozen semantic contract for the MBR stat layer: formulas, denominator rules, exactness classes, and canonical migration targets live there;
   - `docs/architecture/ko_semantics_glossary.md` now freezes KO event, KO money, uncertainty, and boundary/stage terminology for the next implementation phases;
   - `docs/architecture/ko_split_bounty_rounding_policy.md` freezes the current ugly-cent split KO rounding adapter and its explicit non-goals before the later posterior decoder rebuild;
-  - `docs/stat_catalog/mbr_stats_inventory.yml` remains the inventory map, but no longer serves as the semantic source of truth by itself.
+  - `docs/stat_catalog/mbr_stats_inventory.yml` remains the inventory map, but no longer serves as the semantic source of truth by itself;
+  - `docs/mbr.md` and `docs/mbr.yml` contain the 2026-03-25 independent audit with phased remediation plan (F0–F4) and 7 identified problems (2×P0, 5×P1).
+- Current spec parity gate:
+  - `backend/crates/mbr_stats_runtime/tests/spec_parity.rs` enforces that frozen spec `mbr_stats_spec_v1.yml` and runtime `CANONICAL_STAT_KEYS` match exactly: 31 modules, 60 unique keys, zero missing/extra;
+  - `models.rs` exports `CANONICAL_STAT_KEYS`, `EXPECTED_MODULE_COUNT`, and `EXPECTED_KEY_COUNT` as the authoritative runtime key enumeration;
+  - `backend/scripts/run_backend_checks.sh` now includes an explicit spec parity gate step.
+- CM-P0-02 fix (`pre_ft_chipev` bias bug):
+  - `load_pre_ft_chip_facts` in `queries.rs` no longer uses `COALESCE(..., 1000)` fallback; tournaments without an exact pre-FT snapshot are now excluded from the denominator via `AND pre_ft_snapshot.hero_final_stack IS NOT NULL` instead of synthesizing a zero chip-delta;
+  - this ensures `pre_ft_chipev` only averages over tournaments with a real pre-FT hand snapshot.
 - Current reproducibility gate:
   - `backend/fixtures/mbr/hh` and `backend/fixtures/mbr/ts` are now committed sanitized golden fixtures, not local-only artifacts;
   - `tracker_parser_core` now contains a full-pack HH/TS sweep over the committed `9 HH + 9 TS` GG corpus;
@@ -278,6 +300,28 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `backend/scripts/bootstrap_backend_dev.sh` and `backend/scripts/run_backend_checks.sh` remain backend-focused helper gates;
   - backend checks now include an ignored PostgreSQL full-pack import smoke for zero parse issues, zero invariant mismatches, and idempotent hand-child persistence on that committed corpus;
   - GitHub Actions backend gate lives in `.github/workflows/backend-foundation.yml` and is intentionally backend-only.
+- Formalized KO attempt model (F1-T3):
+  - `load_stage_attempt_facts` now implements a formal attempt contract: target all-in + hero covers + hero in credit pot (MAX pot_no) + hero did NOT fold;
+  - hero fold exclusion: `NOT EXISTS (hand_actions WHERE seat_no = hero AND action_type = 'fold')` — ensures hero is live until resolution;
+  - credit pot requirement: hero must be eligible for `MAX(pot_no)` of target, not just any shared pot;
+  - frozen spec `mbr_stats_spec_v1.yml` updated with formal attempt definition and fold/credit-pot source dependencies.
+- Stable ordering substrate (F2-T2):
+  - `core.hands.tournament_hand_order INT` column provides deterministic integer ordering within a tournament;
+  - migration `0017_tournament_hand_order.sql` adds the column, index, and backfills existing data;
+  - `parser_worker import-local` now computes `tournament_hand_order` after persisting all hands for a tournament;
+  - all stat-critical SQL in `queries.rs` now uses `tournament_hand_order` instead of raw `hand_started_at_local` string comparison;
+  - Rust-side import ordering (boundary candidates, FT helper) still uses string sort at import time, which is then captured as the integer order.
+- Synthetic fixture suite (F3-T1):
+  - 11 new unit tests added across `parser_worker`, `mbr_stats_runtime/registry`, and `mbr_stats_runtime/split_bounty`;
+  - covers: no-FT tournament, single-candidate exact boundary, multi-seat-count stage predicates, incomplete FT start, deepest FT tracking, split bounty zero/full/half/ugly-cent edge cases, FT stage bucket exhaustive boundaries.
+- Golden canonical snapshot gate (F3-T2):
+  - `tests/canonical_snapshot_golden.rs` verifies full 60-key `CanonicalStatSnapshot` against golden JSON file;
+  - supports `UPDATE_GOLDENS=1` env var for intentional golden updates;
+  - diff-friendly output shows old vs new values per key on mismatch;
+  - added to `backend/scripts/run_backend_checks.sh`.
+- Extended corpus infrastructure (F3-T3):
+  - `backend/scripts/generate_uncertainty_report.sh` queries committed corpus for parse issues, resolution states, boundary ambiguities, FT helper coverage, and hand order coverage;
+  - generates `docs/runtime_uncertainty_report.md` with structured counts and known limitations.
 - Current intentional limitation:
   - canonical UTC timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly, even though raw/local/provenance fields are now persisted;
   - date-range filters and session filters are still intentionally absent from the runtime query contract because timestamp normalization and session modeling are not exact yet;

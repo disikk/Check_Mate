@@ -234,7 +234,8 @@ fn load_filter_contexts(
              hp.seat_no,
              $3::text AS street,
              hs.is_hero,
-             hp.position_code,
+             hp.position_label,
+             hp.position_index,
              hp.preflop_act_order_index,
              hp.postflop_act_order_index
          FROM core.hand_positions hp
@@ -257,14 +258,18 @@ fn load_filter_contexts(
             .or_insert_with(|| base_street_row(&row));
         entry
             .enum_values
-            .insert("position_code".to_string(), row.get(4));
+            .insert("position_label".to_string(), row.get(4));
         entry.num_values.insert(
-            "preflop_act_order_index".to_string(),
+            "position_index".to_string(),
             f64::from(row.get::<_, i32>(5)),
         );
         entry.num_values.insert(
-            "postflop_act_order_index".to_string(),
+            "preflop_act_order_index".to_string(),
             f64::from(row.get::<_, i32>(6)),
+        );
+        entry.num_values.insert(
+            "postflop_act_order_index".to_string(),
+            f64::from(row.get::<_, i32>(7)),
         );
     }
 
@@ -979,7 +984,7 @@ mod tests {
                 seat_no: 7,
                 street: "seat".to_string(),
                 is_hero: true,
-                enum_values: BTreeMap::from([("position_code".to_string(), "BB".to_string())]),
+                enum_values: BTreeMap::from([("position_label".to_string(), "BB".to_string())]),
                 ..StreetFilterRow::default()
             }],
         };
@@ -988,7 +993,7 @@ mod tests {
                 FilterCondition {
                     feature: FeatureRef::Street {
                         street: "seat".to_string(),
-                        feature_key: "position_code".to_string(),
+                        feature_key: "position_label".to_string(),
                     },
                     operator: FilterOperator::Eq,
                     value: FilterValue::Enum("BB".to_string()),

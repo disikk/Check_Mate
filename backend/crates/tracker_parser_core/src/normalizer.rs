@@ -408,6 +408,7 @@ fn build_elimination(
     pot_winners: &[PotWinner],
     winner_mapping_state: CertaintyState,
 ) -> HandElimination {
+    // Шаг 1: найти все pot'ы, в которые busted player внёсся (диагностический след).
     let resolved_by_pot_nos = pot_contributions
         .iter()
         .filter(|contribution| contribution.seat_no == seat.seat_no)
@@ -420,6 +421,7 @@ fn build_elimination(
             eliminated_seat_no: seat.seat_no,
             eliminated_player_name: seat.player_name.clone(),
             resolved_by_pot_nos: Vec::new(),
+            ko_credit_pot_no: None,
             ko_involved_winners: Vec::new(),
             hero_ko_share_total: None,
             joint_ko: false,
@@ -434,28 +436,34 @@ fn build_elimination(
         };
     }
 
-    let resolved_winners = pot_winners
+    // Шаг 2: KO credit pot — highest pot_no, содержащий chips busted player.
+    // Правило GG: bounty делится только между winners последнего side pot.
+    let ko_credit_pot_no = *resolved_by_pot_nos.iter().max().unwrap();
+
+    // Шаг 3: winners и hero share считаем ТОЛЬКО по credit pot.
+    let credit_pot_winners = pot_winners
         .iter()
-        .filter(|winner| resolved_by_pot_nos.contains(&winner.pot_no))
+        .filter(|winner| winner.pot_no == ko_credit_pot_no)
         .collect::<Vec<_>>();
-    let resolved_pot_amount = final_pots
+    let credit_pot_amount = final_pots
         .iter()
-        .filter(|pot| resolved_by_pot_nos.contains(&pot.pot_no))
+        .find(|pot| pot.pot_no == ko_credit_pot_no)
         .map(|pot| pot.amount)
-        .sum::<i64>();
-    let hero_share = resolved_winners
+        .unwrap_or(0);
+    let hero_name = hand.hero_name.as_deref().unwrap_or_default();
+    let hero_share = credit_pot_winners
         .iter()
-        .filter(|winner| winner.player_name == hand.hero_name.as_deref().unwrap_or_default())
+        .filter(|winner| winner.player_name == hero_name)
         .map(|winner| winner.share_amount)
         .sum::<i64>();
-    let share_fraction = if winner_mapping_state == CertaintyState::Exact && resolved_pot_amount > 0
-    {
-        Some(hero_share as f64 / resolved_pot_amount as f64)
-    } else {
-        None
-    };
+    let share_fraction =
+        if winner_mapping_state == CertaintyState::Exact && credit_pot_amount > 0 {
+            Some(hero_share as f64 / credit_pot_amount as f64)
+        } else {
+            None
+        };
     let ko_involved_winners = dedup_preserving_order(
-        resolved_winners
+        credit_pot_winners
             .iter()
             .map(|winner| winner.player_name.clone())
             .collect::<Vec<_>>(),
@@ -468,6 +476,7 @@ fn build_elimination(
         eliminated_seat_no: seat.seat_no,
         eliminated_player_name: seat.player_name.clone(),
         resolved_by_pot_nos: resolved_by_pot_nos.clone(),
+        ko_credit_pot_no: Some(ko_credit_pot_no),
         ko_involved_winners: ko_involved_winners.clone(),
         hero_ko_share_total: share_fraction,
         joint_ko,
@@ -477,8 +486,8 @@ fn build_elimination(
         hero_share_fraction: share_fraction,
         is_split_ko: ko_involved_winners.len() > 1,
         split_n,
-        is_sidepot_based: resolved_by_pot_nos.iter().any(|pot_no| *pot_no > 1),
-        certainty_state: if resolved_winners.is_empty() {
+        is_sidepot_based: ko_credit_pot_no > 1,
+        certainty_state: if credit_pot_winners.is_empty() {
             if winner_mapping_state == CertaintyState::Inconsistent {
                 CertaintyState::Inconsistent
             } else {

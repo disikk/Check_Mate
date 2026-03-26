@@ -781,6 +781,54 @@ fn resolves_sidepot_ko_without_marking_hero_involved() {
 }
 
 #[test]
+fn keeps_folded_contributor_in_pot_contributions_but_out_of_eligibility() {
+    let hand = parse_canonical_hand(SIDEPOT_KO_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    assert_eq!(
+        normalized
+            .pot_contributions
+            .iter()
+            .map(|contribution| {
+                (
+                    contribution.pot_no,
+                    contribution.player_name.as_str(),
+                    contribution.amount,
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            (1, "Shorty", 100),
+            (1, "Hero", 100),
+            (1, "Medium", 100),
+            (1, "BigStack", 100),
+            (2, "Shorty", 400),
+            (2, "Medium", 400),
+            (2, "BigStack", 400),
+            (3, "Medium", 500),
+            (3, "BigStack", 500),
+        ]
+    );
+    assert_eq!(
+        normalized
+            .pot_eligibilities
+            .iter()
+            .map(|eligibility| (eligibility.pot_no, eligibility.player_name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (1, "Shorty"),
+            (1, "Medium"),
+            (1, "BigStack"),
+            (2, "Shorty"),
+            (2, "Medium"),
+            (2, "BigStack"),
+            (3, "Medium"),
+            (3, "BigStack"),
+        ]
+    );
+}
+
+#[test]
 fn keeps_full_pack_invariants_green_for_all_committed_hands() {
     let mut issues = Vec::new();
 
@@ -913,18 +961,24 @@ fn resolves_joint_ko_across_main_and_side_pots_with_different_winners() {
         .find(|elimination| elimination.eliminated_player_name == "Medium")
         .unwrap();
 
+    // Диагностический след: Medium внёсся в оба pot'а.
     assert_eq!(medium.resolved_by_pot_nos, vec![1, 2]);
+    // GG rule: KO-credit pot = highest pot_no (pot 2 — side pot).
+    assert_eq!(medium.ko_credit_pot_no, Some(2));
+    // Winners только credit pot'а (pot 2): Hero единственный winner.
     assert_eq!(
         medium.ko_involved_winners,
-        vec!["Shorty".to_string(), "Hero".to_string()]
+        vec!["Hero".to_string()]
     );
-    assert_eq!(medium.hero_ko_share_total, Some(0.4));
+    // Hero получает 100% credit pot'а (1000/1000).
+    assert_eq!(medium.hero_ko_share_total, Some(1.0));
     assert!(medium.hero_involved);
-    assert!(medium.joint_ko);
+    // 1 winner → не joint KO.
+    assert!(!medium.joint_ko);
     assert_eq!(medium.resolved_by_pot_no, None);
-    assert_eq!(medium.ko_involved_winner_count, 2);
-    assert_eq!(medium.hero_share_fraction, Some(0.4));
-    assert_eq!(medium.split_n, Some(2));
+    assert_eq!(medium.ko_involved_winner_count, 1);
+    assert_eq!(medium.hero_share_fraction, Some(1.0));
+    assert_eq!(medium.split_n, Some(1));
     assert!(medium.is_sidepot_based);
     assert_eq!(medium.certainty_state, CertaintyState::Exact);
 }

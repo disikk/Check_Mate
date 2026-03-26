@@ -70,6 +70,8 @@ cd "$BACKEND_DIR"
 run cargo fmt --check
 run cargo clippy --workspace --all-targets -- -D warnings
 run cargo test
+log "running spec parity gate"
+run cargo test -p mbr_stats_runtime --test spec_parity -- --nocapture
 log "running exact-core proof suite"
 run cargo test -p tracker_parser_core --test fixture_parsing -- --nocapture
 run cargo test -p tracker_parser_core --test positions -- --nocapture
@@ -82,3 +84,5 @@ run cargo test -p parser_worker local_import::tests::import_local_persists_canon
 run cargo test -p parser_worker local_import::tests::import_local_refreshes_analytics_features_and_seed_stats -- --ignored --exact
 run cargo test -p parser_worker local_import::tests::import_local_keeps_early_ft_ko_seed_stats_exact_without_proxy_hand_features -- --ignored --exact
 run cargo test -p parser_worker local_import::tests::import_local_exposes_exact_core_descriptors_to_runtime_filters -- --ignored --exact
+log "running golden canonical snapshot gate"
+run cargo test -p mbr_stats_runtime --test canonical_snapshot_golden -- --ignored --nocapture

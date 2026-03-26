@@ -1,0 +1,4662 @@
+{
+  "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+  "hand_count": 20,
+  "hands": {
+    "BR1064992157": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 4,
+          "5d455a01": 207,
+          "799653ea": 24,
+          "9fca2489": 4,
+          "Hero": 207
+        },
+        "final_board_cards": [
+          "Qd",
+          "9h",
+          "8d",
+          "2h",
+          "8h"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 996,
+          "5d455a01": 793,
+          "799653ea": 976,
+          "9fca2489": 996,
+          "Hero": 1239
+        },
+        "winner_collections": {
+          "Hero": 446
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 20,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 60,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 366,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992157",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "799653ea",
+        "5d455a01",
+        "Hero",
+        "10e79624",
+        "9fca2489"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 4,
+          "player_name": "799653ea",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 4,
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 4,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 4,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 4,
+          "player_name": "9fca2489",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 20,
+          "player_name": "799653ea",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 20,
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 183,
+          "player_name": "5d455a01",
+          "pot_no": 3,
+          "seat_no": 2
+        },
+        {
+          "amount": 183,
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 20
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 60
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 3,
+          "share_amount": 366
+        }
+      ],
+      "returns": [
+        {
+          "amount": 237,
+          "player_name": "Hero",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992216": {
+      "actual": {
+        "committed_total_by_player": {
+          "5d455a01": 24,
+          "Hero": 44,
+          "f3b6ab54": 44,
+          "f9c66f87": 44,
+          "fba6e18d": 4
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "5d455a01": 769,
+          "Hero": 1355,
+          "f3b6ab54": 936,
+          "f9c66f87": 964,
+          "fba6e18d": 892
+        },
+        "winner_collections": {
+          "Hero": 160
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 20,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 80,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 60,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992216",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "fba6e18d",
+        "Hero",
+        "5d455a01",
+        "f3b6ab54",
+        "f9c66f87"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 4,
+          "player_name": "fba6e18d",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 4,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 4,
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 4,
+          "player_name": "f3b6ab54",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 4,
+          "player_name": "f9c66f87",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 20,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 20,
+          "player_name": "f3b6ab54",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "amount": 20,
+          "player_name": "f9c66f87",
+          "pot_no": 2,
+          "seat_no": 5
+        },
+        {
+          "amount": 20,
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "f3b6ab54",
+          "pot_no": 3,
+          "seat_no": 4
+        },
+        {
+          "amount": 20,
+          "player_name": "f9c66f87",
+          "pot_no": 3,
+          "seat_no": 5
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 2
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2,
+          "share_amount": 20
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 2,
+          "share_amount": 80
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 2,
+          "share_amount": 60
+        }
+      ],
+      "returns": [
+        {
+          "amount": 160,
+          "player_name": "Hero",
+          "reason": "uncalled",
+          "seat_no": 2
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992260": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 44,
+          "Hero": 44,
+          "f1d6255e": 4,
+          "f3b6ab54": 14,
+          "f9c66f87": 4
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 2062,
+          "Hero": 1311,
+          "f1d6255e": 1592,
+          "f3b6ab54": 922,
+          "f9c66f87": 960
+        },
+        "winner_collections": {
+          "10e79624": 110
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 20,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 30,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 60,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992260",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "f3b6ab54",
+        "10e79624",
+        "f1d6255e",
+        "f9c66f87"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 4,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 4,
+          "player_name": "f3b6ab54",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 4,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 4,
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 4,
+          "player_name": "f9c66f87",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 10,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 10,
+          "player_name": "f3b6ab54",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 10,
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 30,
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 1
+        },
+        {
+          "amount": 30,
+          "player_name": "10e79624",
+          "pot_no": 3,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 3,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 20
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 30
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 3,
+          "seat_no": 3,
+          "share_amount": 60
+        }
+      ],
+      "returns": [
+        {
+          "amount": 1950,
+          "player_name": "10e79624",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992287": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 48,
+          "Hero": 8,
+          "cea32bcb": 8,
+          "f3b6ab54": 48,
+          "f9c66f87": 28
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 2154,
+          "Hero": 1303,
+          "cea32bcb": 1557,
+          "f3b6ab54": 870,
+          "f9c66f87": 924
+        },
+        "winner_collections": {
+          "10e79624": 140
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 40,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 60,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 40,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992287",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "cea32bcb",
+        "f9c66f87",
+        "f3b6ab54",
+        "10e79624",
+        "Hero"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 8,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 8,
+          "player_name": "f9c66f87",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 8,
+          "player_name": "f3b6ab54",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 8,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 8,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 20,
+          "player_name": "f9c66f87",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "f3b6ab54",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 20,
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "amount": 20,
+          "player_name": "f3b6ab54",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "amount": 20,
+          "player_name": "10e79624",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 4,
+          "share_amount": 40
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 4,
+          "share_amount": 60
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 3,
+          "seat_no": 4,
+          "share_amount": 40
+        }
+      ],
+      "returns": [
+        {
+          "amount": 40,
+          "player_name": "10e79624",
+          "reason": "uncalled",
+          "seat_no": 4
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992307": {
+      "actual": {
+        "committed_total_by_player": {
+          "Hero": 8,
+          "cea32bcb": 28,
+          "f1d6255e": 924,
+          "f9c66f87": 924,
+          "fba6e18d": 8
+        },
+        "final_board_cards": [
+          "Qs",
+          "6h",
+          "4d",
+          "3s",
+          "Td"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "Hero": 1295,
+          "cea32bcb": 1529,
+          "f1d6255e": 2516,
+          "f9c66f87": 0,
+          "fba6e18d": 932
+        },
+        "winner_collections": {
+          "f1d6255e": 1892
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "f9c66f87",
+          "eliminated_seat_no": 4,
+          "hero_involved": false,
+          "hero_ko_share_total": 0.0,
+          "hero_share_fraction": 0.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 3,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "f1d6255e"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2,
+            3
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 40,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 60,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 1792,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992307",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "fba6e18d",
+        "cea32bcb",
+        "f1d6255e",
+        "f9c66f87",
+        "Hero"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 8,
+          "player_name": "fba6e18d",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 8,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 8,
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 8,
+          "player_name": "f9c66f87",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 8,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 20,
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 20,
+          "player_name": "f9c66f87",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "amount": 896,
+          "player_name": "f1d6255e",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "amount": 896,
+          "player_name": "f9c66f87",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "f9c66f87",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "f9c66f87",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "player_name": "f9c66f87",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 40
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 60
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 3,
+          "seat_no": 3,
+          "share_amount": 1792
+        }
+      ],
+      "returns": [
+        {
+          "amount": 624,
+          "player_name": "f1d6255e",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BR1064992307",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 8,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 8,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "fba6e18d",
+            "seat_no": 1,
+            "stack_at_snapshot": 932,
+            "stack_before_hand": 940,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 28,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 28,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "cea32bcb",
+            "seat_no": 2,
+            "stack_at_snapshot": 1529,
+            "stack_before_hand": 1557,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 1548,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 1548,
+            "hole_cards": [
+              "Qc",
+              "Qh"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "f1d6255e",
+            "seat_no": 3,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 1548,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 924,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 924,
+            "hole_cards": [
+              "Kd",
+              "Ks"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "f9c66f87",
+            "seat_no": 4,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 924,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 8,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 8,
+            "hole_cards": [
+              "9s",
+              "5c"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 5,
+            "stack_at_snapshot": 1295,
+            "stack_before_hand": 1303,
+            "status": "folded"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 40,
+            "eligible_players": [
+              "f1d6255e",
+              "f9c66f87"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 60,
+            "eligible_players": [
+              "f1d6255e",
+              "f9c66f87"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          },
+          {
+            "amount": 1792,
+            "eligible_players": [
+              "f1d6255e",
+              "f9c66f87"
+            ],
+            "is_main": false,
+            "pot_index": 2
+          },
+          {
+            "amount": 624,
+            "eligible_players": [
+              "f1d6255e"
+            ],
+            "is_main": false,
+            "pot_index": 3
+          }
+        ],
+        "snapshot_event_seq": 12,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BR1064992315": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 8,
+          "539ed233": 8,
+          "Hero": 88,
+          "f3b6ab54": 88,
+          "fba6e18d": 28
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 2146,
+          "539ed233": 321,
+          "Hero": 1207,
+          "f3b6ab54": 1002,
+          "fba6e18d": 904
+        },
+        "winner_collections": {
+          "f3b6ab54": 220
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 40,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 60,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 120,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992315",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "fba6e18d",
+        "f3b6ab54",
+        "10e79624",
+        "539ed233"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 8,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 8,
+          "player_name": "fba6e18d",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 8,
+          "player_name": "f3b6ab54",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 8,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 8,
+          "player_name": "539ed233",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 20,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 20,
+          "player_name": "fba6e18d",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "f3b6ab54",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 60,
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 1
+        },
+        {
+          "amount": 60,
+          "player_name": "f3b6ab54",
+          "pot_no": 3,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "f3b6ab54",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "f3b6ab54",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "f3b6ab54",
+          "pot_no": 3,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "f3b6ab54",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 40
+        },
+        {
+          "player_name": "f3b6ab54",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 60
+        },
+        {
+          "player_name": "f3b6ab54",
+          "pot_no": 3,
+          "seat_no": 3,
+          "share_amount": 120
+        }
+      ],
+      "returns": [
+        {
+          "amount": 200,
+          "player_name": "f3b6ab54",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992352": {
+      "actual": {
+        "committed_total_by_player": {
+          "62cbdcf2": 8,
+          "Hero": 1186,
+          "c48d83c5": 1186,
+          "f1d6255e": 138,
+          "f3b6ab54": 28
+        },
+        "final_board_cards": [
+          "6c",
+          "8c",
+          "Qs",
+          "Kd",
+          "2h"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "62cbdcf2": 965,
+          "Hero": 2567,
+          "c48d83c5": 0,
+          "f1d6255e": 2350,
+          "f3b6ab54": 974
+        },
+        "winner_collections": {
+          "Hero": 2546
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "c48d83c5",
+          "eliminated_seat_no": 4,
+          "hero_involved": true,
+          "hero_ko_share_total": 1.0,
+          "hero_share_fraction": 1.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 4,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "Hero"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 40,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 80,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 330,
+          "is_main": false,
+          "pot_no": 3
+        },
+        {
+          "amount": 2096,
+          "is_main": false,
+          "pot_no": 4
+        }
+      ],
+      "hand_id": "BR1064992352",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "f1d6255e",
+        "f3b6ab54",
+        "Hero",
+        "c48d83c5",
+        "62cbdcf2"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 8,
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 8,
+          "player_name": "f3b6ab54",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 8,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 8,
+          "player_name": "c48d83c5",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 8,
+          "player_name": "62cbdcf2",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 20,
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 20,
+          "player_name": "f3b6ab54",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 20,
+          "player_name": "c48d83c5",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "amount": 110,
+          "player_name": "f1d6255e",
+          "pot_no": 3,
+          "seat_no": 1
+        },
+        {
+          "amount": 110,
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "amount": 110,
+          "player_name": "c48d83c5",
+          "pot_no": 3,
+          "seat_no": 4
+        },
+        {
+          "amount": 1048,
+          "player_name": "Hero",
+          "pot_no": 4,
+          "seat_no": 3
+        },
+        {
+          "amount": 1048,
+          "player_name": "c48d83c5",
+          "pot_no": 4,
+          "seat_no": 4
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "c48d83c5",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "c48d83c5",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "player_name": "c48d83c5",
+          "pot_no": 3,
+          "seat_no": 4
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 4,
+          "seat_no": 3
+        },
+        {
+          "player_name": "c48d83c5",
+          "pot_no": 4,
+          "seat_no": 4
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 40
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 80
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 3,
+          "share_amount": 330
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 4,
+          "seat_no": 3,
+          "share_amount": 2096
+        }
+      ],
+      "returns": [
+        {
+          "amount": 21,
+          "player_name": "Hero",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": {
+        "future_board_cards_count": 1,
+        "hand_id": "BR1064992352",
+        "hero_name": "Hero",
+        "known_board_cards": [
+          "6c",
+          "8c",
+          "Qs",
+          "Kd"
+        ],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 138,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 138,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "f1d6255e",
+            "seat_no": 1,
+            "stack_at_snapshot": 2350,
+            "stack_before_hand": 2488,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 28,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 28,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "f3b6ab54",
+            "seat_no": 2,
+            "stack_at_snapshot": 974,
+            "stack_before_hand": 1002,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 320,
+              "preflop": 138,
+              "river": 0,
+              "turn": 749
+            },
+            "committed_total": 1207,
+            "hole_cards": [
+              "Qd",
+              "Jd"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 3,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 1207,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 320,
+              "preflop": 138,
+              "river": 0,
+              "turn": 728
+            },
+            "committed_total": 1186,
+            "hole_cards": [
+              "4c",
+              "Qc"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "c48d83c5",
+            "seat_no": 4,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 1186,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 8,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 8,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "62cbdcf2",
+            "seat_no": 5,
+            "stack_at_snapshot": 965,
+            "stack_before_hand": 973,
+            "status": "folded"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 40,
+            "eligible_players": [
+              "Hero",
+              "c48d83c5"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 80,
+            "eligible_players": [
+              "Hero",
+              "c48d83c5"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          },
+          {
+            "amount": 330,
+            "eligible_players": [
+              "Hero",
+              "c48d83c5"
+            ],
+            "is_main": false,
+            "pot_index": 2
+          },
+          {
+            "amount": 2096,
+            "eligible_players": [
+              "Hero",
+              "c48d83c5"
+            ],
+            "is_main": false,
+            "pot_index": 3
+          },
+          {
+            "amount": 21,
+            "eligible_players": [
+              "Hero"
+            ],
+            "is_main": false,
+            "pot_index": 4
+          }
+        ],
+        "snapshot_event_seq": 17,
+        "snapshot_street": "turn",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BR1064992430": {
+      "actual": {
+        "committed_total_by_player": {
+          "4618d519": 122,
+          "741de677": 12,
+          "799653ea": 12,
+          "Hero": 42,
+          "f1d6255e": 122
+        },
+        "final_board_cards": [
+          "2s",
+          "As",
+          "9c",
+          "5d",
+          "5c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "4618d519": 0,
+          "741de677": 1104,
+          "799653ea": 640,
+          "Hero": 2525,
+          "f1d6255e": 2582
+        },
+        "winner_collections": {
+          "f1d6255e": 310
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "4618d519",
+          "eliminated_seat_no": 3,
+          "hero_involved": false,
+          "hero_ko_share_total": 0.0,
+          "hero_share_fraction": 0.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 3,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "f1d6255e"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2,
+            3
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 60,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 90,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 160,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992430",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "799653ea",
+        "Hero",
+        "4618d519",
+        "741de677",
+        "f1d6255e"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 12,
+          "player_name": "799653ea",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 12,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 12,
+          "player_name": "4618d519",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 12,
+          "player_name": "741de677",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 12,
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 30,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 30,
+          "player_name": "4618d519",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 30,
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 5
+        },
+        {
+          "amount": 80,
+          "player_name": "4618d519",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "amount": 80,
+          "player_name": "f1d6255e",
+          "pot_no": 3,
+          "seat_no": 5
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "4618d519",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "player_name": "4618d519",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 5
+        },
+        {
+          "player_name": "4618d519",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 3,
+          "seat_no": 5
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 5,
+          "share_amount": 60
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 5,
+          "share_amount": 90
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 3,
+          "seat_no": 5,
+          "share_amount": 160
+        }
+      ],
+      "returns": [
+        {
+          "amount": 16,
+          "player_name": "f1d6255e",
+          "reason": "uncalled",
+          "seat_no": 5
+        }
+      ],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BR1064992430",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 12,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 12,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "799653ea",
+            "seat_no": 1,
+            "stack_at_snapshot": 640,
+            "stack_before_hand": 652,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 42,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 42,
+            "hole_cards": [
+              "3h",
+              "Kh"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 2,
+            "stack_at_snapshot": 2525,
+            "stack_before_hand": 2567,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 122,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 122,
+            "hole_cards": [
+              "Ts",
+              "2d"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "4618d519",
+            "seat_no": 3,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 122,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 12,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 12,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "741de677",
+            "seat_no": 4,
+            "stack_at_snapshot": 1104,
+            "stack_before_hand": 1116,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 138,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 138,
+            "hole_cards": [
+              "8d",
+              "Ah"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "f1d6255e",
+            "seat_no": 5,
+            "stack_at_snapshot": 2256,
+            "stack_before_hand": 2394,
+            "status": "live"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 60,
+            "eligible_players": [
+              "4618d519",
+              "f1d6255e"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 90,
+            "eligible_players": [
+              "4618d519",
+              "f1d6255e"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          },
+          {
+            "amount": 160,
+            "eligible_players": [
+              "4618d519",
+              "f1d6255e"
+            ],
+            "is_main": false,
+            "pot_index": 2
+          },
+          {
+            "amount": 16,
+            "eligible_players": [
+              "f1d6255e"
+            ],
+            "is_main": false,
+            "pot_index": 3
+          }
+        ],
+        "snapshot_event_seq": 11,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BR1064992458": {
+      "actual": {
+        "committed_total_by_player": {
+          "5b7c4178": 12,
+          "741de677": 640,
+          "799653ea": 640,
+          "Hero": 12,
+          "cea32bcb": 12
+        },
+        "final_board_cards": [
+          "Th",
+          "Qc",
+          "7s",
+          "4d",
+          "6h"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "5b7c4178": 1973,
+          "741de677": 1780,
+          "799653ea": 0,
+          "Hero": 2513,
+          "cea32bcb": 1839
+        },
+        "winner_collections": {
+          "741de677": 1316
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "799653ea",
+          "eliminated_seat_no": 2,
+          "hero_involved": false,
+          "hero_ko_share_total": 0.0,
+          "hero_share_fraction": 0.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 2,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "741de677"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 60,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 1256,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BR1064992458",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "5b7c4178",
+        "799653ea",
+        "741de677",
+        "cea32bcb",
+        "Hero"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 12,
+          "player_name": "5b7c4178",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 12,
+          "player_name": "799653ea",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 12,
+          "player_name": "741de677",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 12,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 12,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 628,
+          "player_name": "799653ea",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 628,
+          "player_name": "741de677",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "799653ea",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "player_name": "741de677",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "799653ea",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "player_name": "741de677",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "741de677",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 60
+        },
+        {
+          "player_name": "741de677",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 1256
+        }
+      ],
+      "returns": [],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BR1064992458",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 12,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 12,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "5b7c4178",
+            "seat_no": 1,
+            "stack_at_snapshot": 1973,
+            "stack_before_hand": 1985,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 640,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 640,
+            "hole_cards": [
+              "Jd",
+              "6d"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "799653ea",
+            "seat_no": 2,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 640,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 640,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 640,
+            "hole_cards": [
+              "Qd",
+              "Ts"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "741de677",
+            "seat_no": 3,
+            "stack_at_snapshot": 464,
+            "stack_before_hand": 1104,
+            "status": "live"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 12,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 12,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "cea32bcb",
+            "seat_no": 4,
+            "stack_at_snapshot": 1839,
+            "stack_before_hand": 1851,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 12,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 12,
+            "hole_cards": [
+              "3h",
+              "Tc"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 5,
+            "stack_at_snapshot": 2513,
+            "stack_before_hand": 2525,
+            "status": "folded"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 60,
+            "eligible_players": [
+              "799653ea",
+              "741de677"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 1256,
+            "eligible_players": [
+              "799653ea",
+              "741de677"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          }
+        ],
+        "snapshot_event_seq": 11,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BR1064992475": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 12,
+          "Hero": 12,
+          "cea32bcb": 72,
+          "d36b0ae5": 12,
+          "f1d6255e": 72
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 1688,
+          "Hero": 2501,
+          "cea32bcb": 1935,
+          "d36b0ae5": 985,
+          "f1d6255e": 2510
+        },
+        "winner_collections": {
+          "cea32bcb": 180
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 60,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 120,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BR1064992475",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "10e79624",
+        "f1d6255e",
+        "cea32bcb",
+        "Hero",
+        "d36b0ae5"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 12,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 12,
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 12,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 12,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 12,
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 60,
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 60,
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 60
+        },
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 120
+        }
+      ],
+      "returns": [
+        {
+          "amount": 180,
+          "player_name": "cea32bcb",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992488": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 830,
+          "17f20eb3": 12,
+          "5b7c4178": 12,
+          "Hero": 12,
+          "f3b6ab54": 830
+        },
+        "final_board_cards": [
+          "Ts",
+          "3c",
+          "Jd",
+          "Ac",
+          "Ks"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 2554,
+          "17f20eb3": 1105,
+          "5b7c4178": 2027,
+          "Hero": 2489,
+          "f3b6ab54": 0
+        },
+        "winner_collections": {
+          "10e79624": 1696
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "f3b6ab54",
+          "eliminated_seat_no": 3,
+          "hero_involved": false,
+          "hero_ko_share_total": 0.0,
+          "hero_share_fraction": 0.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 2,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "10e79624"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 60,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 1636,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BR1064992488",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "10e79624",
+        "f3b6ab54",
+        "5b7c4178",
+        "17f20eb3"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 12,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 12,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 12,
+          "player_name": "f3b6ab54",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 12,
+          "player_name": "5b7c4178",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 12,
+          "player_name": "17f20eb3",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 818,
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 818,
+          "player_name": "f3b6ab54",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "player_name": "f3b6ab54",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "player_name": "f3b6ab54",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 2,
+          "share_amount": 60
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 2,
+          "share_amount": 1636
+        }
+      ],
+      "returns": [
+        {
+          "amount": 858,
+          "player_name": "10e79624",
+          "reason": "uncalled",
+          "seat_no": 2
+        }
+      ],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BR1064992488",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 12,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 12,
+            "hole_cards": [
+              "8s",
+              "6h"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 1,
+            "stack_at_snapshot": 2489,
+            "stack_before_hand": 2501,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 1688,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 1688,
+            "hole_cards": [
+              "4h",
+              "Ad"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "10e79624",
+            "seat_no": 2,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 1688,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 830,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 830,
+            "hole_cards": [
+              "4s",
+              "4c"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "f3b6ab54",
+            "seat_no": 3,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 830,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 12,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 12,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "5b7c4178",
+            "seat_no": 4,
+            "stack_at_snapshot": 2027,
+            "stack_before_hand": 2039,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 12,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 12,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "17f20eb3",
+            "seat_no": 5,
+            "stack_at_snapshot": 1105,
+            "stack_before_hand": 1117,
+            "status": "folded"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 60,
+            "eligible_players": [
+              "10e79624",
+              "f3b6ab54"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 1636,
+            "eligible_players": [
+              "10e79624",
+              "f3b6ab54"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          },
+          {
+            "amount": 858,
+            "eligible_players": [
+              "10e79624"
+            ],
+            "is_main": false,
+            "pot_index": 2
+          }
+        ],
+        "snapshot_event_seq": 11,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BR1064992513": {
+      "actual": {
+        "committed_total_by_player": {
+          "5b7c4178": 12,
+          "62cbdcf2": 12,
+          "741de677": 222,
+          "Hero": 72,
+          "cea32bcb": 222
+        },
+        "final_board_cards": [
+          "Jh",
+          "Qd",
+          "3h",
+          "6d",
+          "2c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "5b7c4178": 1943,
+          "62cbdcf2": 1043,
+          "741de677": 1558,
+          "Hero": 2417,
+          "cea32bcb": 2241
+        },
+        "winner_collections": {
+          "cea32bcb": 540
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 60,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 180,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 300,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992513",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "5b7c4178",
+        "741de677",
+        "Hero",
+        "cea32bcb",
+        "62cbdcf2"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 12,
+          "player_name": "5b7c4178",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 12,
+          "player_name": "741de677",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 12,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 12,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 12,
+          "player_name": "62cbdcf2",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 60,
+          "player_name": "741de677",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 60,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 60,
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "amount": 150,
+          "player_name": "741de677",
+          "pot_no": 3,
+          "seat_no": 2
+        },
+        {
+          "amount": 150,
+          "player_name": "cea32bcb",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "741de677",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "player_name": "741de677",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "player_name": "741de677",
+          "pot_no": 3,
+          "seat_no": 2
+        },
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 4,
+          "share_amount": 60
+        },
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 4,
+          "share_amount": 180
+        },
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 3,
+          "seat_no": 4,
+          "share_amount": 300
+        }
+      ],
+      "returns": [],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992554": {
+      "actual": {
+        "committed_total_by_player": {
+          "17f20eb3": 492,
+          "62cbdcf2": 12,
+          "Hero": 42,
+          "d36b0ae5": 492,
+          "f1d6255e": 12
+        },
+        "final_board_cards": [
+          "2h",
+          "Jc",
+          "Td",
+          "4d",
+          "Ad"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "17f20eb3": 547,
+          "62cbdcf2": 899,
+          "Hero": 2375,
+          "d36b0ae5": 1909,
+          "f1d6255e": 2612
+        },
+        "winner_collections": {
+          "d36b0ae5": 1050
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 60,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 90,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 900,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992554",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "d36b0ae5",
+        "Hero",
+        "17f20eb3",
+        "62cbdcf2",
+        "f1d6255e"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 12,
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 12,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 12,
+          "player_name": "17f20eb3",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 12,
+          "player_name": "62cbdcf2",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 12,
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 30,
+          "player_name": "d36b0ae5",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 30,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 30,
+          "player_name": "17f20eb3",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 450,
+          "player_name": "d36b0ae5",
+          "pot_no": 3,
+          "seat_no": 1
+        },
+        {
+          "amount": 450,
+          "player_name": "17f20eb3",
+          "pot_no": 3,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "17f20eb3",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "player_name": "17f20eb3",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 3,
+          "seat_no": 1
+        },
+        {
+          "player_name": "17f20eb3",
+          "pot_no": 3,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 1,
+          "share_amount": 60
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 2,
+          "seat_no": 1,
+          "share_amount": 90
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 3,
+          "seat_no": 1,
+          "share_amount": 900
+        }
+      ],
+      "returns": [],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992581": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 56,
+          "5d455a01": 56,
+          "741de677": 16,
+          "Hero": 16,
+          "cea32bcb": 16
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 2410,
+          "5d455a01": 1594,
+          "741de677": 1542,
+          "Hero": 2359,
+          "cea32bcb": 2225
+        },
+        "winner_collections": {
+          "5d455a01": 160
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 80,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 80,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BR1064992581",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "cea32bcb",
+        "10e79624",
+        "5d455a01",
+        "741de677",
+        "Hero"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 16,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 16,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 16,
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 16,
+          "player_name": "741de677",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 16,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 40,
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 40,
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 80
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 80
+        }
+      ],
+      "returns": [
+        {
+          "amount": 40,
+          "player_name": "5d455a01",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992601": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 16,
+          "62cbdcf2": 16,
+          "741de677": 16,
+          "Hero": 56,
+          "cea32bcb": 56
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 2394,
+          "62cbdcf2": 827,
+          "741de677": 1526,
+          "Hero": 2303,
+          "cea32bcb": 2329
+        },
+        "winner_collections": {
+          "cea32bcb": 160
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 80,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 80,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BR1064992601",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "62cbdcf2",
+        "Hero",
+        "cea32bcb",
+        "10e79624",
+        "741de677"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 16,
+          "player_name": "62cbdcf2",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 16,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 16,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 16,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 16,
+          "player_name": "741de677",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 40,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 40,
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 80
+        },
+        {
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 80
+        }
+      ],
+      "returns": [
+        {
+          "amount": 40,
+          "player_name": "cea32bcb",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992629": {
+      "actual": {
+        "committed_total_by_player": {
+          "17f20eb3": 96,
+          "62cbdcf2": 16,
+          "Hero": 16,
+          "cea32bcb": 56,
+          "d36b0ae5": 96
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "17f20eb3": 435,
+          "62cbdcf2": 811,
+          "Hero": 2287,
+          "cea32bcb": 2273,
+          "d36b0ae5": 2077
+        },
+        "winner_collections": {
+          "d36b0ae5": 280
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 80,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 120,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 80,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992629",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "Hero",
+        "cea32bcb",
+        "17f20eb3",
+        "d36b0ae5",
+        "62cbdcf2"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 16,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 16,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 16,
+          "player_name": "17f20eb3",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 16,
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 16,
+          "player_name": "62cbdcf2",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 40,
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 40,
+          "player_name": "17f20eb3",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 40,
+          "player_name": "d36b0ae5",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "amount": 40,
+          "player_name": "17f20eb3",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "amount": 40,
+          "player_name": "d36b0ae5",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 4,
+          "share_amount": 80
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 2,
+          "seat_no": 4,
+          "share_amount": 120
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 3,
+          "seat_no": 4,
+          "share_amount": 80
+        }
+      ],
+      "returns": [
+        {
+          "amount": 160,
+          "player_name": "d36b0ae5",
+          "reason": "uncalled",
+          "seat_no": 4
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992662": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 800,
+          "17f20eb3": 56,
+          "5d455a01": 800,
+          "Hero": 96,
+          "d36b0ae5": 16
+        },
+        "final_board_cards": [
+          "Ts",
+          "2c",
+          "9d",
+          "5d",
+          "3h"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 1768,
+          "17f20eb3": 379,
+          "5d455a01": 2436,
+          "Hero": 2191,
+          "d36b0ae5": 2061
+        },
+        "winner_collections": {
+          "10e79624": 1768
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 80,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 160,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 120,
+          "is_main": false,
+          "pot_no": 3
+        },
+        {
+          "amount": 1408,
+          "is_main": false,
+          "pot_no": 4
+        }
+      ],
+      "hand_id": "BR1064992662",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "10e79624",
+        "17f20eb3",
+        "Hero",
+        "d36b0ae5",
+        "5d455a01"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 16,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 16,
+          "player_name": "17f20eb3",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 16,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 16,
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 16,
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 40,
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 40,
+          "player_name": "17f20eb3",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 40,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 40,
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 5
+        },
+        {
+          "amount": 40,
+          "player_name": "10e79624",
+          "pot_no": 3,
+          "seat_no": 1
+        },
+        {
+          "amount": 40,
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "amount": 40,
+          "player_name": "5d455a01",
+          "pot_no": 3,
+          "seat_no": 5
+        },
+        {
+          "amount": 704,
+          "player_name": "10e79624",
+          "pot_no": 4,
+          "seat_no": 1
+        },
+        {
+          "amount": 704,
+          "player_name": "5d455a01",
+          "pot_no": 4,
+          "seat_no": 5
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 5
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 3,
+          "seat_no": 1
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 3,
+          "seat_no": 5
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 4,
+          "seat_no": 1
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 4,
+          "seat_no": 5
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 1,
+          "share_amount": 80
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 2,
+          "seat_no": 1,
+          "share_amount": 160
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 3,
+          "seat_no": 1,
+          "share_amount": 120
+        },
+        {
+          "player_name": "10e79624",
+          "pot_no": 4,
+          "seat_no": 1,
+          "share_amount": 1408
+        }
+      ],
+      "returns": [],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BR1064992662",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 800,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 800,
+            "hole_cards": [
+              "Ah",
+              "Tc"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "10e79624",
+            "seat_no": 1,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 800,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 56,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 56,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "17f20eb3",
+            "seat_no": 2,
+            "stack_at_snapshot": 379,
+            "stack_before_hand": 435,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 96,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 96,
+            "hole_cards": [
+              "Qs",
+              "2h"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 3,
+            "stack_at_snapshot": 2191,
+            "stack_before_hand": 2287,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 16,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 16,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "d36b0ae5",
+            "seat_no": 4,
+            "stack_at_snapshot": 2061,
+            "stack_before_hand": 2077,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 800,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 800,
+            "hole_cards": [
+              "Ac",
+              "8h"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "5d455a01",
+            "seat_no": 5,
+            "stack_at_snapshot": 2436,
+            "stack_before_hand": 3236,
+            "status": "live"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 80,
+            "eligible_players": [
+              "10e79624",
+              "5d455a01"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 160,
+            "eligible_players": [
+              "10e79624",
+              "5d455a01"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          },
+          {
+            "amount": 120,
+            "eligible_players": [
+              "10e79624",
+              "5d455a01"
+            ],
+            "is_main": false,
+            "pot_index": 2
+          },
+          {
+            "amount": 1408,
+            "eligible_players": [
+              "10e79624",
+              "5d455a01"
+            ],
+            "is_main": false,
+            "pot_index": 3
+          }
+        ],
+        "snapshot_event_seq": 12,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BR1064992694": {
+      "actual": {
+        "committed_total_by_player": {
+          "17f20eb3": 16,
+          "5b7c4178": 56,
+          "Hero": 16,
+          "cea32bcb": 16,
+          "f1d6255e": 56
+        },
+        "final_board_cards": [],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "17f20eb3": 363,
+          "5b7c4178": 1118,
+          "Hero": 2175,
+          "cea32bcb": 2225,
+          "f1d6255e": 3613
+        },
+        "winner_collections": {
+          "f1d6255e": 160
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 80,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 80,
+          "is_main": false,
+          "pot_no": 2
+        }
+      ],
+      "hand_id": "BR1064992694",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "17f20eb3",
+        "5b7c4178",
+        "f1d6255e",
+        "cea32bcb",
+        "Hero"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 16,
+          "player_name": "17f20eb3",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 16,
+          "player_name": "5b7c4178",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 16,
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 16,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 16,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 40,
+          "player_name": "5b7c4178",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 40,
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 3
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 3,
+          "share_amount": 80
+        },
+        {
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 3,
+          "share_amount": 80
+        }
+      ],
+      "returns": [
+        {
+          "amount": 40,
+          "player_name": "f1d6255e",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": null,
+      "warnings": []
+    },
+    "BR1064992706": {
+      "actual": {
+        "committed_total_by_player": {
+          "17f20eb3": 363,
+          "5b7c4178": 20,
+          "Hero": 20,
+          "cea32bcb": 70,
+          "d36b0ae5": 363
+        },
+        "final_board_cards": [
+          "Ah",
+          "7s",
+          "Qc",
+          "7d",
+          "6c"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "17f20eb3": 836,
+          "5b7c4178": 1098,
+          "Hero": 2155,
+          "cea32bcb": 2155,
+          "d36b0ae5": 1682
+        },
+        "winner_collections": {
+          "17f20eb3": 836
+        }
+      },
+      "eliminations": [],
+      "final_pots": [
+        {
+          "amount": 100,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 150,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 586,
+          "is_main": false,
+          "pot_no": 3
+        }
+      ],
+      "hand_id": "BR1064992706",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "5b7c4178",
+        "cea32bcb",
+        "d36b0ae5",
+        "17f20eb3",
+        "Hero"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 20,
+          "player_name": "5b7c4178",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 20,
+          "player_name": "cea32bcb",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 20,
+          "player_name": "17f20eb3",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 20,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 50,
+          "player_name": "cea32bcb",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 50,
+          "player_name": "d36b0ae5",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 50,
+          "player_name": "17f20eb3",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "amount": 293,
+          "player_name": "d36b0ae5",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "amount": 293,
+          "player_name": "17f20eb3",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "player_name": "17f20eb3",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "player_name": "17f20eb3",
+          "pot_no": 2,
+          "seat_no": 4
+        },
+        {
+          "player_name": "d36b0ae5",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "player_name": "17f20eb3",
+          "pot_no": 3,
+          "seat_no": 4
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "17f20eb3",
+          "pot_no": 1,
+          "seat_no": 4,
+          "share_amount": 100
+        },
+        {
+          "player_name": "17f20eb3",
+          "pot_no": 2,
+          "seat_no": 4,
+          "share_amount": 150
+        },
+        {
+          "player_name": "17f20eb3",
+          "pot_no": 3,
+          "seat_no": 4,
+          "share_amount": 586
+        }
+      ],
+      "returns": [
+        {
+          "amount": 557,
+          "player_name": "d36b0ae5",
+          "reason": "uncalled",
+          "seat_no": 3
+        }
+      ],
+      "snapshot": {
+        "future_board_cards_count": 5,
+        "hand_id": "BR1064992706",
+        "hero_name": "Hero",
+        "known_board_cards": [],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 20,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 20,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "5b7c4178",
+            "seat_no": 1,
+            "stack_at_snapshot": 1098,
+            "stack_before_hand": 1118,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 70,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 70,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "cea32bcb",
+            "seat_no": 2,
+            "stack_at_snapshot": 2155,
+            "stack_before_hand": 2225,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 920,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 920,
+            "hole_cards": [
+              "8d",
+              "9c"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "d36b0ae5",
+            "seat_no": 3,
+            "stack_at_snapshot": 1125,
+            "stack_before_hand": 2045,
+            "status": "live"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 363,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 363,
+            "hole_cards": [
+              "Ad",
+              "6h"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "17f20eb3",
+            "seat_no": 4,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 363,
+            "status": "all_in"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 20,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 20,
+            "hole_cards": [
+              "7h",
+              "Jc"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 5,
+            "stack_at_snapshot": 2155,
+            "stack_before_hand": 2175,
+            "status": "folded"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 100,
+            "eligible_players": [
+              "d36b0ae5",
+              "17f20eb3"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 150,
+            "eligible_players": [
+              "d36b0ae5",
+              "17f20eb3"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          },
+          {
+            "amount": 586,
+            "eligible_players": [
+              "d36b0ae5",
+              "17f20eb3"
+            ],
+            "is_main": false,
+            "pot_index": 2
+          },
+          {
+            "amount": 557,
+            "eligible_players": [
+              "d36b0ae5"
+            ],
+            "is_main": false,
+            "pot_index": 3
+          }
+        ],
+        "snapshot_event_seq": 12,
+        "snapshot_street": "preflop",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    },
+    "BR1064992721": {
+      "actual": {
+        "committed_total_by_player": {
+          "10e79624": 20,
+          "5b7c4178": 220,
+          "5d455a01": 2155,
+          "Hero": 2155,
+          "f1d6255e": 70
+        },
+        "final_board_cards": [
+          "7c",
+          "4s",
+          "3h",
+          "Th",
+          "As"
+        ],
+        "rake_amount": 0,
+        "stacks_after_actual": {
+          "10e79624": 1748,
+          "5b7c4178": 878,
+          "5d455a01": 4901,
+          "Hero": 0,
+          "f1d6255e": 3543
+        },
+        "winner_collections": {
+          "5d455a01": 4620
+        }
+      },
+      "eliminations": [
+        {
+          "certainty_state": "exact",
+          "eliminated_player_name": "Hero",
+          "eliminated_seat_no": 5,
+          "hero_involved": false,
+          "hero_ko_share_total": 0.0,
+          "hero_share_fraction": 0.0,
+          "is_sidepot_based": true,
+          "is_split_ko": false,
+          "joint_ko": false,
+          "ko_credit_pot_no": 4,
+          "ko_involved_winner_count": 1,
+          "ko_involved_winners": [
+            "5d455a01"
+          ],
+          "resolved_by_pot_no": null,
+          "resolved_by_pot_nos": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "split_n": 1
+        }
+      ],
+      "final_pots": [
+        {
+          "amount": 100,
+          "is_main": true,
+          "pot_no": 1
+        },
+        {
+          "amount": 200,
+          "is_main": false,
+          "pot_no": 2
+        },
+        {
+          "amount": 450,
+          "is_main": false,
+          "pot_no": 3
+        },
+        {
+          "amount": 3870,
+          "is_main": false,
+          "pot_no": 4
+        }
+      ],
+      "hand_id": "BR1064992721",
+      "invariants": {
+        "chip_conservation_ok": true,
+        "invariant_errors": [],
+        "pot_conservation_ok": true,
+        "uncertain_reason_codes": []
+      },
+      "player_order": [
+        "5d455a01",
+        "f1d6255e",
+        "5b7c4178",
+        "10e79624",
+        "Hero"
+      ],
+      "pot_contributions": [
+        {
+          "amount": 20,
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "amount": 20,
+          "player_name": "f1d6255e",
+          "pot_no": 1,
+          "seat_no": 2
+        },
+        {
+          "amount": 20,
+          "player_name": "5b7c4178",
+          "pot_no": 1,
+          "seat_no": 3
+        },
+        {
+          "amount": 20,
+          "player_name": "10e79624",
+          "pot_no": 1,
+          "seat_no": 4
+        },
+        {
+          "amount": 20,
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "amount": 50,
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "amount": 50,
+          "player_name": "f1d6255e",
+          "pot_no": 2,
+          "seat_no": 2
+        },
+        {
+          "amount": 50,
+          "player_name": "5b7c4178",
+          "pot_no": 2,
+          "seat_no": 3
+        },
+        {
+          "amount": 50,
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 5
+        },
+        {
+          "amount": 150,
+          "player_name": "5d455a01",
+          "pot_no": 3,
+          "seat_no": 1
+        },
+        {
+          "amount": 150,
+          "player_name": "5b7c4178",
+          "pot_no": 3,
+          "seat_no": 3
+        },
+        {
+          "amount": 150,
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 5
+        },
+        {
+          "amount": 1935,
+          "player_name": "5d455a01",
+          "pot_no": 4,
+          "seat_no": 1
+        },
+        {
+          "amount": 1935,
+          "player_name": "Hero",
+          "pot_no": 4,
+          "seat_no": 5
+        }
+      ],
+      "pot_eligibilities": [
+        {
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 1,
+          "seat_no": 5
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 2,
+          "seat_no": 5
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 3,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 3,
+          "seat_no": 5
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 4,
+          "seat_no": 1
+        },
+        {
+          "player_name": "Hero",
+          "pot_no": 4,
+          "seat_no": 5
+        }
+      ],
+      "pot_winners": [
+        {
+          "player_name": "5d455a01",
+          "pot_no": 1,
+          "seat_no": 1,
+          "share_amount": 100
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 2,
+          "seat_no": 1,
+          "share_amount": 200
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 3,
+          "seat_no": 1,
+          "share_amount": 450
+        },
+        {
+          "player_name": "5d455a01",
+          "pot_no": 4,
+          "seat_no": 1,
+          "share_amount": 3870
+        }
+      ],
+      "returns": [],
+      "snapshot": {
+        "future_board_cards_count": 0,
+        "hand_id": "BR1064992721",
+        "hero_name": "Hero",
+        "known_board_cards": [
+          "7c",
+          "4s",
+          "3h",
+          "Th",
+          "As"
+        ],
+        "players": [
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 220,
+              "river": 1835,
+              "turn": 100
+            },
+            "committed_total": 2155,
+            "hole_cards": [
+              "4h",
+              "4d"
+            ],
+            "hole_cards_known": true,
+            "is_hero": false,
+            "player_name": "5d455a01",
+            "seat_no": 1,
+            "stack_at_snapshot": 281,
+            "stack_before_hand": 2436,
+            "status": "live"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 70,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 70,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "f1d6255e",
+            "seat_no": 2,
+            "stack_at_snapshot": 3543,
+            "stack_before_hand": 3613,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 220,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 220,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "5b7c4178",
+            "seat_no": 3,
+            "stack_at_snapshot": 878,
+            "stack_before_hand": 1098,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 20,
+              "river": 0,
+              "turn": 0
+            },
+            "committed_total": 20,
+            "hole_cards": null,
+            "hole_cards_known": false,
+            "is_hero": false,
+            "player_name": "10e79624",
+            "seat_no": 4,
+            "stack_at_snapshot": 1748,
+            "stack_before_hand": 1768,
+            "status": "folded"
+          },
+          {
+            "committed_by_street": {
+              "flop": 0,
+              "preflop": 220,
+              "river": 1835,
+              "turn": 100
+            },
+            "committed_total": 2155,
+            "hole_cards": [
+              "Kc",
+              "Ad"
+            ],
+            "hole_cards_known": true,
+            "is_hero": true,
+            "player_name": "Hero",
+            "seat_no": 5,
+            "stack_at_snapshot": 0,
+            "stack_before_hand": 2155,
+            "status": "all_in"
+          }
+        ],
+        "pots": [
+          {
+            "amount": 100,
+            "eligible_players": [
+              "5d455a01",
+              "Hero"
+            ],
+            "is_main": true,
+            "pot_index": 0
+          },
+          {
+            "amount": 200,
+            "eligible_players": [
+              "5d455a01",
+              "Hero"
+            ],
+            "is_main": false,
+            "pot_index": 1
+          },
+          {
+            "amount": 450,
+            "eligible_players": [
+              "5d455a01",
+              "Hero"
+            ],
+            "is_main": false,
+            "pot_index": 2
+          },
+          {
+            "amount": 3870,
+            "eligible_players": [
+              "5d455a01",
+              "Hero"
+            ],
+            "is_main": false,
+            "pot_index": 3
+          }
+        ],
+        "snapshot_event_seq": 23,
+        "snapshot_street": "river",
+        "terminal_allin_node": true
+      },
+      "warnings": []
+    }
+  }
+}

@@ -2,6 +2,79 @@ use std::collections::BTreeMap;
 
 use uuid::Uuid;
 
+/// Авторитетный перечень всех 60 канонических stat keys, которые runtime обязан
+/// вставлять в `CanonicalStatSnapshot.values`. Порядок алфавитный.
+/// Любое расхождение с `docs/stat_catalog/mbr_stats_spec_v1.yml` ловится parity-тестом.
+pub const CANONICAL_STAT_KEYS: &[&str] = &[
+    // seed-safe base (from SeedStatSnapshot::to_canonical_snapshot)
+    "avg_finish_place",
+    "avg_ko_event_per_tournament",
+    "early_ft_ko_event_count",
+    "early_ft_ko_event_per_tournament",
+    "final_table_reach_percent",
+    "roi_pct",
+    "total_ko_event_count",
+    // Phase A: tournament / FT-helper / summary-money
+    "avg_finish_place_ft",
+    "avg_finish_place_no_ft",
+    "avg_ft_initial_stack_bb",
+    "avg_ft_initial_stack_chips",
+    "deep_ft_avg_stack_bb",
+    "deep_ft_avg_stack_chips",
+    "deep_ft_reach_percent",
+    "deep_ft_roi_pct",
+    "incomplete_ft_percent",
+    "itm_percent",
+    "ko_contribution_percent",
+    "roi_on_ft_pct",
+    "winnings_from_itm",
+    "winnings_from_ko_total",
+    // Phase B: stage / conversion / attempt
+    "avg_ko_attempts_per_ft",
+    "early_ft_bust_count",
+    "early_ft_bust_per_tournament",
+    "ft_stack_conversion",
+    "ft_stack_conversion_3_4",
+    "ft_stack_conversion_3_4_attempts",
+    "ft_stack_conversion_5_6",
+    "ft_stack_conversion_5_6_attempts",
+    "ft_stack_conversion_7_9",
+    "ft_stack_conversion_7_9_attempts",
+    "ko_attempts_success_rate",
+    "ko_stage_2_3_attempts_per_tournament",
+    "ko_stage_2_3_event_count",
+    "ko_stage_2_3_money_total",
+    "ko_stage_3_4_attempts_per_tournament",
+    "ko_stage_3_4_event_count",
+    "ko_stage_3_4_money_total",
+    "ko_stage_4_5_attempts_per_tournament",
+    "ko_stage_4_5_event_count",
+    "ko_stage_4_5_money_total",
+    "ko_stage_5_6_attempts_per_tournament",
+    "ko_stage_5_6_event_count",
+    "ko_stage_5_6_money_total",
+    "ko_stage_6_9_event_count",
+    "ko_stage_6_9_money_total",
+    "ko_stage_7_9_attempts_per_tournament",
+    "ko_stage_7_9_event_count",
+    "ko_stage_7_9_money_total",
+    "pre_ft_ko_count",
+    // Phase C: KO-money / adjusted / Big KO
+    "big_ko_x1000_count",
+    "big_ko_x100_count",
+    "big_ko_x10000_count",
+    "big_ko_x10_count",
+    "big_ko_x1_5_count",
+    "big_ko_x2_count",
+    "ko_contribution_adjusted_percent",
+    "ko_luck_money_delta",
+    "pre_ft_chipev",
+    "roi_adj_pct",
+];
+
+pub const EXPECTED_MODULE_COUNT: usize = 31;
+pub const EXPECTED_KEY_COUNT: usize = 60;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HandFeatureFacts {
     pub hand_id: Uuid,

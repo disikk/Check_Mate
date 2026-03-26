@@ -428,8 +428,61 @@ fn parses_summary_seat_result_lines_into_structured_outcomes() {
     assert!(
         hand.parse_warnings
             .iter()
-            .any(|warning| warning.contains("unparsed_summary_seat_line"))
+            .any(|warning| warning == "unparsed_summary_seat_tail: Seat 9: VillainX (button) ???")
     );
+}
+
+#[test]
+fn unknown_summary_tail_uses_tail_specific_warning_when_head_is_valid() {
+    let hand = parse_canonical_hand(&summary_unknown_tail_hand_text()).unwrap();
+
+    assert_eq!(hand.summary_seat_outcomes.len(), 2);
+    assert!(
+        hand.summary_seat_outcomes
+            .iter()
+            .any(|outcome| outcome.seat_no == 2
+                && outcome.outcome_kind
+                    == tracker_parser_core::models::SummarySeatOutcomeKind::Folded)
+    );
+    assert!(
+        hand.summary_seat_outcomes
+            .iter()
+            .any(|outcome| outcome.seat_no == 3
+                && outcome.outcome_kind
+                    == tracker_parser_core::models::SummarySeatOutcomeKind::Collected)
+    );
+    assert!(
+        hand.parse_warnings.iter().any(|warning| {
+            warning == "unparsed_summary_seat_tail: Seat 1: Hero (button) celebrated the win"
+        }),
+        "expected tail-specific warning, got {:?}",
+        hand.parse_warnings
+    );
+    assert!(
+        !hand.parse_warnings.iter().any(|warning| {
+            warning == "unparsed_summary_seat_line: Seat 1: Hero (button) celebrated the win"
+        }),
+        "head-valid unknown tail must not downgrade to line-level warning: {:?}",
+        hand.parse_warnings
+    );
+}
+
+#[test]
+fn parses_showed_collected_summary_tail_as_showed_won_surface() {
+    let hand = parse_canonical_hand(&summary_showed_collected_hand_text()).unwrap();
+    let outcome = hand
+        .summary_seat_outcomes
+        .iter()
+        .find(|outcome| outcome.seat_no == 1)
+        .unwrap();
+
+    assert_eq!(
+        outcome.outcome_kind,
+        tracker_parser_core::models::SummarySeatOutcomeKind::ShowedWon
+    );
+    assert_eq!(outcome.shown_cards, Some(vec!["Ah".to_string(), "Ad".to_string()]));
+    assert_eq!(outcome.won_amount, Some(300));
+    assert!(hand.parse_warnings.is_empty(), "got {:?}", hand.parse_warnings);
 }
 
 #[test]
@@ -629,6 +682,42 @@ Seat 7: VillainF mucked
 Seat 8: VillainG collected (200)
 Seat 2: Hero lost
 Seat 9: VillainX (button) ???"#.to_string()
+}
+
+fn summary_unknown_tail_hand_text() -> String {
+    r#"Poker Hand #BRSUMTAIL1: Tournament #999102, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:31:00
+Table '1' 3-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: VillainA (1,000 in chips)
+Seat 3: VillainB (1,000 in chips)
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+*** SHOWDOWN ***
+VillainB collected 300 from pot
+*** SUMMARY ***
+Total pot 300 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) celebrated the win
+Seat 2: VillainA (small blind) folded before Flop
+Seat 3: VillainB (big blind) collected (300)"#
+        .to_string()
+}
+
+fn summary_showed_collected_hand_text() -> String {
+    r#"Poker Hand #BRSUMTAIL2: Tournament #999103, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:32:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Villain (1,000 in chips)
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+*** SHOWDOWN ***
+Hero collected 300 from pot
+*** SUMMARY ***
+Total pot 300 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and collected (300)
+Seat 2: Villain lost"#
+        .to_string()
 }
 
 fn cm04_parser_surface_hand_text() -> String {

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use thiserror::Error;
 
-use crate::models::{HandPosition, PositionCode};
+use crate::models::{HandPosition, PositionLabel};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PositionSeatInput {
@@ -12,7 +12,7 @@ pub struct PositionSeatInput {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum PositionError {
-    #[error("table must have between 2 and 9 active seats, found {active_seats}")]
+    #[error("table must have between 2 and 10 active seats, found {active_seats}")]
     UnsupportedActiveSeatCount { active_seats: usize },
     #[error("button seat {button_seat} is out of range for a {max_seats}-max table")]
     ButtonSeatOutOfRange { button_seat: u8, max_seats: u8 },
@@ -62,7 +62,7 @@ pub fn compute_position_facts(
         .filter_map(|(seat_no, is_active)| is_active.then_some(*seat_no))
         .collect::<Vec<_>>();
 
-    if !(2..=9).contains(&active_seat_nos.len()) {
+    if !(2..=10).contains(&active_seat_nos.len()) {
         return Err(PositionError::UnsupportedActiveSeatCount {
             active_seats: active_seat_nos.len(),
         });
@@ -72,7 +72,7 @@ pub fn compute_position_facts(
     }
 
     let active_order = clockwise_active_order(max_seats, button_seat, &seat_active);
-    let position_codes = position_codes_for_active_count(active_order.len())?;
+    let position_labels = position_labels_for_active_count(active_order.len())?;
     let preflop_order = preflop_action_order(&active_order);
     let postflop_order = postflop_action_order(&active_order);
 
@@ -81,10 +81,12 @@ pub fn compute_position_facts(
 
     let mut positions = active_order
         .into_iter()
-        .zip(position_codes)
-        .map(|(seat_no, position_code)| HandPosition {
+        .zip(position_labels)
+        .enumerate()
+        .map(|(index, (seat_no, position_label))| HandPosition {
             seat_no,
-            position_code,
+            position_index: (index + 1) as u8,
+            position_label,
             preflop_act_order_index: preflop_index_by_seat[&seat_no],
             postflop_act_order_index: postflop_index_by_seat[&seat_no],
         })
@@ -148,62 +150,74 @@ fn order_index_map(order: &[u8]) -> BTreeMap<u8, u8> {
         .collect()
 }
 
-fn position_codes_for_active_count(
+fn position_labels_for_active_count(
     active_count: usize,
-) -> Result<Vec<PositionCode>, PositionError> {
-    let codes = match active_count {
-        2 => vec![PositionCode::Btn, PositionCode::Bb],
-        3 => vec![PositionCode::Btn, PositionCode::Sb, PositionCode::Bb],
+) -> Result<Vec<PositionLabel>, PositionError> {
+    let labels = match active_count {
+        2 => vec![PositionLabel::Btn, PositionLabel::Bb],
+        3 => vec![PositionLabel::Btn, PositionLabel::Sb, PositionLabel::Bb],
         4 => vec![
-            PositionCode::Btn,
-            PositionCode::Sb,
-            PositionCode::Bb,
-            PositionCode::Co,
+            PositionLabel::Btn,
+            PositionLabel::Sb,
+            PositionLabel::Bb,
+            PositionLabel::Co,
         ],
         5 => vec![
-            PositionCode::Btn,
-            PositionCode::Sb,
-            PositionCode::Bb,
-            PositionCode::Hj,
-            PositionCode::Co,
+            PositionLabel::Btn,
+            PositionLabel::Sb,
+            PositionLabel::Bb,
+            PositionLabel::Hj,
+            PositionLabel::Co,
         ],
         6 => vec![
-            PositionCode::Btn,
-            PositionCode::Sb,
-            PositionCode::Bb,
-            PositionCode::Lj,
-            PositionCode::Hj,
-            PositionCode::Co,
+            PositionLabel::Btn,
+            PositionLabel::Sb,
+            PositionLabel::Bb,
+            PositionLabel::Lj,
+            PositionLabel::Hj,
+            PositionLabel::Co,
         ],
         7 => vec![
-            PositionCode::Btn,
-            PositionCode::Sb,
-            PositionCode::Bb,
-            PositionCode::Mp,
-            PositionCode::Lj,
-            PositionCode::Hj,
-            PositionCode::Co,
+            PositionLabel::Btn,
+            PositionLabel::Sb,
+            PositionLabel::Bb,
+            PositionLabel::Mp,
+            PositionLabel::Lj,
+            PositionLabel::Hj,
+            PositionLabel::Co,
         ],
         8 => vec![
-            PositionCode::Btn,
-            PositionCode::Sb,
-            PositionCode::Bb,
-            PositionCode::UtgPlus1,
-            PositionCode::Mp,
-            PositionCode::Lj,
-            PositionCode::Hj,
-            PositionCode::Co,
+            PositionLabel::Btn,
+            PositionLabel::Sb,
+            PositionLabel::Bb,
+            PositionLabel::UtgPlus1,
+            PositionLabel::Mp,
+            PositionLabel::Lj,
+            PositionLabel::Hj,
+            PositionLabel::Co,
         ],
         9 => vec![
-            PositionCode::Btn,
-            PositionCode::Sb,
-            PositionCode::Bb,
-            PositionCode::Utg,
-            PositionCode::UtgPlus1,
-            PositionCode::Mp,
-            PositionCode::Lj,
-            PositionCode::Hj,
-            PositionCode::Co,
+            PositionLabel::Btn,
+            PositionLabel::Sb,
+            PositionLabel::Bb,
+            PositionLabel::Utg,
+            PositionLabel::UtgPlus1,
+            PositionLabel::Mp,
+            PositionLabel::Lj,
+            PositionLabel::Hj,
+            PositionLabel::Co,
+        ],
+        10 => vec![
+            PositionLabel::Btn,
+            PositionLabel::Sb,
+            PositionLabel::Bb,
+            PositionLabel::Utg,
+            PositionLabel::UtgPlus1,
+            PositionLabel::UtgPlus2,
+            PositionLabel::Mp,
+            PositionLabel::MpPlus1,
+            PositionLabel::Hj,
+            PositionLabel::Co,
         ],
         _ => {
             return Err(PositionError::UnsupportedActiveSeatCount {
@@ -212,5 +226,5 @@ fn position_codes_for_active_count(
         }
     };
 
-    Ok(codes)
+    Ok(labels)
 }

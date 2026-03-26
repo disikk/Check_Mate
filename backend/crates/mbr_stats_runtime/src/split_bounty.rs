@@ -85,4 +85,60 @@ mod tests {
         assert!(outcome.expected_cents > 333.0);
         assert!(outcome.expected_cents < 334.0);
     }
+
+    // --- F3-T1: Synthetic edge-case tests for split bounty ---
+
+    #[test]
+    fn zero_envelope_returns_zero_exact() {
+        let outcome = project_split_bounty_share(0, 500_000);
+        assert_eq!(outcome.kind, SplitBountyShareKind::ExactIntegral);
+        assert_eq!(outcome.exact_cents, Some(0));
+    }
+
+    #[test]
+    fn zero_share_returns_zero_exact() {
+        let outcome = project_split_bounty_share(1_000, 0);
+        assert_eq!(outcome.kind, SplitBountyShareKind::ExactIntegral);
+        assert_eq!(outcome.exact_cents, Some(0));
+    }
+
+    #[test]
+    fn full_share_returns_full_envelope_exact() {
+        // share_micros = 1_000_000 means 100% share → full envelope
+        let outcome = project_split_bounty_share(5_000, 1_000_000);
+        assert_eq!(outcome.kind, SplitBountyShareKind::ExactIntegral);
+        assert_eq!(outcome.exact_cents, Some(5_000));
+    }
+
+    #[test]
+    fn half_share_on_even_envelope_is_exact() {
+        let outcome = project_split_bounty_share(1_000, 500_000);
+        assert_eq!(outcome.kind, SplitBountyShareKind::ExactIntegral);
+        assert_eq!(outcome.exact_cents, Some(500));
+    }
+
+    #[test]
+    fn half_share_on_odd_envelope_is_estimated() {
+        // 1001 cents / 2 = 500.5 → ugly cent split
+        let outcome = project_split_bounty_share(1_001, 500_000);
+        assert_eq!(
+            outcome.kind,
+            SplitBountyShareKind::EstimatedFloorCeilInterval
+        );
+        assert_eq!(outcome.exact_cents, None);
+        assert_eq!(outcome.min_cents, 500);
+        assert_eq!(outcome.max_cents, 501);
+    }
+
+    #[test]
+    fn third_share_is_always_estimated_for_non_divisible() {
+        // 100 cents / 3 ≈ 33.33 → estimated
+        let outcome = project_split_bounty_share(100, 333_333);
+        assert_eq!(
+            outcome.kind,
+            SplitBountyShareKind::EstimatedFloorCeilInterval
+        );
+        assert!(outcome.expected_cents > 33.0);
+        assert!(outcome.expected_cents < 34.0);
+    }
 }

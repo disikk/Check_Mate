@@ -512,10 +512,10 @@ stat_modules:
       - avg_ko_attempts_per_ft
       - ko_attempts_success_rate
     formal_formula:
-      avg_ko_attempts_per_ft: "count(exact KO attempts on FT hands with is_stage_6_9 = true) / count(tournaments where reached_ft_exact)"
-      ko_attempts_success_rate: "count(exact KO events on FT hands with is_stage_6_9 = true) / count(exact KO attempts on FT hands with is_stage_6_9 = true)"
+      avg_ko_attempts_per_ft: "count(formal KO attempts on FT hands with is_stage_6_9 = true) / count(tournaments where reached_ft_exact)"
+      ko_attempts_success_rate: "count(exact KO events on FT hands with is_stage_6_9 = true) / count(formal KO attempts on FT hands with is_stage_6_9 = true)"
     numerator_definition:
-      avg_ko_attempts_per_ft: "Total exact KO attempts during early FT."
+      avg_ko_attempts_per_ft: "Total formal KO attempts during early FT. Formal attempt = target all-in + hero covers + hero in credit pot + hero did not fold."
       ko_attempts_success_rate: "Total exact KO events during early FT."
     denominator_definition:
       avg_ko_attempts_per_ft: "Count of tournaments with `reached_ft_exact = true`."
@@ -529,15 +529,16 @@ stat_modules:
       ko_attempts_success_rate: coverage_limited_exact
     source_dependencies:
       - core.hand_actions.is_all_in
-      - core.hand_pot_eligibility
+      - core.hand_actions.action_type (fold exclusion)
+      - core.hand_pot_eligibility (credit pot = MAX pot_no for target)
       - core.hand_seats.starting_stack
       - derived.stage_predicates.is_stage_6_9
       - derived.hand_eliminations
       - derived.mbr_tournament_ft_helper.reached_ft_exact
     nullability_rules:
       avg_ko_attempts_per_ft: "NULL when no tournament reaches FT exactly."
-      ko_attempts_success_rate: "NULL when no exact early-FT KO attempts exist."
-    partial_coverage_behavior: "Mapped query-time from exact action/pot-derived KO attempts; no persisted attempt stats or legacy proxy bundle remains in runtime."
+      ko_attempts_success_rate: "NULL when no formal KO attempts exist."
+    partial_coverage_behavior: "Formal KO attempt contract (F1-T3): target all-in + hero covers + hero in credit pot (MAX pot_no) + hero did not fold. Query-time only, not materialized."
     fixture_expectations:
       - "Three attempts and one KO over one FT tournament produce avg_ko_attempts_per_ft = 3 and success_rate = 1/3."
       - "No-attempt fixture returns NULL success rate, not 0."

@@ -105,7 +105,7 @@ impl AllInReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub enum PositionCode {
+pub enum PositionLabel {
     #[serde(rename = "BTN")]
     Btn,
     #[serde(rename = "SB")]
@@ -116,8 +116,12 @@ pub enum PositionCode {
     Utg,
     #[serde(rename = "UTG+1")]
     UtgPlus1,
+    #[serde(rename = "UTG+2")]
+    UtgPlus2,
     #[serde(rename = "MP")]
     Mp,
+    #[serde(rename = "MP+1")]
+    MpPlus1,
     #[serde(rename = "LJ")]
     Lj,
     #[serde(rename = "HJ")]
@@ -126,7 +130,7 @@ pub enum PositionCode {
     Co,
 }
 
-impl PositionCode {
+impl PositionLabel {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Btn => "BTN",
@@ -134,7 +138,9 @@ impl PositionCode {
             Self::Bb => "BB",
             Self::Utg => "UTG",
             Self::UtgPlus1 => "UTG+1",
+            Self::UtgPlus2 => "UTG+2",
             Self::Mp => "MP",
+            Self::MpPlus1 => "MP+1",
             Self::Lj => "LJ",
             Self::Hj => "HJ",
             Self::Co => "CO",
@@ -145,7 +151,8 @@ impl PositionCode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HandPosition {
     pub seat_no: u8,
-    pub position_code: PositionCode,
+    pub position_index: u8,
+    pub position_label: PositionLabel,
     pub preflop_act_order_index: u8,
     pub postflop_act_order_index: u8,
 }
@@ -332,10 +339,16 @@ pub struct HandOutcomeActual {
 pub struct HandElimination {
     pub eliminated_seat_no: u8,
     pub eliminated_player_name: String,
+    /// Все pot'ы, в которые busted player внёсся (диагностический след).
     pub resolved_by_pot_nos: Vec<u8>,
+    /// Pot, по которому считается KO-credit: highest pot_no из resolved_by_pot_nos.
+    /// Правило GG: bounty делится между winners последнего side pot, содержащего chips busted player.
+    pub ko_credit_pot_no: Option<u8>,
+    /// Winners именно ko_credit_pot — основание для KO-credit attribution.
     pub ko_involved_winners: Vec<String>,
     pub hero_ko_share_total: Option<f64>,
     pub joint_ko: bool,
+    /// Backward-compat: single-pot KO → pot_no; multi-pot → None.
     pub resolved_by_pot_no: Option<u8>,
     pub ko_involved_winner_count: u8,
     pub hero_involved: bool,

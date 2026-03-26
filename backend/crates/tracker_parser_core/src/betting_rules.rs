@@ -72,7 +72,7 @@ impl LegalityEngine {
             .collect::<BTreeMap<_, _>>();
         let mut preflop_positions = positions.clone();
         let mut button_positions = positions.clone();
-        button_positions.sort_by_key(|position| button_order_rank(position.position_code.as_str()));
+        button_positions.sort_by_key(|position| position.position_index);
         let button_order = button_positions
             .into_iter()
             .filter_map(|position| player_by_seat.get(&position.seat_no).cloned())
@@ -782,21 +782,6 @@ fn street_code(street: Street) -> &'static str {
         Street::River => "river",
         Street::Showdown => "showdown",
         Street::Summary => "summary",
-    }
-}
-
-fn button_order_rank(position_code: &str) -> u8 {
-    match position_code {
-        "BTN" => 0,
-        "SB" => 1,
-        "BB" => 2,
-        "UTG" => 3,
-        "UTG+1" => 4,
-        "MP" => 5,
-        "LJ" => 6,
-        "HJ" => 7,
-        "CO" => 8,
-        _ => 255,
     }
 }
 
