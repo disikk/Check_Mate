@@ -1,13 +1,12 @@
 use std::{env, fs, process::ExitCode};
 
 use anyhow::{Context, Result};
+use parser_worker::local_import;
 use serde::Serialize;
 use tracker_parser_core::{
     SourceKind, detect_source_kind,
     parsers::{hand_history::split_hand_history, tournament_summary::parse_tournament_summary},
 };
-
-mod local_import;
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

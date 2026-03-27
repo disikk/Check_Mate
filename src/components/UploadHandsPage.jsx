@@ -1,297 +1,175 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  HAND_UPLOAD_CALLBACKS,
-  HAND_UPLOAD_STAGES,
-  simulateHandUpload,
-} from '../services/mockHandUpload'
 
-const initialBatchState = {
-  status: 'idle',
-  progress: 0,
-  totalFiles: 0,
-  completedFiles: 0,
-  currentStage: 'Ожидание файлов',
-}
+import {
+  createBundleUpload,
+  fetchSessionContext,
+  subscribeToBundle,
+} from '../services/uploadApi'
+import {
+  applyBundleEvent,
+  applyBundleSnapshot,
+  createTransferViewState,
+  initialUploadViewState,
+} from '../services/uploadState'
 
 const statusMeta = {
   idle: { label: 'Ожидание', tone: 'neutral' },
   queued: { label: 'В очереди', tone: 'neutral' },
   processing: { label: 'В работе', tone: 'info' },
   completed: { label: 'Готово', tone: 'success' },
-  cancelled: { label: 'Остановлено', tone: 'warning' },
+  failed: { label: 'Ошибка', tone: 'warning' },
 }
 
-function createId(prefix) {
-  return `${prefix}-${Date.now()}-${Math.round(Math.random() * 100000)}`
-}
+const REAL_UPLOAD_STAGES = [
+  'Передача файла',
+  'Проверка структуры',
+  'Парсинг раздач',
+  'Подготовка индекса',
+]
 
-function formatFileSize(size) {
-  if (size >= 1024 * 1024) {
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`
-  }
-
-  if (size >= 1024) {
-    return `${Math.round(size / 1024)} KB`
-  }
-
-  return `${size} B`
-}
-
-function createLogEntry(message, tone = 'neutral') {
-  return {
-    id: createId('log'),
-    time: new Date().toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }),
-    message,
-    tone,
-  }
-}
+const REAL_UPLOAD_EVENTS = [
+  {
+    name: 'bundle_snapshot',
+    description: 'Первичный снимок партии для UI сразу после подключения WebSocket.',
+  },
+  {
+    name: 'bundle_updated',
+    description: 'Обновляет общий статус, прогресс и текущую стадию партии.',
+  },
+  {
+    name: 'file_updated',
+    description: 'Обновляет статус конкретного файла или member внутри ZIP.',
+  },
+  {
+    name: 'diagnostic_logged',
+    description: 'Показывает persisted diagnostics, например пропущенные ZIP members.',
+  },
+  {
+    name: 'bundle_terminal',
+    description: 'Фиксирует финальный статус партии после `bundle_finalize`.',
+  },
+]
 
 export default function UploadHandsPage() {
   const inputRef = useRef(null)
-  const cancelUploadRef = useRef(null)
-  const sessionRef = useRef(0)
+  const socketDisposeRef = useRef(null)
 
   const [dragActive, setDragActive] = useState(false)
-  const [batchState, setBatchState] = useState(initialBatchState)
-  const [files, setFiles] = useState([])
-  const [activityLog, setActivityLog] = useState([])
+  const [viewState, setViewState] = useState(initialUploadViewState)
+  const [sessionInfo, setSessionInfo] = useState(null)
+  const [errorMessage, setErrorMessage] = useState('')
 
-  useEffect(() => (
-    () => {
-      cancelUploadRef.current?.()
-      sessionRef.current += 1
+  const { batchState, files, activityLog } = viewState
+
+  useEffect(() => {
+    let active = true
+
+    fetchSessionContext()
+      .then((session) => {
+        if (active) {
+          setSessionInfo(session)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSessionInfo(null)
+        }
+      })
+
+    return () => {
+      active = false
+      socketDisposeRef.current?.()
+      socketDisposeRef.current = null
     }
-  ), [])
-
-  const appendLog = (message, tone = 'neutral') => {
-    setActivityLog((prev) => [
-      createLogEntry(message, tone),
-      ...prev,
-    ].slice(0, 12))
-  }
-
-  const updateFile = (fileId, patch) => {
-    setFiles((prev) => prev.map((item) => (
-      item.id === fileId
-        ? { ...item, ...patch }
-        : item
-    )))
-  }
+  }, [])
 
   const resetQueue = () => {
-    cancelUploadRef.current?.()
-    cancelUploadRef.current = null
-    sessionRef.current += 1
-    setFiles([])
-    setBatchState(initialBatchState)
-    setActivityLog([createLogEntry('Очередь очищена.', 'neutral')])
+    socketDisposeRef.current?.()
+    socketDisposeRef.current = null
+    setErrorMessage('')
+    setViewState(initialUploadViewState)
   }
 
-  const cancelUpload = () => {
-    if (batchState.status !== 'processing') {
-      return
-    }
-
-    cancelUploadRef.current?.()
-    cancelUploadRef.current = null
-    sessionRef.current += 1
-    setBatchState((prev) => ({
-      ...prev,
-      status: 'cancelled',
-      currentStage: 'Загрузка остановлена пользователем',
-    }))
-    setFiles((prev) => prev.map((item) => (
-      item.status === 'completed'
-        ? item
-        : { ...item, status: 'cancelled', stageLabel: 'Остановлено', progress: item.progress }
-    )))
-    appendLog('Текущая загрузка остановлена.', 'warning')
-  }
-
-  const beginUpload = (selectedFiles) => {
+  const beginUpload = async (selectedFiles) => {
     if (!selectedFiles.length) {
       return
     }
 
-    cancelUploadRef.current?.()
+    socketDisposeRef.current?.()
+    socketDisposeRef.current = null
+    setErrorMessage('')
+    setViewState(createTransferViewState(selectedFiles))
 
-    const sessionId = sessionRef.current + 1
-    sessionRef.current = sessionId
+    try {
+      const response = await createBundleUpload(selectedFiles)
+      setViewState((current) => applyBundleSnapshot(current, response.snapshot))
 
-    const nextFiles = selectedFiles.map((file, index) => ({
-      id: `${file.name}-${file.lastModified}-${index}`,
-      file,
-      name: file.name,
-      size: file.size,
-      readableSize: formatFileSize(file.size),
-      progress: 0,
-      stageLabel: 'Ожидает обработки',
-      status: 'queued',
-    }))
+      socketDisposeRef.current = subscribeToBundle(response.bundle_id, {
+        onMessage: (message) => {
+          setViewState((current) => applyBundleEvent(current, message))
 
-    setFiles(nextFiles)
-    setBatchState({
-      status: 'processing',
-      progress: 0,
-      totalFiles: nextFiles.length,
-      completedFiles: 0,
-      currentStage: 'Подготовка пакета к загрузке',
-    })
-    setActivityLog([
-      createLogEntry(`Новая партия: ${nextFiles.length} файл(ов).`, 'info'),
-    ])
-
-    const isActiveSession = () => sessionRef.current === sessionId
-
-    cancelUploadRef.current = simulateHandUpload(nextFiles, {
-      onBatchStart: ({ totalFiles }) => {
-        if (!isActiveSession()) {
-          return
-        }
-
-        appendLog(`Upload pipeline запущен для ${totalFiles} файл(ов).`, 'info')
-      },
-      onFileStart: ({ fileId, fileIndex, totalFiles, file }) => {
-        if (!isActiveSession()) {
-          return
-        }
-
-        updateFile(fileId, {
-          status: 'processing',
-          stageLabel: 'Файл принят в работу',
-        })
-
-        appendLog(
-          `Файл ${fileIndex + 1}/${totalFiles}: ${file.name} принят в работу.`,
-          'info',
-        )
-      },
-      onFileStage: ({ fileId, stageLabel, file }) => {
-        if (!isActiveSession()) {
-          return
-        }
-
-        updateFile(fileId, {
-          status: 'processing',
-          stageLabel,
-        })
-
-        setBatchState((prev) => ({
-          ...prev,
-          currentStage: `${stageLabel} / ${file.name}`,
-        }))
-      },
-      onFileProgress: ({ fileId, fileProgress, stageLabel, batchProgress }) => {
-        if (!isActiveSession()) {
-          return
-        }
-
-        updateFile(fileId, {
-          progress: fileProgress,
-          stageLabel,
-        })
-
-        setBatchState((prev) => ({
-          ...prev,
-          progress: batchProgress,
-        }))
-      },
-      onBatchProgress: ({ batchProgress, completedFiles }) => {
-        if (!isActiveSession()) {
-          return
-        }
-
-        setBatchState((prev) => ({
-          ...prev,
-          progress: batchProgress,
-          completedFiles,
-        }))
-      },
-      onFileComplete: ({ fileId, file, fileIndex, totalFiles, batchProgress }) => {
-        if (!isActiveSession()) {
-          return
-        }
-
-        updateFile(fileId, {
-          status: 'completed',
-          stageLabel: 'Файл готов к импорту',
-          progress: 100,
-        })
-
-        setBatchState((prev) => ({
-          ...prev,
-          progress: batchProgress,
-          completedFiles: fileIndex + 1,
-          currentStage: `Готово: ${file.name}`,
-        }))
-
-        appendLog(
-          `Файл ${fileIndex + 1}/${totalFiles}: ${file.name} успешно подготовлен.`,
-          'success',
-        )
-      },
-      onBatchComplete: ({ totalFiles, completedFiles, batchProgress }) => {
-        if (!isActiveSession()) {
-          return
-        }
-
-        cancelUploadRef.current = null
-        setBatchState({
-          status: 'completed',
-          progress: batchProgress,
-          totalFiles,
-          completedFiles,
-          currentStage: 'Все файлы подготовлены к импорту',
-        })
-        appendLog('Вся партия готова. Фронтовый callback-flow отработал полностью.', 'success')
-      },
-      onCancelled: () => {
-        if (!isActiveSession()) {
-          return
-        }
-
-        cancelUploadRef.current = null
-      },
-    })
+          if (message.type === 'bundle_terminal') {
+            socketDisposeRef.current?.()
+            socketDisposeRef.current = null
+          }
+        },
+        onError: (error) => {
+          setErrorMessage(error.message)
+        },
+        onClose: () => {
+          socketDisposeRef.current = null
+        },
+      })
+    } catch (error) {
+      setErrorMessage(error.message)
+      setViewState((current) => ({
+        ...current,
+        batchState: {
+          ...current.batchState,
+          status: 'failed',
+          currentStage: 'Ошибка загрузки',
+        },
+      }))
+    }
   }
 
   const handleInputChange = (event) => {
-    beginUpload(Array.from(event.target.files ?? []))
+    void beginUpload(Array.from(event.target.files ?? []))
     event.target.value = ''
   }
 
   const handleDrop = (event) => {
     event.preventDefault()
     setDragActive(false)
-    beginUpload(Array.from(event.dataTransfer.files ?? []))
+    void beginUpload(Array.from(event.dataTransfer.files ?? []))
   }
 
-  const isBusy = batchState.status === 'processing'
+  const isBusy = batchState.status === 'queued' || batchState.status === 'processing'
 
   return (
     <div className="page-shell">
       <section className="bento-card page-intro-card">
         <div>
           <div className="page-eyebrow">Hand history intake</div>
-          <h1 className="page-heading">Загрузка рук с подготовленным callback-flow</h1>
+          <h1 className="page-heading">Загрузка рук через реальный backend ingest flow</h1>
           <p className="page-description">
-            UI уже умеет принимать файлы кликом или перетаскиванием и получать
-            события прогресса загрузки и парсинга. Пока используется mocked pipeline,
-            чтобы фронт был готов к подключению backend.
+            Страница больше не использует mocked pipeline. Файлы уходят в Rust backend,
+            партия создаётся в PostgreSQL, а прогресс и события прилетают обратно через
+            WebSocket поверх persisted ingest events.
           </p>
         </div>
         <div className="page-stat-list">
           <div className="page-stat-pill">
             <span>Текущий режим</span>
-            <strong>Frontend ready</strong>
+            <strong>Real backend</strong>
           </div>
           <div className="page-stat-pill">
             <span>Прогресс</span>
             <strong>{batchState.progress}%</strong>
+          </div>
+          <div className="page-stat-pill">
+            <span>Сессия</span>
+            <strong>{sessionInfo?.player_screen_name ?? 'Stub session'}</strong>
           </div>
         </div>
       </section>
@@ -319,7 +197,7 @@ export default function UploadHandsPage() {
             ref={inputRef}
             type="file"
             multiple
-            accept=".txt,.hh,.zip,.json"
+            accept=".txt,.hh,.zip"
             hidden
             onChange={handleInputChange}
           />
@@ -327,8 +205,8 @@ export default function UploadHandsPage() {
           <div className="upload-dropzone-icon">HH</div>
           <h2 className="upload-dropzone-title">Перетащите hand history сюда</h2>
           <p className="upload-dropzone-text">
-            Или откройте файловый диалог. После выбора файлов страница запускает
-            mocked upload/parser pipeline и обновляет интерфейс через коллбеки.
+            Поддерживаются `.txt`, `.hh` и `.zip`. ZIP может содержать mix из HH/TS,
+            а неподдержанные members будут пропущены с видимыми diagnostics.
           </p>
 
           <div className="upload-dropzone-actions">
@@ -347,43 +225,39 @@ export default function UploadHandsPage() {
             >
               Очистить
             </button>
-            <button
-              className="action-btn action-btn-danger"
-              type="button"
-              onClick={cancelUpload}
-              disabled={!isBusy}
-            >
-              Остановить
-            </button>
+          </div>
+
+          <div className="upload-helper-text">
+            {errorMessage || 'Остановка server-side ещё не подключена в этом срезе.'}
           </div>
         </section>
 
         <aside className="bento-card upload-contract-card">
           <div className="card-header">
-            <span className="card-title">Callback контракт</span>
+            <span className="card-title">Runtime контракт</span>
             <span className={`status-chip tone-${statusMeta[batchState.status]?.tone ?? 'neutral'}`}>
               {statusMeta[batchState.status]?.label ?? 'Неизвестно'}
             </span>
           </div>
 
           <div className="upload-contract-section">
-            <div className="upload-section-label">Стадии mocked pipeline</div>
+            <div className="upload-section-label">Стадии ingest flow</div>
             <div className="stage-pill-list">
-              {HAND_UPLOAD_STAGES.map((stage) => (
-                <span key={stage.id} className="stage-pill">
-                  {stage.label}
+              {REAL_UPLOAD_STAGES.map((stage) => (
+                <span key={stage} className="stage-pill">
+                  {stage}
                 </span>
               ))}
             </div>
           </div>
 
           <div className="upload-contract-section">
-            <div className="upload-section-label">События для фронта</div>
+            <div className="upload-section-label">События для UI</div>
             <div className="callback-list">
-              {HAND_UPLOAD_CALLBACKS.map((callback) => (
-                <div key={callback.name} className="callback-item">
-                  <code>{callback.name}</code>
-                  <span>{callback.description}</span>
+              {REAL_UPLOAD_EVENTS.map((event) => (
+                <div key={event.name} className="callback-item">
+                  <code>{event.name}</code>
+                  <span>{event.description}</span>
                 </div>
               ))}
             </div>
@@ -397,7 +271,7 @@ export default function UploadHandsPage() {
           <strong>{batchState.totalFiles}</strong>
         </div>
         <div className="bento-card upload-summary-card">
-          <span className="summary-label">Готово</span>
+          <span className="summary-label">Завершено</span>
           <strong>{batchState.completedFiles}/{batchState.totalFiles}</strong>
         </div>
         <div className="bento-card upload-summary-card">
@@ -414,12 +288,12 @@ export default function UploadHandsPage() {
         <section className="bento-card upload-list-card">
           <div className="card-header">
             <span className="card-title">Очередь файлов</span>
-            <span className="upload-helper-text">Прогресс и статус по каждому файлу</span>
+            <span className="upload-helper-text">Живой статус по каждому ingest member</span>
           </div>
 
           {!files.length && (
             <div className="empty-state">
-              Выберите или перетащите файлы, чтобы увидеть живой callback-flow.
+              Выберите или перетащите файлы, чтобы увидеть реальный upload/status flow.
             </div>
           )}
 
@@ -430,7 +304,9 @@ export default function UploadHandsPage() {
                   <div className="upload-file-top">
                     <div>
                       <div className="upload-file-name">{file.name}</div>
-                      <div className="upload-file-meta">{file.readableSize}</div>
+                      <div className="upload-file-meta">
+                        {file.readableSize || 'Размер уточняется после spool/scan'}
+                      </div>
                     </div>
                     <span className={`status-chip tone-${statusMeta[file.status]?.tone ?? 'neutral'}`}>
                       {statusMeta[file.status]?.label ?? file.status}
@@ -454,12 +330,12 @@ export default function UploadHandsPage() {
         <section className="bento-card upload-log-card">
           <div className="card-header">
             <span className="card-title">Журнал событий</span>
-            <span className="upload-helper-text">Последние callback-события</span>
+            <span className="upload-helper-text">Persisted ingest events и diagnostics</span>
           </div>
 
           {!activityLog.length && (
             <div className="empty-state">
-              После старта загрузки здесь появятся события pipeline.
+              После старта загрузки здесь появятся реальные backend-события.
             </div>
           )}
 

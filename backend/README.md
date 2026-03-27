@@ -80,12 +80,16 @@
 - generic hand/street query contract теперь живёт в `tracker_query_runtime`, возвращает стабильные `hand_id`-наборы и уже поддерживает `made hand / draw / missed draw / is_nut_hand / is_nut_draw`;
 - boundary KO persistence пока ограничена boundary v1 point estimate;
 - pure `big_ko` decoder ещё не подключён к final stat/materialization contract.
+- real upload/status vertical slice уже поднят:
+  - `tracker_web_api` принимает `.txt/.hh/.zip`, создаёт ingest bundles и стримит snapshot/events через WebSocket;
+  - `tracker_ingest_runner` — отдельный process-style runner, который дренирует queued ingest jobs;
+  - `UploadHandsPage` во фронте больше не использует `mockHandUpload.js`.
 
 ## Что нужно следующим слоем
 
-1. HTTP/API слой поверх `tracker_query_runtime`;
-2. web-facing upload/status layer поверх `tracker_ingest_runtime`;
-3. фронтенд-интеграция с реальным backend.
+1. hand/drilldown HTTP/API слой поверх `tracker_query_runtime`;
+2. реальная аналитическая интеграция FT/dashboard вместо mock data;
+3. auth / true session / cleanup / retention hardening для upload slice.
 
 ## Основные команды
 
@@ -96,6 +100,8 @@ bash scripts/run_wide_corpus_triage.sh
 cargo run -p parser_worker -- "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local "fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt"
+cargo run -p tracker_web_api --
+cargo run -p tracker_ingest_runner -- --once
 ```
 
 Canonical first-run path для проекта всё равно идёт **из корня репозитория** через:

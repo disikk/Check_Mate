@@ -1,5 +1,6 @@
 use anyhow::Result;
 use postgres::GenericClient;
+use serde_json::{Value as JsonValue, json};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +45,17 @@ impl FileJobStatus {
             Self::FailedTerminal => "failed_terminal",
         }
     }
+
+    fn from_db(value: &str) -> Self {
+        match value {
+            "queued" => Self::Queued,
+            "running" => Self::Running,
+            "succeeded" => Self::Succeeded,
+            "failed_retriable" => Self::FailedRetriable,
+            "failed_terminal" => Self::FailedTerminal,
+            other => panic!("unexpected file job status: {other}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +70,7 @@ pub enum FinalizeReadiness {
 pub enum FileKind {
     HandHistory,
     TournamentSummary,
+    Archive,
 }
 
 impl FileKind {
@@ -65,6 +78,16 @@ impl FileKind {
         match self {
             Self::HandHistory => "hh",
             Self::TournamentSummary => "ts",
+            Self::Archive => "archive",
+        }
+    }
+
+    fn from_db(value: &str) -> Self {
+        match value {
+            "hh" => Self::HandHistory,
+            "ts" => Self::TournamentSummary,
+            "archive" => Self::Archive,
+            other => panic!("unexpected file kind: {other}"),
         }
     }
 }
@@ -83,6 +106,23 @@ pub struct IngestFileInput {
     pub original_filename: String,
     pub byte_size: i64,
     pub storage_uri: String,
+    pub members: Vec<IngestMemberInput>,
+    pub diagnostics: Vec<IngestDiagnosticInput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IngestMemberInput {
+    pub member_path: String,
+    pub member_kind: FileKind,
+    pub sha256: String,
+    pub byte_size: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IngestDiagnosticInput {
+    pub code: String,
+    pub message: String,
+    pub member_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +137,7 @@ pub struct IngestBundleInput {
 pub struct EnqueuedFileJob {
     pub bundle_file_id: Uuid,
     pub source_file_id: Uuid,
+    pub source_file_member_id: Uuid,
     pub job_id: Uuid,
 }
 
@@ -120,15 +161,57 @@ pub struct BundleSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleFileDiagnostic {
+    pub code: Option<String>,
+    pub message: String,
+    pub member_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleFileSnapshot {
+    pub bundle_file_id: Uuid,
+    pub source_file_id: Uuid,
+    pub source_file_member_id: Uuid,
+    pub member_path: String,
+    pub status: FileJobStatus,
+    pub stage_label: String,
+    pub progress_percent: i32,
+    pub diagnostics: Vec<BundleFileDiagnostic>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PersistedIngestEvent {
+    pub sequence_no: i64,
+    pub event_kind: String,
+    pub message: String,
+    pub payload: JsonValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BundleSnapshot {
+    pub bundle_id: Uuid,
+    pub status: BundleStatus,
+    pub progress_percent: i32,
+    pub stage_label: String,
+    pub total_files: i64,
+    pub completed_files: i64,
+    pub files: Vec<BundleFileSnapshot>,
+    pub activity_log: Vec<PersistedIngestEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaimedJob {
     pub job_id: Uuid,
     pub bundle_id: Uuid,
     pub bundle_file_id: Option<Uuid>,
     pub source_file_id: Option<Uuid>,
+    pub source_file_member_id: Option<Uuid>,
     pub job_kind: JobKind,
     pub organization_id: Uuid,
     pub player_profile_id: Uuid,
     pub storage_uri: Option<String>,
+    pub source_file_kind: Option<FileKind>,
+    pub member_path: Option<String>,
     pub file_kind: Option<FileKind>,
     pub attempt_no: i32,
 }
@@ -256,8 +339,9 @@ pub fn enqueue_bundle(
         )?
         .get(0);
 
-    let mut file_jobs = Vec::with_capacity(input.files.len());
-    for (index, file) in input.files.iter().enumerate() {
+    let mut file_jobs = Vec::new();
+    let mut next_file_order_index: i32 = 0;
+    for file in &input.files {
         let source_file_id: Uuid = client
             .query_one(
                 "INSERT INTO import.source_files (
@@ -297,53 +381,426 @@ pub fn enqueue_bundle(
             )?
             .get(0);
 
-        let bundle_file_id: Uuid = client
-            .query_one(
-                "INSERT INTO import.ingest_bundle_files (
-                    bundle_id,
-                    source_file_id,
-                    file_order_index
-                )
-                VALUES ($1, $2, $3)
-                RETURNING id",
-                &[&bundle_id, &source_file_id, &(index as i32)],
-            )?
-            .get(0);
+        let executable_members = if matches!(file.file_kind, FileKind::Archive) {
+            file.members.clone()
+        } else {
+            vec![IngestMemberInput {
+                member_path: file.original_filename.clone(),
+                member_kind: file.file_kind,
+                sha256: file.sha256.clone(),
+                byte_size: file.byte_size,
+            }]
+        };
 
-        let job_id: Uuid = client
-            .query_one(
-                "INSERT INTO import.import_jobs (
-                    organization_id,
-                    bundle_id,
-                    bundle_file_id,
-                    source_file_id,
-                    job_kind,
-                    status,
-                    stage
-                )
-                VALUES ($1, $2, $3, $4, 'file_ingest', $5, 'queued')
-                RETURNING id",
-                &[
-                    &input.organization_id,
-                    &bundle_id,
-                    &bundle_file_id,
-                    &source_file_id,
-                    &FileJobStatus::Queued.as_str(),
-                ],
-            )?
-            .get(0);
+        for diagnostic in &file.diagnostics {
+            append_ingest_event(
+                client,
+                bundle_id,
+                None,
+                "diagnostic_logged",
+                &diagnostic.message,
+                &serde_json::json!({
+                    "code": diagnostic.code,
+                    "member_path": diagnostic.member_path,
+                }),
+            )?;
+        }
 
-        file_jobs.push(EnqueuedFileJob {
+        for (member_index, member) in executable_members.iter().enumerate() {
+            let source_file_member_id = upsert_source_file_member(
+                client,
+                source_file_id,
+                member_index as i32,
+                &member.member_path,
+                member.member_kind,
+                &member.sha256,
+                member.byte_size,
+            )?;
+
+            let bundle_file_id: Uuid = client
+                .query_one(
+                    "INSERT INTO import.ingest_bundle_files (
+                        bundle_id,
+                        source_file_id,
+                        source_file_member_id,
+                        file_order_index
+                    )
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id",
+                    &[
+                        &bundle_id,
+                        &source_file_id,
+                        &source_file_member_id,
+                        &next_file_order_index,
+                    ],
+                )?
+                .get(0);
+
+            let job_id: Uuid = client
+                .query_one(
+                    "INSERT INTO import.import_jobs (
+                        organization_id,
+                        bundle_id,
+                        bundle_file_id,
+                        source_file_id,
+                        source_file_member_id,
+                        job_kind,
+                        status,
+                        stage
+                    )
+                    VALUES ($1, $2, $3, $4, $5, 'file_ingest', $6, 'queued')
+                    RETURNING id",
+                    &[
+                        &input.organization_id,
+                        &bundle_id,
+                        &bundle_file_id,
+                        &source_file_id,
+                        &source_file_member_id,
+                        &FileJobStatus::Queued.as_str(),
+                    ],
+                )?
+                .get(0);
+
+            file_jobs.push(EnqueuedFileJob {
+                bundle_file_id,
+                source_file_id,
+                source_file_member_id,
+                job_id,
+            });
+
+            next_file_order_index += 1;
+        }
+    }
+
+    let bundle = EnqueuedBundle {
+        bundle_id,
+        file_jobs,
+    };
+
+    emit_bundle_event(
+        client,
+        bundle_id,
+        "bundle_updated",
+        "Партия файлов поставлена в очередь.",
+    )?;
+
+    Ok(bundle)
+}
+
+fn upsert_source_file_member(
+    client: &mut impl GenericClient,
+    source_file_id: Uuid,
+    member_index: i32,
+    member_path: &str,
+    member_kind: FileKind,
+    sha256: &str,
+    byte_size: i64,
+) -> Result<Uuid> {
+    Ok(client
+        .query_one(
+            "INSERT INTO import.source_file_members (
+                source_file_id,
+                member_index,
+                member_path,
+                member_kind,
+                sha256,
+                byte_size
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (source_file_id, member_index)
+            DO UPDATE SET
+                member_path = EXCLUDED.member_path,
+                member_kind = EXCLUDED.member_kind,
+                sha256 = EXCLUDED.sha256,
+                byte_size = EXCLUDED.byte_size
+            RETURNING id",
+            &[
+                &source_file_id,
+                &member_index,
+                &member_path,
+                &member_kind.as_str(),
+                &sha256,
+                &byte_size,
+            ],
+        )?
+        .get(0))
+}
+
+fn append_ingest_event(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+    bundle_file_id: Option<Uuid>,
+    event_kind: &str,
+    message: &str,
+    payload: &serde_json::Value,
+) -> Result<()> {
+    client.execute(
+        "INSERT INTO import.ingest_events (
+            bundle_id,
             bundle_file_id,
-            source_file_id,
-            job_id,
+            event_kind,
+            message,
+            payload
+        )
+        VALUES ($1, $2, $3, $4, ($5::text)::jsonb)",
+        &[&bundle_id, &bundle_file_id, &event_kind, &message, &payload.to_string()],
+    )?;
+
+    Ok(())
+}
+
+fn load_file_diagnostics(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+    bundle_file_id: Uuid,
+) -> Result<Vec<BundleFileDiagnostic>> {
+    let rows = client.query(
+        "SELECT message, payload::text
+         FROM import.ingest_events
+         WHERE bundle_id = $1
+           AND bundle_file_id = $2
+           AND event_kind = 'diagnostic_logged'
+         ORDER BY sequence_no",
+        &[&bundle_id, &bundle_file_id],
+    )?;
+
+    rows.into_iter()
+        .map(|row| {
+            let message: String = row.get(0);
+            let payload = parse_json_payload_text(&row.get::<_, String>(1));
+
+            Ok(BundleFileDiagnostic {
+                code: payload
+                    .get("code")
+                    .and_then(JsonValue::as_str)
+                    .map(ToOwned::to_owned),
+                message,
+                member_path: payload
+                    .get("member_path")
+                    .and_then(JsonValue::as_str)
+                    .map(ToOwned::to_owned),
+            })
+        })
+        .collect()
+}
+
+fn parse_json_payload_text(payload: &str) -> JsonValue {
+    serde_json::from_str(payload).unwrap_or_else(|_| JsonValue::Object(Default::default()))
+}
+
+fn file_stage_label(status: FileJobStatus, stage: &str) -> &'static str {
+    match status {
+        FileJobStatus::Queued => "Проверка структуры",
+        FileJobStatus::Running | FileJobStatus::FailedRetriable => match stage {
+            "queued" | "register" => "Проверка структуры",
+            "split" | "parse" | "normalize" | "derive" | "persist" => "Парсинг раздач",
+            "materialize_refresh" => "Подготовка индекса",
+            _ => "Парсинг раздач",
+        },
+        FileJobStatus::Succeeded => "Готово",
+        FileJobStatus::FailedTerminal => "Импорт завершился с ошибкой",
+    }
+}
+
+fn file_progress_percent(status: FileJobStatus, stage: &str) -> i32 {
+    match status {
+        FileJobStatus::Queued => 40,
+        FileJobStatus::Running | FileJobStatus::FailedRetriable => match stage {
+            "queued" | "register" => 40,
+            "split" | "parse" | "normalize" | "derive" | "persist" => 72,
+            "materialize_refresh" => 95,
+            "done" | "failed" => 100,
+            _ => 72,
+        },
+        FileJobStatus::Succeeded | FileJobStatus::FailedTerminal => 100,
+    }
+}
+
+fn bundle_stage_label(status: BundleStatus, files: &[BundleFileSnapshot]) -> String {
+    match status {
+        BundleStatus::Queued => "Проверка структуры".to_string(),
+        BundleStatus::Running => files
+            .iter()
+            .find(|file| {
+                matches!(
+                    file.status,
+                    FileJobStatus::Queued | FileJobStatus::Running | FileJobStatus::FailedRetriable
+                )
+            })
+            .map(|file| file.stage_label.clone())
+            .unwrap_or_else(|| "Парсинг раздач".to_string()),
+        BundleStatus::Finalizing => "Подготовка индекса".to_string(),
+        BundleStatus::Succeeded => "Готово".to_string(),
+        BundleStatus::PartialSuccess => "Готово с ошибками".to_string(),
+        BundleStatus::Failed => "Импорт завершился с ошибкой".to_string(),
+    }
+}
+
+fn bundle_progress_percent(status: BundleStatus, files: &[BundleFileSnapshot]) -> i32 {
+    match status {
+        BundleStatus::Succeeded | BundleStatus::PartialSuccess | BundleStatus::Failed => 100,
+        BundleStatus::Finalizing => 95,
+        BundleStatus::Queued | BundleStatus::Running => {
+            if files.is_empty() {
+                0
+            } else {
+                (files.iter().map(|file| i64::from(file.progress_percent)).sum::<i64>()
+                    / files.len() as i64) as i32
+            }
+        }
+    }
+}
+
+pub fn load_bundle_events_since(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+    after_sequence_no: Option<i64>,
+) -> Result<Vec<PersistedIngestEvent>> {
+    let rows = client.query(
+        "SELECT sequence_no, event_kind, message, payload::text
+         FROM import.ingest_events
+         WHERE bundle_id = $1
+           AND ($2::bigint IS NULL OR sequence_no > $2)
+         ORDER BY sequence_no",
+        &[&bundle_id, &after_sequence_no],
+    )?;
+
+    rows.into_iter()
+        .map(|row| {
+            let payload_text: String = row.get(3);
+            Ok(PersistedIngestEvent {
+                sequence_no: row.get(0),
+                event_kind: row.get(1),
+                message: row.get(2),
+                payload: parse_json_payload_text(&payload_text),
+            })
+        })
+        .collect()
+}
+
+pub fn load_bundle_snapshot(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+) -> Result<BundleSnapshot> {
+    let summary = load_bundle_summary(client, bundle_id)?;
+    let rows = client.query(
+        "SELECT
+             bundle_files.id,
+             bundle_files.source_file_id,
+             bundle_files.source_file_member_id,
+             members.member_path,
+             jobs.status,
+             jobs.stage
+         FROM import.ingest_bundle_files bundle_files
+         JOIN import.source_file_members members
+           ON members.id = bundle_files.source_file_member_id
+         LEFT JOIN import.import_jobs jobs
+           ON jobs.bundle_file_id = bundle_files.id
+          AND jobs.job_kind = 'file_ingest'
+         WHERE bundle_files.bundle_id = $1
+         ORDER BY bundle_files.file_order_index, bundle_files.id",
+        &[&bundle_id],
+    )?;
+
+    let mut files = Vec::with_capacity(rows.len());
+    for row in rows {
+        let bundle_file_id: Uuid = row.get(0);
+        let status = FileJobStatus::from_db(&row.get::<_, String>(4));
+        let stage: String = row.get(5);
+
+        files.push(BundleFileSnapshot {
+            bundle_file_id,
+            source_file_id: row.get(1),
+            source_file_member_id: row.get(2),
+            member_path: row.get(3),
+            status,
+            stage_label: file_stage_label(status, &stage).to_string(),
+            progress_percent: file_progress_percent(status, &stage),
+            diagnostics: load_file_diagnostics(client, bundle_id, bundle_file_id)?,
         });
     }
 
-    Ok(EnqueuedBundle {
+    let completed_files = files
+        .iter()
+        .filter(|file| {
+            matches!(
+                file.status,
+                FileJobStatus::Succeeded | FileJobStatus::FailedTerminal
+            )
+        })
+        .count() as i64;
+    let activity_log = {
+        let mut events = load_bundle_events_since(client, bundle_id, None)?;
+        events.reverse();
+        events
+    };
+
+    Ok(BundleSnapshot {
         bundle_id,
-        file_jobs,
+        status: summary.status,
+        progress_percent: bundle_progress_percent(summary.status, &files),
+        stage_label: bundle_stage_label(summary.status, &files),
+        total_files: files.len() as i64,
+        completed_files,
+        files,
+        activity_log,
     })
+}
+
+fn emit_bundle_event(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+    event_kind: &str,
+    message: &str,
+) -> Result<()> {
+    let snapshot = load_bundle_snapshot(client, bundle_id)?;
+
+    append_ingest_event(
+        client,
+        bundle_id,
+        None,
+        event_kind,
+        message,
+        &json!({
+            "bundle_id": snapshot.bundle_id,
+            "status": snapshot.status.as_str(),
+            "progress_percent": snapshot.progress_percent,
+            "stage_label": snapshot.stage_label,
+            "total_files": snapshot.total_files,
+            "completed_files": snapshot.completed_files,
+        }),
+    )
+}
+
+fn emit_file_updated_event(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+    bundle_file_id: Uuid,
+    message: &str,
+) -> Result<()> {
+    let snapshot = load_bundle_snapshot(client, bundle_id)?;
+    let file = snapshot
+        .files
+        .iter()
+        .find(|file| file.bundle_file_id == bundle_file_id)
+        .expect("bundle file snapshot must exist for file_updated event");
+
+    append_ingest_event(
+        client,
+        bundle_id,
+        Some(bundle_file_id),
+        "file_updated",
+        message,
+        &json!({
+            "bundle_file_id": file.bundle_file_id,
+            "source_file_id": file.source_file_id,
+            "source_file_member_id": file.source_file_member_id,
+            "member_path": file.member_path,
+            "status": file.status.as_str(),
+            "stage_label": file.stage_label,
+            "progress_percent": file.progress_percent,
+        }),
+    )
 }
 
 pub fn load_bundle_summary(
@@ -420,6 +877,7 @@ pub fn claim_next_job(client: &mut impl GenericClient, runner_name: &str) -> Res
                  bundle_id,
                  bundle_file_id,
                  source_file_id,
+                 source_file_member_id,
                  job_kind,
                  organization_id
              FROM import.import_jobs
@@ -434,16 +892,21 @@ pub fn claim_next_job(client: &mut impl GenericClient, runner_name: &str) -> Res
              next_job.bundle_id,
              next_job.bundle_file_id,
              next_job.source_file_id,
+             next_job.source_file_member_id,
              next_job.job_kind,
              next_job.organization_id,
              bundles.player_profile_id,
              files.storage_uri,
-             files.file_kind
+             files.file_kind,
+             members.member_path,
+             members.member_kind
          FROM next_job
          LEFT JOIN import.ingest_bundles bundles
            ON bundles.id = next_job.bundle_id
          LEFT JOIN import.source_files files
-           ON files.id = next_job.source_file_id",
+           ON files.id = next_job.source_file_id
+         LEFT JOIN import.source_file_members members
+           ON members.id = next_job.source_file_member_id",
         &[],
     )? else {
         return Ok(None);
@@ -453,17 +916,18 @@ pub fn claim_next_job(client: &mut impl GenericClient, runner_name: &str) -> Res
     let bundle_id: Uuid = row.get(1);
     let bundle_file_id: Option<Uuid> = row.get(2);
     let source_file_id: Option<Uuid> = row.get(3);
-    let job_kind = JobKind::from_db(&row.get::<_, String>(4));
-    let organization_id: Uuid = row.get(5);
-    let player_profile_id: Uuid = row.get(6);
-    let storage_uri: Option<String> = row.get(7);
+    let source_file_member_id: Option<Uuid> = row.get(4);
+    let job_kind = JobKind::from_db(&row.get::<_, String>(5));
+    let organization_id: Uuid = row.get(6);
+    let player_profile_id: Uuid = row.get(7);
+    let storage_uri: Option<String> = row.get(8);
+    let source_file_kind = row
+        .get::<_, Option<String>>(9)
+        .map(|value| FileKind::from_db(value.as_str()));
+    let member_path: Option<String> = row.get(10);
     let file_kind = row
-        .get::<_, Option<String>>(8)
-        .map(|value| match value.as_str() {
-            "hh" => FileKind::HandHistory,
-            "ts" => FileKind::TournamentSummary,
-            other => panic!("unexpected file kind: {other}"),
-        });
+        .get::<_, Option<String>>(11)
+        .map(|value| FileKind::from_db(value.as_str()));
     let attempt_no: i32 = client
         .query_one(
             "SELECT COALESCE(MAX(attempt_no), 0) + 1
@@ -510,16 +974,36 @@ pub fn claim_next_job(client: &mut impl GenericClient, runner_name: &str) -> Res
     )?;
 
     refresh_bundle_status(client, bundle_id)?;
+    if let Some(bundle_file_id) = bundle_file_id {
+        let member_path = member_path
+            .clone()
+            .unwrap_or_else(|| "файл".to_string());
+        emit_file_updated_event(
+            client,
+            bundle_id,
+            bundle_file_id,
+            &format!("Файл `{member_path}` принят в работу."),
+        )?;
+        emit_bundle_event(
+            client,
+            bundle_id,
+            "bundle_updated",
+            "Партия файлов обрабатывается.",
+        )?;
+    }
 
     Ok(Some(ClaimedJob {
         job_id,
         bundle_id,
         bundle_file_id,
         source_file_id,
+        source_file_member_id,
         job_kind,
         organization_id,
         player_profile_id,
         storage_uri,
+        source_file_kind,
+        member_path,
         file_kind,
         attempt_no,
     }))
@@ -530,14 +1014,16 @@ pub fn mark_job_succeeded(
     job_id: Uuid,
     attempt_no: i32,
 ) -> Result<()> {
-    let bundle_id: Uuid = client
+    let row = client
         .query_one(
-            "SELECT bundle_id
+            "SELECT bundle_id, bundle_file_id, job_kind
              FROM import.import_jobs
              WHERE id = $1",
             &[&job_id],
-        )?
-        .get(0);
+        )?;
+    let bundle_id: Uuid = row.get(0);
+    let bundle_file_id: Option<Uuid> = row.get(1);
+    let job_kind = JobKind::from_db(&row.get::<_, String>(2));
 
     client.execute(
         "UPDATE import.import_jobs
@@ -558,6 +1044,28 @@ pub fn mark_job_succeeded(
     )?;
 
     refresh_bundle_status(client, bundle_id)?;
+    match job_kind {
+        JobKind::FileIngest => {
+            if let Some(bundle_file_id) = bundle_file_id {
+                emit_file_updated_event(
+                    client,
+                    bundle_id,
+                    bundle_file_id,
+                    "Файл успешно обработан.",
+                )?;
+            }
+        }
+        JobKind::BundleFinalize => {
+            let summary = load_bundle_summary(client, bundle_id)?;
+            let message = match summary.status {
+                BundleStatus::Succeeded => "Партия успешно импортирована.",
+                BundleStatus::PartialSuccess => "Партия импортирована с ошибками.",
+                BundleStatus::Failed => "Импорт партии завершился ошибкой.",
+                _ => "Подготовка индекса завершена.",
+            };
+            emit_bundle_event(client, bundle_id, "bundle_terminal", message)?;
+        }
+    }
     Ok(())
 }
 
@@ -568,14 +1076,16 @@ pub fn mark_job_failed(
     disposition: FailureDisposition,
     error_code: &str,
 ) -> Result<()> {
-    let bundle_id: Uuid = client
+    let row = client
         .query_one(
-            "SELECT bundle_id
+            "SELECT bundle_id, bundle_file_id, job_kind
              FROM import.import_jobs
              WHERE id = $1",
             &[&job_id],
-        )?
-        .get(0);
+        )?;
+    let bundle_id: Uuid = row.get(0);
+    let bundle_file_id: Option<Uuid> = row.get(1);
+    let job_kind = JobKind::from_db(&row.get::<_, String>(2));
 
     let status = match disposition {
         FailureDisposition::Retriable => "failed_retriable",
@@ -603,6 +1113,25 @@ pub fn mark_job_failed(
     )?;
 
     refresh_bundle_status(client, bundle_id)?;
+    match job_kind {
+        JobKind::FileIngest => {
+            if let Some(bundle_file_id) = bundle_file_id {
+                let message = match disposition {
+                    FailureDisposition::Retriable => "Файл завершился временной ошибкой.",
+                    FailureDisposition::Terminal => "Файл завершился ошибкой.",
+                };
+                emit_file_updated_event(client, bundle_id, bundle_file_id, message)?;
+            }
+        }
+        JobKind::BundleFinalize => {
+            emit_bundle_event(
+                client,
+                bundle_id,
+                "bundle_terminal",
+                "Подготовка индекса завершилась ошибкой.",
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -612,13 +1141,14 @@ pub fn retry_failed_job(
     max_attempts: i32,
 ) -> Result<()> {
     let row = client.query_one(
-        "SELECT bundle_id, status
+        "SELECT bundle_id, bundle_file_id, status
          FROM import.import_jobs
          WHERE id = $1",
         &[&job_id],
     )?;
     let bundle_id: Uuid = row.get(0);
-    let status: String = row.get(1);
+    let bundle_file_id: Option<Uuid> = row.get(1);
+    let status: String = row.get(2);
 
     if status != "failed_retriable" {
         refresh_bundle_status(client, bundle_id)?;
@@ -655,6 +1185,20 @@ pub fn retry_failed_job(
     }
 
     refresh_bundle_status(client, bundle_id)?;
+    if let Some(bundle_file_id) = bundle_file_id {
+        emit_file_updated_event(
+            client,
+            bundle_id,
+            bundle_file_id,
+            "Файл повторно поставлен в очередь.",
+        )?;
+        emit_bundle_event(
+            client,
+            bundle_id,
+            "bundle_updated",
+            "Партия ожидает повторной обработки.",
+        )?;
+    }
     Ok(())
 }
 
@@ -718,6 +1262,13 @@ pub fn maybe_enqueue_finalize_job(
         &[&bundle_id],
     )?;
 
+    emit_bundle_event(
+        client,
+        bundle_id,
+        "bundle_updated",
+        "Подготовка индекса запущена.",
+    )?;
+
     Ok(Some(job_id))
 }
 
@@ -731,6 +1282,7 @@ pub fn run_next_job<E: JobExecutor>(
         return Ok(None);
     };
 
+    client.batch_execute("SAVEPOINT ingest_job_execution")?;
     let execution_result = match job.job_kind {
         JobKind::FileIngest => executor.execute_file_job(client, &job),
         JobKind::BundleFinalize => executor.finalize_bundle(client, &job),
@@ -738,12 +1290,17 @@ pub fn run_next_job<E: JobExecutor>(
 
     match execution_result {
         Ok(()) => {
+            client.batch_execute("RELEASE SAVEPOINT ingest_job_execution")?;
             mark_job_succeeded(client, job.job_id, job.attempt_no)?;
             if matches!(job.job_kind, JobKind::FileIngest) {
                 let _ = maybe_enqueue_finalize_job(client, job.bundle_id)?;
             }
         }
         Err(error) => {
+            client.batch_execute(
+                "ROLLBACK TO SAVEPOINT ingest_job_execution;
+                 RELEASE SAVEPOINT ingest_job_execution;",
+            )?;
             mark_job_failed(
                 client,
                 job.job_id,

@@ -137,6 +137,8 @@ fn bundle_finalize_runs_once_after_all_file_jobs_terminalize() {
                     original_filename: "one-hh.txt".to_string(),
                     byte_size: 10,
                     storage_uri: "local://one-hh.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
                 },
                 IngestFileInput {
                     room: "gg".to_string(),
@@ -145,6 +147,8 @@ fn bundle_finalize_runs_once_after_all_file_jobs_terminalize() {
                     original_filename: "two-ts.txt".to_string(),
                     byte_size: 10,
                     storage_uri: "local://two-ts.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
                 },
             ],
         },

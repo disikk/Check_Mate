@@ -102,6 +102,8 @@ fn sample_bundle_input(
             original_filename: "runner-hh.txt".to_string(),
             byte_size: 12,
             storage_uri: "local://runner-hh.txt".to_string(),
+            members: vec![],
+            diagnostics: vec![],
         }],
     }
 }
@@ -206,6 +208,8 @@ fn terminal_failure_keeps_bundle_in_partial_success_ready_surface() {
                     original_filename: "one.txt".to_string(),
                     byte_size: 10,
                     storage_uri: "local://one.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
                 },
                 IngestFileInput {
                     room: "gg".to_string(),
@@ -214,6 +218,8 @@ fn terminal_failure_keeps_bundle_in_partial_success_ready_surface() {
                     original_filename: "two.txt".to_string(),
                     byte_size: 10,
                     storage_uri: "local://two.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
                 },
             ],
         },

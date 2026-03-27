@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
+    io::Read,
     path::Path,
 };
 
@@ -369,6 +370,34 @@ pub fn import_path(path: &str) -> Result<LocalImportReport> {
         .ok_or_else(|| anyhow!("ingest bundle for `{path}` finished without successful file import"))
 }
 
+pub fn run_ingest_runner_until_idle(
+    database_url: &str,
+    runner_name: &str,
+    max_attempts: i32,
+) -> Result<usize> {
+    let mut client =
+        Client::connect(database_url, NoTls).context("failed to connect to PostgreSQL")?;
+    let mut executor = LocalImportExecutor { report: None };
+    let mut processed_jobs = 0usize;
+
+    loop {
+        let mut tx = client
+            .transaction()
+            .context("failed to start ingest runner transaction")?;
+        let claimed = run_next_job(&mut tx, runner_name, max_attempts, &mut executor)?;
+        tx.commit()
+            .context("failed to commit ingest runner transaction")?;
+
+        if claimed.is_some() {
+            processed_jobs += 1;
+        } else {
+            break;
+        }
+    }
+
+    Ok(processed_jobs)
+}
+
 fn build_ingest_file_input(path: &str, input: &str) -> Result<IngestFileInput> {
     let file_kind = match detect_source_kind(input)? {
         SourceKind::TournamentSummary => IngestFileKind::TournamentSummary,
@@ -382,7 +411,57 @@ fn build_ingest_file_input(path: &str, input: &str) -> Result<IngestFileInput> {
         original_filename: source_filename(path)?,
         byte_size: input.len() as i64,
         storage_uri: format!("local://{}", path.replace('\\', "/")),
+        members: vec![],
+        diagnostics: vec![],
     })
+}
+
+fn storage_path_from_uri(storage_uri: &str) -> std::result::Result<&str, JobExecutionError> {
+    storage_uri
+        .strip_prefix("local://")
+        .ok_or_else(|| JobExecutionError::terminal("unsupported_storage_uri"))
+}
+
+fn read_archive_member_text(path: &str, member_path: &str) -> Result<String> {
+    let file =
+        fs::File::open(path).with_context(|| format!("failed to open archive `{path}`"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .with_context(|| format!("failed to open ZIP archive `{path}`"))?;
+    let mut member = archive
+        .by_name(member_path)
+        .with_context(|| format!("missing ZIP member `{member_path}` in `{path}`"))?;
+    let mut input = String::new();
+    member
+        .read_to_string(&mut input)
+        .with_context(|| format!("failed to read ZIP member `{member_path}` as UTF-8 text"))?;
+    Ok(input)
+}
+
+fn load_ingest_job_input(
+    job: &IngestClaimedJob,
+) -> std::result::Result<(String, String), JobExecutionError> {
+    let storage_uri = job
+        .storage_uri
+        .as_deref()
+        .ok_or_else(|| JobExecutionError::terminal("missing_storage_uri"))?;
+    let path = storage_path_from_uri(storage_uri)?;
+
+    match job.source_file_kind {
+        Some(IngestFileKind::Archive) => {
+            let member_path = job
+                .member_path
+                .as_deref()
+                .ok_or_else(|| JobExecutionError::terminal("missing_archive_member_path"))?;
+            let input = read_archive_member_text(path, member_path)
+                .map_err(|_| JobExecutionError::retriable("archive_member_read_failed"))?;
+            Ok((member_path.to_string(), input))
+        }
+        _ => {
+            let input =
+                fs::read_to_string(path).map_err(|_| JobExecutionError::retriable("storage_read_failed"))?;
+            Ok((path.to_string(), input))
+        }
+    }
 }
 
 fn import_path_with_database_url(database_url: &str, path: &str) -> Result<LocalImportReport> {
@@ -413,40 +492,39 @@ impl JobExecutor for LocalImportExecutor {
         client: &mut C,
         job: &IngestClaimedJob,
     ) -> std::result::Result<(), JobExecutionError> {
-        let storage_uri = job
-            .storage_uri
-            .as_deref()
-            .ok_or_else(|| JobExecutionError::terminal("missing_storage_uri"))?;
-        let path = storage_uri
-            .strip_prefix("local://")
-            .ok_or_else(|| JobExecutionError::terminal("unsupported_storage_uri"))?;
-        let input = fs::read_to_string(path)
-            .map_err(|_| JobExecutionError::retriable("storage_read_failed"))?;
-        let context = ensure_dev_context(client)
-            .map_err(|_| JobExecutionError::terminal("missing_dev_context"))?;
+        let (path, input) = load_ingest_job_input(job)?;
+        let context = load_existing_context(client, job.organization_id, job.player_profile_id)
+            .map_err(|_| JobExecutionError::terminal("missing_execution_context"))?;
 
         let report: Result<LocalImportReport> = match job.file_kind {
             Some(IngestFileKind::TournamentSummary) => import_tournament_summary_registered(
                 client,
                 &context,
-                path,
+                &path,
                 &input,
                 job.source_file_id
                     .ok_or_else(|| JobExecutionError::terminal("missing_source_file_id"))?,
+                job.source_file_member_id
+                    .ok_or_else(|| JobExecutionError::terminal("missing_source_file_member_id"))?,
                 job.job_id,
             ),
             Some(IngestFileKind::HandHistory) => import_hand_history_registered(
                 client,
                 &context,
-                path,
+                &path,
                 &input,
                 job.source_file_id
                     .ok_or_else(|| JobExecutionError::terminal("missing_source_file_id"))?,
+                job.source_file_member_id
+                    .ok_or_else(|| JobExecutionError::terminal("missing_source_file_member_id"))?,
                 job.job_id,
             ),
+            Some(IngestFileKind::Archive) => Err(anyhow!(
+                "archive top-level kind cannot be executed as a parsed member job"
+            )),
             None => Err(anyhow!("missing file kind for file_ingest job")),
         };
-        let report = report.map_err(|error| JobExecutionError::terminal(error.to_string()))?;
+        let report = report.map_err(|error| JobExecutionError::terminal(format!("{error:#}")))?;
 
         self.report = Some(report);
         Ok(())
@@ -560,6 +638,60 @@ fn ensure_dev_context(client: &mut impl postgres::GenericClient) -> Result<DevCo
     })
 }
 
+fn load_existing_context(
+    client: &mut impl postgres::GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+) -> Result<DevContext> {
+    let row = client
+        .query_opt(
+            "SELECT owner_user_id
+             FROM core.player_profiles
+             WHERE id = $1
+               AND organization_id = $2
+               AND room = 'gg'",
+            &[&player_profile_id, &organization_id],
+        )?
+        .ok_or_else(|| {
+            anyhow!(
+                "player profile {} is missing in organization {}",
+                player_profile_id,
+                organization_id
+            )
+        })?;
+    let user_id: Uuid = row.get(0);
+
+    let player_aliases = client
+        .query(
+            "SELECT alias
+             FROM core.player_aliases
+             WHERE organization_id = $1
+               AND player_profile_id = $2
+               AND room = 'gg'
+             ORDER BY is_primary DESC, created_at, alias",
+            &[&organization_id, &player_profile_id],
+        )?
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>();
+
+    let room_id = client
+        .query_one("SELECT id FROM core.rooms WHERE code = 'gg'", &[])?
+        .get(0);
+    let format_id = client
+        .query_one("SELECT id FROM core.formats WHERE code = 'mbr'", &[])?
+        .get(0);
+
+    Ok(DevContext {
+        organization_id,
+        user_id,
+        player_profile_id,
+        player_aliases,
+        room_id,
+        format_id,
+    })
+}
+
 fn import_tournament_summary(
     tx: &mut Transaction<'_>,
     context: &DevContext,
@@ -567,23 +699,40 @@ fn import_tournament_summary(
     input: &str,
 ) -> Result<LocalImportReport> {
     let source_file_id = insert_source_file(tx, context, path, input, "ts")?;
+    let source_file_member_id = insert_source_file_member(tx, source_file_id, path, "ts", input)?;
     let import_job_id = insert_import_job(tx, context.organization_id, source_file_id)?;
     insert_job_attempt(tx, import_job_id)?;
-    import_tournament_summary_registered(tx, context, path, input, source_file_id, import_job_id)
+    import_tournament_summary_registered(
+        tx,
+        context,
+        path,
+        input,
+        source_file_id,
+        source_file_member_id,
+        import_job_id,
+    )
 }
 
 fn import_tournament_summary_registered(
     tx: &mut impl postgres::GenericClient,
     context: &DevContext,
-    path: &str,
+    _path: &str,
     input: &str,
     source_file_id: Uuid,
+    source_file_member_id: Uuid,
     import_job_id: Uuid,
 ) -> Result<LocalImportReport> {
     let summary = parse_tournament_summary(input)?;
     let tournament_entry_economics = load_tournament_entry_economics(tx, context, &summary)?;
-    insert_source_file_member(tx, source_file_id, path, "ts", input)?;
-    let fragment_id = insert_file_fragment(tx, source_file_id, 0, None, "summary", input)?;
+    let fragment_id = insert_file_fragment(
+        tx,
+        source_file_id,
+        source_file_member_id,
+        0,
+        None,
+        "summary",
+        input,
+    )?;
 
     let tournament_id: Uuid = tx
         .query_one(
@@ -616,7 +765,7 @@ fn import_tournament_summary_registered(
                 NULL,
                 $11,
                 replace($11, '/', '-')::timestamp,
-                'gg_text_without_timezone',
+                'gg_user_timezone_missing',
                 $12
             )
             ON CONFLICT (player_profile_id, room_id, external_tournament_id)
@@ -736,17 +885,27 @@ fn import_hand_history(
     input: &str,
 ) -> Result<LocalImportReport> {
     let source_file_id = insert_source_file(tx, context, path, input, "hh")?;
+    let source_file_member_id = insert_source_file_member(tx, source_file_id, path, "hh", input)?;
     let import_job_id = insert_import_job(tx, context.organization_id, source_file_id)?;
     insert_job_attempt(tx, import_job_id)?;
-    import_hand_history_registered(tx, context, path, input, source_file_id, import_job_id)
+    import_hand_history_registered(
+        tx,
+        context,
+        path,
+        input,
+        source_file_id,
+        source_file_member_id,
+        import_job_id,
+    )
 }
 
 fn import_hand_history_registered(
     tx: &mut impl postgres::GenericClient,
     context: &DevContext,
-    path: &str,
+    _path: &str,
     input: &str,
     source_file_id: Uuid,
+    source_file_member_id: Uuid,
     import_job_id: Uuid,
 ) -> Result<LocalImportReport> {
     let hands = split_hand_history(input)?;
@@ -821,7 +980,6 @@ fn import_hand_history_registered(
             )
         })?;
 
-    insert_source_file_member(tx, source_file_id, path, "hh", input)?;
     let stage_facts = canonical_hands
         .iter()
         .zip(normalized_hands.iter())
@@ -846,6 +1004,7 @@ fn import_hand_history_registered(
         let fragment_id = insert_file_fragment(
             tx,
             source_file_id,
+            source_file_member_id,
             index as i32,
             Some(hand.header.hand_id.as_str()),
             "hand",
@@ -963,7 +1122,7 @@ fn upsert_hand_row(
                 NULL,
                 $6,
                 replace($6, '/', '-')::timestamp,
-                'gg_text_without_timezone',
+                'gg_user_timezone_missing',
                 $7,
                 $8,
                 $9,
@@ -2674,6 +2833,7 @@ fn insert_job_attempt(tx: &mut Transaction<'_>, import_job_id: Uuid) -> Result<U
 fn insert_file_fragment(
     tx: &mut impl postgres::GenericClient,
     source_file_id: Uuid,
+    source_file_member_id: Uuid,
     fragment_index: i32,
     external_hand_id: Option<&str>,
     kind: &str,
@@ -2685,14 +2845,15 @@ fn insert_file_fragment(
         .query_one(
             "INSERT INTO import.file_fragments (
                 source_file_id,
+                source_file_member_id,
                 fragment_index,
                 external_hand_id,
                 kind,
                 raw_text,
                 sha256
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (source_file_id, fragment_index)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (source_file_member_id, fragment_index)
             DO UPDATE SET
                 external_hand_id = EXCLUDED.external_hand_id,
                 kind = EXCLUDED.kind,
@@ -2701,6 +2862,7 @@ fn insert_file_fragment(
             RETURNING id",
             &[
                 &source_file_id,
+                &source_file_member_id,
                 &fragment_index,
                 &external_hand_id,
                 &kind,
@@ -2740,6 +2902,7 @@ mod tests {
         query_canonical_stats, query_seed_stats,
     };
     use std::{
+        io::Write,
         path::PathBuf,
         sync::{Mutex, OnceLock},
     };
@@ -2826,6 +2989,45 @@ mod tests {
             }
             other => panic!("{stat_key} expected float value, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn load_ingest_job_input_reads_archive_member_text() {
+        let archive_path =
+            std::env::temp_dir().join(format!("check-mate-archive-{}.zip", Uuid::new_v4()));
+        let file = fs::File::create(&archive_path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file(
+                "nested/member.hh",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.write_all(b"hello from zip member").unwrap();
+        writer.finish().unwrap();
+
+        let job = IngestClaimedJob {
+            job_id: Uuid::new_v4(),
+            bundle_id: Uuid::new_v4(),
+            bundle_file_id: Some(Uuid::new_v4()),
+            source_file_id: Some(Uuid::new_v4()),
+            source_file_member_id: Some(Uuid::new_v4()),
+            job_kind: tracker_ingest_runtime::JobKind::FileIngest,
+            organization_id: Uuid::new_v4(),
+            player_profile_id: Uuid::new_v4(),
+            storage_uri: Some(format!("local://{}", archive_path.display())),
+            source_file_kind: Some(IngestFileKind::Archive),
+            member_path: Some("nested/member.hh".to_string()),
+            file_kind: Some(IngestFileKind::HandHistory),
+            attempt_no: 1,
+        };
+
+        let (logical_path, input) = load_ingest_job_input(&job).unwrap();
+
+        assert_eq!(logical_path, "nested/member.hh".to_string());
+        assert_eq!(input, "hello from zip member".to_string());
+
+        fs::remove_file(archive_path).unwrap();
     }
 
     #[test]
@@ -4638,6 +4840,142 @@ mod tests {
 
     #[test]
     #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0022_adds_web_upload_member_ingest_contracts() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_core_schema_migrations(&mut client);
+
+        let table_contract_rows = client
+            .query(
+                "SELECT table_schema, table_name
+                 FROM information_schema.tables
+                 WHERE (table_schema, table_name) IN (
+                     ('import', 'ingest_events')
+                 )
+                 ORDER BY table_schema, table_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            table_contract_rows,
+            vec![("import".to_string(), "ingest_events".to_string())]
+        );
+
+        let ingest_bundle_file_columns = client
+            .query(
+                "SELECT column_name, is_nullable
+                 FROM information_schema.columns
+                 WHERE table_schema = 'import'
+                   AND table_name = 'ingest_bundle_files'
+                   AND column_name IN ('source_file_id', 'source_file_member_id')
+                 ORDER BY column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            ingest_bundle_file_columns,
+            vec![
+                ("source_file_id".to_string(), "NO".to_string()),
+                ("source_file_member_id".to_string(), "NO".to_string()),
+            ]
+        );
+
+        let import_job_columns = client
+            .query(
+                "SELECT column_name, is_nullable
+                 FROM information_schema.columns
+                 WHERE table_schema = 'import'
+                   AND table_name = 'import_jobs'
+                   AND column_name IN ('bundle_file_id', 'job_kind', 'source_file_id', 'source_file_member_id')
+                 ORDER BY column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            import_job_columns,
+            vec![
+                ("bundle_file_id".to_string(), "YES".to_string()),
+                ("job_kind".to_string(), "NO".to_string()),
+                ("source_file_id".to_string(), "YES".to_string()),
+                ("source_file_member_id".to_string(), "YES".to_string()),
+            ]
+        );
+
+        let file_fragment_columns = client
+            .query(
+                "SELECT column_name, is_nullable
+                 FROM information_schema.columns
+                 WHERE table_schema = 'import'
+                   AND table_name = 'file_fragments'
+                   AND column_name IN ('source_file_id', 'source_file_member_id')
+                 ORDER BY column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            file_fragment_columns,
+            vec![
+                ("source_file_id".to_string(), "NO".to_string()),
+                ("source_file_member_id".to_string(), "NO".to_string()),
+            ]
+        );
+
+        let ingest_event_columns = client
+            .query(
+                "SELECT column_name, is_nullable
+                 FROM information_schema.columns
+                 WHERE table_schema = 'import'
+                   AND table_name = 'ingest_events'
+                   AND column_name IN (
+                       'bundle_id',
+                       'bundle_file_id',
+                       'event_kind',
+                       'message',
+                       'payload',
+                       'sequence_no'
+                   )
+                 ORDER BY column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            ingest_event_columns,
+            vec![
+                ("bundle_file_id".to_string(), "YES".to_string()),
+                ("bundle_id".to_string(), "NO".to_string()),
+                ("event_kind".to_string(), "NO".to_string()),
+                ("message".to_string(), "NO".to_string()),
+                ("payload".to_string(), "NO".to_string()),
+                ("sequence_no".to_string(), "NO".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
     fn migration_v0014_adds_stage_predicate_contracts() {
         let _guard = db_test_guard();
         let database_url = env::var("CHECK_MATE_DATABASE_URL")
@@ -5512,7 +5850,7 @@ mod tests {
         );
         assert_eq!(
             tournament_time.get::<_, Option<String>>(3).as_deref(),
-            Some("gg_text_without_timezone")
+            Some("gg_user_timezone_missing")
         );
 
         let hand_time = client
@@ -5540,7 +5878,7 @@ mod tests {
         );
         assert_eq!(
             hand_time.get::<_, Option<String>>(3).as_deref(),
-            Some("gg_text_without_timezone")
+            Some("gg_user_timezone_missing")
         );
 
         let source_file_members = client
@@ -8702,6 +9040,14 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
         apply_sql_file(
             client,
             &fixture_path("../../migrations/0021_ingest_runtime_runner.sql"),
+        );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0022_web_upload_member_ingest.sql"),
+        );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0023_file_fragments_member_uniqueness.sql"),
         );
     }
 

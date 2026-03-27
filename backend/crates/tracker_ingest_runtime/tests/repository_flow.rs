@@ -107,6 +107,8 @@ fn enqueue_bundle_reuses_deduped_source_files_but_creates_fresh_bundle_membershi
             original_filename: "first-hh.txt".to_string(),
             byte_size: 10,
             storage_uri: "local://first-hh.txt".to_string(),
+            members: vec![],
+            diagnostics: vec![],
         }],
     };
 
@@ -153,6 +155,8 @@ fn enqueue_bundle_creates_one_file_job_per_bundle_file_and_defers_finalize() {
                     original_filename: "one-hh.txt".to_string(),
                     byte_size: 10,
                     storage_uri: "local://one-hh.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
                 },
                 IngestFileInput {
                     room: "gg".to_string(),
@@ -161,6 +165,8 @@ fn enqueue_bundle_creates_one_file_job_per_bundle_file_and_defers_finalize() {
                     original_filename: "one-ts.txt".to_string(),
                     byte_size: 10,
                     storage_uri: "local://one-ts.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
                 },
             ],
         },

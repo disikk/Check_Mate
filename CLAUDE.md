@@ -50,10 +50,13 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 
 - `src/data/mockData.js` — error summary & trends
 - `src/data/ftAnalyticsMock.js` — FT stat-cards, filters, chart configs, derived datasets
-- `src/services/mockHandUpload.js` — upload pipeline с callback-контрактом (onBatchStart → onBatchComplete)
+- `src/services/uploadApi.js` — реальный upload/session/WebSocket client для `tracker_web_api`
+- `src/services/uploadState.js` — pure adapter `bundle snapshot / event -> UI state`
+- `backend/crates/tracker_web_api` — axum HTTP server для real upload/status slice
+- `backend/crates/tracker_ingest_runner` — отдельный process-style runner поверх `tracker_ingest_runtime`
 - `backend/fixtures/mbr/*` — реальный sample-pack GG MBR для новой parser/db ветки
 
-Все данные mock. Backend-интеграция задумана как замена источника событий без переделки UI state model.
+Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уже подключён к реальному backend ingest flow.
 
 ## Code Conventions
 
@@ -66,7 +69,9 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 
 - Нет роутера — навигация через `activeSection` state в `App.jsx`. Новый раздел = добавить в `sections.js` + `sectionComponents` в `App.jsx`.
 - `index.css` — монолит ~1500+ строк; стили для разных страниц живут в одном файле.
-- Upload pipeline callback-контракт в `mockHandUpload.js` спроектирован под замену на реальный backend — сохранять сигнатуры callbacks при изменениях.
+- `UploadHandsPage` больше не сидит на `mockHandUpload.js`: реальный vertical slice идёт через `uploadApi.js` + `uploadState.js` + `tracker_web_api` WebSocket snapshot/event contract.
+- Vite dev server теперь проксирует `/api` и WebSocket upgrade на `http://127.0.0.1:3001`, поэтому local frontend/backend handoff ожидает поднятый `tracker_web_api`.
+- Upload v1 intentionally does **not** support true server-side cancel; UI не должен обещать остановку backend processing.
 - FT-раздел повторяет структуру `MBR_Stats`, но намеренно без player selector и aggregate-режима (student-only view).
 - Внутри `Check_Mate` backend-скоуп текущего цикла ограничен только `GG MBR`; Chico для этого проекта не реализуется.
 - Канонический onboarding path теперь Docker-first: root `docker-compose.yml`, root `scripts/` и `Makefile`.
@@ -188,6 +193,11 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `is_nut_draw` is now an active exact postflop field under the same policy: it is derived only from ordinary improving next-card draw families, uses strict family-level nutness instead of one lucky out, treats `combo_draw` as `true` when at least one active ordinary family is nut, and materializes `Some(false)` for river / no-draw / backdoor-only rows.
   - the proof surface for `street_strength` is now three-layered: synthetic acceptance coverage (`tests/street_hand_strength.rs`), independent reference/differential coverage (`tests/street_strength_reference.rs`), and corpus-backed golden coverage (`tests/street_strength_corpus_golden.rs`);
   - the corpus-backed layer snapshots the full active row contract for `Hero` and showdown-known opponents in two formats: curated raw real-hand goldens and an aggregated full-pack coverage sweep over committed HH fixtures; refresh remains explicit via `UPDATE_GOLDENS=1`.
+- Current real upload vertical slice:
+  - `tracker_web_api` is the active HTTP/WebSocket transport for v1 upload flow and exposes `GET /api/session`, `POST /api/ingest/bundles`, `GET /api/ingest/bundles/{bundle_id}`, and `GET /api/ingest/bundles/{bundle_id}/ws`;
+  - upload accepts `.txt`, `.hh`, and `.zip`, spools raw files to local disk, expands ZIP members into member-level ingest jobs, and persists skipped-member diagnostics into `import.ingest_events`;
+  - `tracker_ingest_runner` is the separate runner process for this slice; `parser_worker` remains the shared execution engine, but it now resolves execution context from the job's `organization_id/player_profile_id` instead of hardcoded dev context;
+  - `UploadHandsPage` is now wired to real backend snapshot/event flow; FT analytics and dashboard sections remain mock-backed and are not part of this vertical slice.
 - `backend/docs/street_strength_contract.md` is now the canonical exact contract for `tracker_parser_core::street_strength` and must be updated whenever its semantics change.
 - Current canonical parser correction:
   - repeated GG `collected ... from pot` lines for the same player are now accumulated instead of overwritten;
