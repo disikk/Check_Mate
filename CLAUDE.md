@@ -110,12 +110,19 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - `parser_worker` now supports:
   - summary smoke output for a single fixture file;
   - `import-local` smoke path into PostgreSQL using `CHECK_MATE_DATABASE_URL`.
+- `tracker_ingest_runtime` now owns the generic ingest orchestration layer:
+  - DB-backed `ingest_bundles` + `ingest_bundle_files`;
+  - runnable `file_ingest` / `bundle_finalize` jobs in `import.import_jobs`;
+  - attempt history in `import.job_attempts`;
+  - claim/retry/status recomputation logic for `queued | running | succeeded | failed_retriable | failed_terminal` file jobs and `queued | running | finalizing | succeeded | partial_success | failed` bundles.
 - Current local smoke import guarantees:
   - TS -> deduped `import.source_files`, synthetic `import.source_file_members`, `import.import_jobs`, `import.job_attempts`, `import.file_fragments`, `core.tournaments`, `core.tournament_entries`;
   - HH -> deduped `import.source_files`, synthetic `import.source_file_members`, `import.import_jobs`, `import.job_attempts`, `import.file_fragments`, `core.hands`, `core.hand_seats`, `core.hand_hole_cards`, `core.hand_actions`, `core.hand_boards`, `core.hand_showdowns`, `core.hand_pots`, `core.hand_pot_eligibility`, `core.hand_pot_contributions`, `core.hand_pot_winners`, `core.hand_returns`, `core.parse_issues`, `derived.hand_state_resolutions`, `derived.hand_eliminations`, `derived.mbr_stage_resolution`, `derived.mbr_tournament_ft_helper`;
   - post-import runtime refresh -> `analytics.player_hand_bool_features`, `analytics.player_hand_num_features`, `analytics.player_hand_enum_features` for the current dev player and runtime version.
+- `parser_worker import-local` is now a thin local shell over `tracker_ingest_runtime`: it enqueues a one-file local bundle, runs the local worker loop to terminal bundle status, executes exact TS/HH persistence inside file jobs, and runs one bundle-level materialization refresh in finalize stage.
 - Current persistence behavior:
   - `backend/migrations/0004_exact_core_schema_v2.sql` now hardens the exact-core schema with `core.player_aliases`, `import.source_file_members`, `import.job_attempts`, `analytics.feature_catalog`, `analytics.stat_catalog`, `analytics.stat_dependencies`, and `analytics.materialization_policies`;
+  - `backend/migrations/0021_ingest_runtime_runner.sql` adds the ingest runtime contract: `import.ingest_bundles`, `import.ingest_bundle_files`, richer job/attempt statuses, `job_kind`, bundle/file links, claim metadata, and finalize/file-job uniqueness guards;
   - `backend/seeds/0001_reference_data.sql` now seeds the minimal analytics catalog slice required by the current runtime materializer and seed stat query layer;
   - `core.hands` is upserted by `(player_profile_id, external_hand_id)`;
   - `import.source_files` is deduped by `(player_profile_id, room, file_kind, sha256)`, `import.file_fragments` by `(source_file_id, sha256)`, `import.source_file_members` by both `(source_file_id, member_index)` and `(source_file_id, sha256)`, and `import.job_attempts` by `(import_job_id, attempt_no)`;
@@ -179,11 +186,30 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `is_nut_hand` is now an active exact postflop field under `STREET_HAND_STRENGTH_NUT_POLICY = hand_and_draw`: it is computed board-relatively from the player's hole cards plus all legal opponent hole-card combinations from the remaining deck, with shared nuts/chops counted as `true`;
   - known showdown hole cards of opponents are intentionally ignored as dead cards for `is_nut_hand`, so the flag stays stable независимо от reveal surface конкретной раздачи;
   - `is_nut_draw` is now an active exact postflop field under the same policy: it is derived only from ordinary improving next-card draw families, uses strict family-level nutness instead of one lucky out, treats `combo_draw` as `true` when at least one active ordinary family is nut, and materializes `Some(false)` for river / no-draw / backdoor-only rows.
+  - the proof surface for `street_strength` is now three-layered: synthetic acceptance coverage (`tests/street_hand_strength.rs`), independent reference/differential coverage (`tests/street_strength_reference.rs`), and corpus-backed golden coverage (`tests/street_strength_corpus_golden.rs`);
+  - the corpus-backed layer snapshots the full active row contract for `Hero` and showdown-known opponents in two formats: curated raw real-hand goldens and an aggregated full-pack coverage sweep over committed HH fixtures; refresh remains explicit via `UPDATE_GOLDENS=1`.
 - `backend/docs/street_strength_contract.md` is now the canonical exact contract for `tracker_parser_core::street_strength` and must be updated whenever its semantics change.
 - Current canonical parser correction:
   - repeated GG `collected ... from pot` lines for the same player are now accumulated instead of overwritten;
   - this was required for exact multi-pot final stacks, pot conservation, and future side-pot/KO derivations.
 - `backend/docs/exact_core_contract.md` is now the canonical exact-core contract for parser/normalizer/pot-resolution semantics and must be updated whenever those semantics change.
+- Current wide-corpus triage contract:
+  - `tracker_parser_core::wide_corpus_triage` is the canonical offline helper for broad HH/TS parser triage outside `parser_worker import-local`;
+  - the helper always supports the committed sample at `backend/fixtures/mbr/quarantine_sample/{hh,ts}` and may additionally scan a local bulk root at `backend/.local/wide_corpus_quarantine/{hh,ts}` when present;
+  - triage reports are allowlist-based: `allowed_issue_count` and `unexpected_issue_count` are split by stable `ParseIssueCode`, not by warning text;
+  - syntax reporting is family-based, not raw-line-based: each entry carries `family_key`, `surface_kind`, `issue_code` or `parse_failure_kind`, `hit_count`, and representative `example_lines`;
+  - `backend/scripts/run_wide_corpus_triage.sh` is the canonical offline runner, and `docs/WIDE_CORPUS_TRIAGE.md` plus `docs/COMMITTED_PACK_SYNTAX_CATALOG.md` document the workflow and known family catalog.
+- Current pot-math property/mutation contract:
+  - `tracker_parser_core::pot_resolution` now owns the lower pure pot-math property layer as unit tests, so internal pot construction can be stress-tested without widening the crate's public API;
+  - the lower layer is split into a deterministic ordinary run and an ignored `10k+` stress run over generated contribution/status ladders;
+  - `tracker_parser_core/tests/pot_math_properties.rs` is the upper full-normalizer smoke/mutation layer: it compares a canonical pot/outcome projection instead of the full `NormalizedHand` JSON;
+  - only `collect` lines and summary seat-result lines are treated as order-insensitive safe mutations; action order remains an explicit negative boundary and is not expected to preserve the result;
+  - the smoke layer also guards `uncalled return` chip/pot conservation and non-negative final stacks on canonical mutation fixtures.
+- Current typed parse issue contract:
+  - `CanonicalParsedHand` and `TournamentSummary` now expose parser-level `parse_issues: Vec<ParseIssue>` instead of legacy string surfaces like `parse_warnings` / `validation_issue_codes`;
+  - `ParseIssue` is the single canonical family for HH, TS, and import-boundary issues: it carries typed `severity`, stable external `code`, human-readable `message`, optional `raw_line`, and optional structured `payload`;
+  - `NormalizedHand` intentionally no longer mirrors parser-layer issues; parser diagnostics stay at the parser boundary and downstream exact-core logic reads factual hand state instead;
+  - `parser_worker` now persists `core.parse_issues` as a direct projection of that typed contract, including `payload`, rather than reconstructing rows from warning-string prefixes.
 - Current unified settlement contract:
   - `NormalizedHand` no longer exports top-level `final_pots`, `pot_contributions`, `pot_eligibilities`, or `pot_winners`; the single canonical pot-resolution surface is `settlement`;
   - `settlement` carries hand-level `certainty_state`, typed `issues`, evidence facts (`collect_events_seen`, `summary_outcomes_seen`, `show_hands_seen`), and per-pot facts (`contributions`, `eligibilities`, `contenders`, `candidate_allocations`, `selected_allocation`, `issues`);
@@ -255,16 +281,18 @@ Backend foundation живёт в `backend/` и на текущем этапе в
     - num: `best_hand_rank_value`, `overcards_count`;
     - enum: `best_hand_class`, `made_hand_category`, `draw_category`, `certainty_state`;
   - street-grain runtime rows are materialized only for Hero and for showdown-known opponents with exact-known cards; guessed/unknown opponents do not get persisted analytics rows;
-  - `mbr_stats_runtime::filters` now provides the first typed runtime filter substrate over both hand-grain and street-grain features:
+  - `tracker_query_runtime` now owns the generic typed hand/street query substrate over both hand-grain and street-grain features:
     - `hero_filters` evaluate on Hero rows;
     - `opponent_filters` require one showdown-known opponent seat to satisfy the full opponent group;
     - hand-grain predicates can be combined with street-grain predicates in the same filter set;
-    - runtime filters now also read sparse exact-core descriptors directly from `core/derived` without routing them through guessed analytics backfills:
+    - the query runtime reads sparse exact-core descriptors directly from `core/derived` without routing them through guessed analytics backfills:
       - hand-level presence keys `has_uncertain_reason_code:*`, `has_action_legality_issue:*`, `has_invariant_error_code:*` come from `derived.hand_state_resolutions`;
       - synthetic participant facet `street = seat` exposes seat-level exact facts from `core.hand_positions`, `core.hand_actions`, `core.hand_summary_results`, and `derived.hand_eliminations`;
       - the seat facet now publishes `position_label` as enum and `position_index`, `preflop_act_order_index`, `postflop_act_order_index` as numeric facts from `core.hand_positions`;
       - missing sparse exact-core presence facts evaluate as honest `false`, not as a fatal runtime filter error;
-    - `is_nut_hand` / `is_nut_draw` remain honest `unsupported`, not silent `false`;
+    - `is_nut_hand` / `is_nut_draw` are active supported predicates in the same contract;
+    - the public internal request/result surface is `HandQueryRequest -> HandQueryResult { hand_ids }`, with stable `Uuid` ordering and strict hard errors for unsupported features / invalid comparisons;
+  - `mbr_stats_runtime` no longer owns or re-exports generic query filters; it stays focused on MBR-specific materialization and stat query logic;
   - `mbr_stats_runtime::street_buckets` now exposes a runtime/UI-only projection `best | good | weak | trash` over exact street descriptors; this bucket layer is heuristic aggregation and is never written back into analytics tables or canonical exact tables;
   - `played_ft_hand` is materialized only from `derived.mbr_stage_resolution.played_ft_hand = true` with `played_ft_hand_state = exact`;
   - `derived.mbr_stage_resolution` now also persists the canonical hand-grain stage predicate surface:
@@ -345,7 +373,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current intentional limitation:
   - canonical UTC timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly, even though raw/local/provenance fields are now persisted;
   - date-range filters and session filters are still intentionally absent from the runtime query contract because timestamp normalization and session modeling are not exact yet;
-  - street-strength exact descriptors are now materialized into runtime analytics rows; `is_nut_hand` is exact in the descriptor layer, but runtime filters still intentionally reject both nut predicates until query semantics are specified;
+  - street-strength exact descriptors are now materialized into runtime analytics rows, and the generic query runtime already supports filtering on `is_nut_hand` / `is_nut_draw`; HTTP/API transport over that runtime still remains a later phase;
   - the public `best | good | weak | trash` street buckets are heuristic runtime/UI helpers only and must not be treated as solver truth or persisted exact facts;
   - FT reach and KO averages are currently defined over tournaments with imported HH coverage, not summary-only tournaments;
   - `hero_exact_ko_event_count` remains a per-hand event-count proxy and must not be treated as KO money or as the public source for aggregate KO seed stats;

@@ -1,0 +1,1355 @@
+{
+  "fixtures": {
+    "GG20260316-0307 - Mystery Battle Royale 25.txt": {
+      "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+      "hands": {
+        "BR1064992157": {
+          "hand_id": "BR1064992157",
+          "board": [
+            "Qd",
+            "9h",
+            "8d",
+            "2h",
+            "8h"
+          ],
+          "known_seats": {
+            "3": {
+              "player_name": "Hero",
+              "hole_cards": [
+                "Th",
+                "Jd"
+              ],
+              "is_hero": true
+            }
+          },
+          "rows": [
+            {
+              "seat_no": 3,
+              "street": "flop",
+              "best_hand_class": "straight",
+              "best_hand_rank_value": 3645000,
+              "made_hand_category": "straight",
+              "draw_category": "backdoor_flush_only",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": true,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "turn",
+              "best_hand_class": "straight",
+              "best_hand_rank_value": 3645000,
+              "made_hand_category": "straight",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": true,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "river",
+              "best_hand_class": "straight",
+              "best_hand_rank_value": 3645000,
+              "made_hand_category": "straight",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            }
+          ]
+        },
+        "BR1064992307": {
+          "hand_id": "BR1064992307",
+          "board": [
+            "Qs",
+            "6h",
+            "4d",
+            "3s",
+            "Td"
+          ],
+          "known_seats": {
+            "3": {
+              "player_name": "f1d6255e",
+              "hole_cards": [
+                "Qc",
+                "Qh"
+              ],
+              "is_hero": false
+            },
+            "4": {
+              "player_name": "f9c66f87",
+              "hole_cards": [
+                "Kd",
+                "Ks"
+              ],
+              "is_hero": false
+            },
+            "5": {
+              "player_name": "Hero",
+              "hole_cards": [
+                "9s",
+                "5c"
+              ],
+              "is_hero": true
+            }
+          },
+          "rows": [
+            {
+              "seat_no": 3,
+              "street": "flop",
+              "best_hand_class": "trips",
+              "best_hand_rank_value": 2906775,
+              "made_hand_category": "set",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": true,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "turn",
+              "best_hand_class": "trips",
+              "best_hand_rank_value": 2906775,
+              "made_hand_category": "set",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "river",
+              "best_hand_class": "trips",
+              "best_hand_rank_value": 2920725,
+              "made_hand_category": "set",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1459410,
+              "made_hand_category": "overpair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1459410,
+              "made_hand_category": "overpair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1460340,
+              "made_hand_category": "overpair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "flop",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 639304,
+              "made_hand_category": "high_card",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": true,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "turn",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 639304,
+              "made_hand_category": "high_card",
+              "draw_category": "open_ended",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "river",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 643370,
+              "made_hand_category": "high_card",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": true,
+              "missed_flush_draw": false,
+              "missed_straight_draw": true,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            }
+          ]
+        },
+        "BR1064992513": {
+          "hand_id": "BR1064992513",
+          "board": [
+            "Jh",
+            "Qd",
+            "3h",
+            "6d",
+            "2c"
+          ],
+          "known_seats": {
+            "2": {
+              "player_name": "741de677",
+              "hole_cards": [
+                "Ts",
+                "Ah"
+              ],
+              "is_hero": false
+            },
+            "3": {
+              "player_name": "Hero",
+              "hole_cards": [
+                "Js",
+                "4h"
+              ],
+              "is_hero": true
+            },
+            "4": {
+              "player_name": "cea32bcb",
+              "hole_cards": [
+                "9s",
+                "9h"
+              ],
+              "is_hero": false
+            }
+          },
+          "rows": [
+            {
+              "seat_no": 2,
+              "street": "flop",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 751878,
+              "made_hand_category": "high_card",
+              "draw_category": "gutshot",
+              "overcards_count": 1,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 2,
+              "street": "turn",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 751881,
+              "made_hand_category": "high_card",
+              "draw_category": "gutshot",
+              "overcards_count": 1,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 2,
+              "street": "river",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 751881,
+              "made_hand_category": "high_card",
+              "draw_category": "none",
+              "overcards_count": 1,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": true,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1357695,
+              "made_hand_category": "second_pair",
+              "draw_category": "backdoor_flush_only",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1358160,
+              "made_hand_category": "second_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1358160,
+              "made_hand_category": "second_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1258020,
+              "made_hand_category": "underpair",
+              "draw_category": "backdoor_flush_only",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1258065,
+              "made_hand_category": "underpair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1258065,
+              "made_hand_category": "underpair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            }
+          ]
+        },
+        "BR1064992706": {
+          "hand_id": "BR1064992706",
+          "board": [
+            "Ah",
+            "7s",
+            "Qc",
+            "7d",
+            "6c"
+          ],
+          "known_seats": {
+            "3": {
+              "player_name": "d36b0ae5",
+              "hole_cards": [
+                "8d",
+                "9c"
+              ],
+              "is_hero": false
+            },
+            "4": {
+              "player_name": "17f20eb3",
+              "hole_cards": [
+                "Ad",
+                "6h"
+              ],
+              "is_hero": false
+            },
+            "5": {
+              "player_name": "Hero",
+              "hole_cards": [
+                "7h",
+                "Jc"
+              ],
+              "is_hero": true
+            }
+          },
+          "rows": [
+            {
+              "seat_no": 3,
+              "street": "flop",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 751402,
+              "made_hand_category": "high_card",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": true,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1163835,
+              "made_hand_category": "board_pair_only",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1163835,
+              "made_hand_category": "board_pair_only",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1510290,
+              "made_hand_category": "top_pair_weak",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "turn",
+              "best_hand_class": "two_pair",
+              "best_hand_rank_value": 2253825,
+              "made_hand_category": "two_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "river",
+              "best_hand_class": "two_pair",
+              "best_hand_rank_value": 2253825,
+              "made_hand_category": "two_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1163865,
+              "made_hand_category": "third_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "turn",
+              "best_hand_class": "trips",
+              "best_hand_rank_value": 2682450,
+              "made_hand_category": "trips",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "river",
+              "best_hand_class": "trips",
+              "best_hand_rank_value": 2682450,
+              "made_hand_category": "trips",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            }
+          ]
+        }
+      }
+    },
+    "GG20260316-0312 - Mystery Battle Royale 25.txt": {
+      "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+      "hands": {
+        "BR1065002400": {
+          "hand_id": "BR1065002400",
+          "board": [
+            "Jc",
+            "Td",
+            "4h",
+            "8c",
+            "Ad"
+          ],
+          "known_seats": {
+            "4": {
+              "player_name": "de1266ea",
+              "hole_cards": [
+                "Qh",
+                "Jh"
+              ],
+              "is_hero": false
+            },
+            "5": {
+              "player_name": "Hero",
+              "hole_cards": [
+                "Qd",
+                "As"
+              ],
+              "is_hero": true
+            }
+          },
+          "rows": [
+            {
+              "seat_no": 4,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1359060,
+              "made_hand_category": "top_pair_good",
+              "draw_category": "backdoor_flush_only",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1359120,
+              "made_hand_category": "top_pair_good",
+              "draw_category": "gutshot",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1366350,
+              "made_hand_category": "second_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": true,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "flop",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 751879,
+              "made_hand_category": "high_card",
+              "draw_category": "gutshot",
+              "overcards_count": 2,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": true,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "turn",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 751883,
+              "made_hand_category": "high_card",
+              "draw_category": "double_gutshot",
+              "overcards_count": 2,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1511250,
+              "made_hand_category": "top_pair_good",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": true,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            }
+          ]
+        },
+        "BR1065002573": {
+          "hand_id": "BR1065002573",
+          "board": [
+            "5h",
+            "8h",
+            "5s",
+            "4s",
+            "5d"
+          ],
+          "known_seats": {
+            "1": {
+              "player_name": "90634388",
+              "hole_cards": [
+                "Qc",
+                "Qh"
+              ],
+              "is_hero": false
+            },
+            "3": {
+              "player_name": "Hero",
+              "hole_cards": [
+                "As",
+                "8s"
+              ],
+              "is_hero": true
+            },
+            "4": {
+              "player_name": "8aa2ca7a",
+              "hole_cards": [
+                "Ac",
+                "Jc"
+              ],
+              "is_hero": false
+            }
+          },
+          "rows": [
+            {
+              "seat_no": 1,
+              "street": "flop",
+              "best_hand_class": "two_pair",
+              "best_hand_rank_value": 2144925,
+              "made_hand_category": "two_pair",
+              "draw_category": "backdoor_flush_only",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 1,
+              "street": "turn",
+              "best_hand_class": "two_pair",
+              "best_hand_rank_value": 2144925,
+              "made_hand_category": "two_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 1,
+              "street": "river",
+              "best_hand_class": "full_house",
+              "best_hand_rank_value": 4849875,
+              "made_hand_category": "full_house",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "flop",
+              "best_hand_class": "two_pair",
+              "best_hand_rank_value": 1943775,
+              "made_hand_category": "two_pair",
+              "draw_category": "backdoor_flush_only",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "turn",
+              "best_hand_class": "two_pair",
+              "best_hand_rank_value": 1943775,
+              "made_hand_category": "two_pair",
+              "draw_category": "flush_draw",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "river",
+              "best_hand_class": "full_house",
+              "best_hand_rank_value": 4836375,
+              "made_hand_category": "full_house",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": true,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1062345,
+              "made_hand_category": "board_pair_only",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1062345,
+              "made_hand_category": "board_pair_only",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 4,
+              "street": "river",
+              "best_hand_class": "trips",
+              "best_hand_rank_value": 2580975,
+              "made_hand_category": "trips",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            }
+          ]
+        }
+      }
+    },
+    "GG20260316-0316 - Mystery Battle Royale 25.txt": {
+      "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+      "hands": {
+        "BR1065011867": {
+          "hand_id": "BR1065011867",
+          "board": [
+            "Ks",
+            "Qh",
+            "Jh",
+            "4h",
+            "2h"
+          ],
+          "known_seats": {
+            "1": {
+              "player_name": "Hero",
+              "hole_cards": [
+                "3c",
+                "Jc"
+              ],
+              "is_hero": true
+            },
+            "2": {
+              "player_name": "d6a8d16a",
+              "hole_cards": [
+                "2c",
+                "7d"
+              ],
+              "is_hero": false
+            },
+            "5": {
+              "player_name": "90b8b3ab",
+              "hole_cards": [
+                "Th",
+                "Qd"
+              ],
+              "is_hero": false
+            },
+            "8": {
+              "player_name": "138be385",
+              "hole_cards": [
+                "5h",
+                "5c"
+              ],
+              "is_hero": false
+            }
+          },
+          "rows": [
+            {
+              "seat_no": 1,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1362870,
+              "made_hand_category": "third_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 1,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1362885,
+              "made_hand_category": "third_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 1,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1362885,
+              "made_hand_category": "third_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 2,
+              "street": "flop",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 701207,
+              "made_hand_category": "high_card",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": true,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 2,
+              "street": "turn",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 701209,
+              "made_hand_category": "high_card",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": true,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 2,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 907365,
+              "made_hand_category": "third_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1413375,
+              "made_hand_category": "second_pair",
+              "draw_category": "open_ended",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1413375,
+              "made_hand_category": "second_pair",
+              "draw_category": "combo_draw",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 5,
+              "street": "river",
+              "best_hand_class": "flush",
+              "best_hand_rank_value": 4443812,
+              "made_hand_category": "flush",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": true,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 8,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1059240,
+              "made_hand_category": "underpair",
+              "draw_category": "backdoor_flush_only",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 8,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1059240,
+              "made_hand_category": "underpair",
+              "draw_category": "flush_draw",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 8,
+              "street": "river",
+              "best_hand_class": "flush",
+              "best_hand_rank_value": 4442687,
+              "made_hand_category": "flush",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            }
+          ]
+        }
+      }
+    },
+    "GG20260316-0323 - Mystery Battle Royale 25.txt": {
+      "fixture_file": "GG20260316-0323 - Mystery Battle Royale 25.txt",
+      "hands": {
+        "BR1065003863": {
+          "hand_id": "BR1065003863",
+          "board": [
+            "Ks",
+            "6d",
+            "8d",
+            "Ts",
+            "Th"
+          ],
+          "known_seats": {
+            "2": {
+              "player_name": "Hero",
+              "hole_cards": [
+                "7s",
+                "7h"
+              ],
+              "is_hero": true
+            },
+            "3": {
+              "player_name": "7463f2ef",
+              "hole_cards": [
+                "Ah",
+                "Qc"
+              ],
+              "is_hero": false
+            },
+            "7": {
+              "player_name": "20b732ba",
+              "hole_cards": [
+                "Td",
+                "Tc"
+              ],
+              "is_hero": false
+            },
+            "8": {
+              "player_name": "9706a6f",
+              "hole_cards": [
+                "Js",
+                "9s"
+              ],
+              "is_hero": false
+            }
+          },
+          "rows": [
+            {
+              "seat_no": 2,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1159515,
+              "made_hand_category": "underpair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 2,
+              "street": "turn",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1159995,
+              "made_hand_category": "underpair",
+              "draw_category": "gutshot",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 2,
+              "street": "river",
+              "best_hand_class": "two_pair",
+              "best_hand_rank_value": 2051550,
+              "made_hand_category": "two_pair",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": true,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "flop",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 755451,
+              "made_hand_category": "high_card",
+              "draw_category": "none",
+              "overcards_count": 1,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "turn",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 755483,
+              "made_hand_category": "high_card",
+              "draw_category": "gutshot",
+              "overcards_count": 1,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 3,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1315980,
+              "made_hand_category": "board_pair_only",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": true,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 7,
+              "street": "flop",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1311390,
+              "made_hand_category": "underpair",
+              "draw_category": "backdoor_flush_only",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 7,
+              "street": "turn",
+              "best_hand_class": "trips",
+              "best_hand_rank_value": 2830050,
+              "made_hand_category": "set",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 7,
+              "street": "river",
+              "best_hand_class": "quads",
+              "best_hand_rank_value": 5865750,
+              "made_hand_category": "quads",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": true,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 8,
+              "street": "flop",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 697401,
+              "made_hand_category": "high_card",
+              "draw_category": "backdoor_flush_only",
+              "overcards_count": 0,
+              "has_air": true,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 8,
+              "street": "turn",
+              "best_hand_class": "high_card",
+              "best_hand_rank_value": 697643,
+              "made_hand_category": "high_card",
+              "draw_category": "combo_draw",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": false,
+              "missed_straight_draw": false,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            },
+            {
+              "seat_no": 8,
+              "street": "river",
+              "best_hand_class": "pair",
+              "best_hand_rank_value": 1312110,
+              "made_hand_category": "board_pair_only",
+              "draw_category": "none",
+              "overcards_count": 0,
+              "has_air": false,
+              "missed_flush_draw": true,
+              "missed_straight_draw": true,
+              "is_nut_hand": false,
+              "is_nut_draw": false,
+              "certainty_state": "exact"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

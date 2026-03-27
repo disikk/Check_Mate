@@ -21,7 +21,7 @@ pub struct TournamentSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confirmed_payout_cents: Option<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub validation_issue_codes: Vec<String>,
+    pub parse_issues: Vec<ParseIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -221,7 +221,148 @@ pub struct CanonicalParsedHand {
     pub summary_seat_outcomes: Vec<SummarySeatOutcome>,
     pub collected_amounts: BTreeMap<String, i64>,
     pub raw_hand_text: String,
-    pub parse_warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parse_issues: Vec<ParseIssue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParseIssueSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+impl ParseIssueSeverity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Warning => "warning",
+            Self::Error => "error",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParseIssueCode {
+    UnparsedLine,
+    UnparsedSummarySeatLine,
+    UnparsedSummarySeatTail,
+    UnsupportedNoShowLine,
+    PartialRevealShowLine,
+    PartialRevealSummaryShowSurface,
+    TsTailFinishPlaceMismatch,
+    TsTailTotalReceivedMismatch,
+    ParserWarning,
+    HeroCardsMissingSeat,
+    ShowdownPlayerMissingSeat,
+    SummarySeatOutcomeSeatMismatch,
+    SummarySeatOutcomeMissingSeat,
+    ActionPlayerMissingSeat,
+}
+
+impl ParseIssueCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UnparsedLine => "unparsed_line",
+            Self::UnparsedSummarySeatLine => "unparsed_summary_seat_line",
+            Self::UnparsedSummarySeatTail => "unparsed_summary_seat_tail",
+            Self::UnsupportedNoShowLine => "unsupported_no_show_line",
+            Self::PartialRevealShowLine => "partial_reveal_show_line",
+            Self::PartialRevealSummaryShowSurface => "partial_reveal_summary_show_surface",
+            Self::TsTailFinishPlaceMismatch => "ts_tail_finish_place_mismatch",
+            Self::TsTailTotalReceivedMismatch => "ts_tail_total_received_mismatch",
+            Self::ParserWarning => "parser_warning",
+            Self::HeroCardsMissingSeat => "hero_cards_missing_seat",
+            Self::ShowdownPlayerMissingSeat => "showdown_player_missing_seat",
+            Self::SummarySeatOutcomeSeatMismatch => "summary_seat_outcome_seat_mismatch",
+            Self::SummarySeatOutcomeMissingSeat => "summary_seat_outcome_missing_seat",
+            Self::ActionPlayerMissingSeat => "action_player_missing_seat",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum ParseIssuePayload {
+    RawLine {
+        raw_line: String,
+    },
+    TsTailFinishPlaceMismatch {
+        result_finish_place: u32,
+        tail_finish_place: u32,
+    },
+    TsTailTotalReceivedMismatch {
+        result_payout_cents: i64,
+        tail_payout_cents: i64,
+    },
+    HeroCardsMissingSeat {
+        hero_name: String,
+    },
+    ShowdownPlayerMissingSeat {
+        player_name: String,
+    },
+    SummarySeatOutcomeSeatMismatch {
+        seat_no: u8,
+        player_name: String,
+        canonical_player_name: String,
+    },
+    SummarySeatOutcomeMissingSeat {
+        seat_no: u8,
+        player_name: String,
+    },
+    ActionPlayerMissingSeat {
+        player_name: String,
+        raw_line: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ParseIssue {
+    pub severity: ParseIssueSeverity,
+    pub code: ParseIssueCode,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_line: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload: Option<ParseIssuePayload>,
+}
+
+impl ParseIssue {
+    pub fn new(
+        severity: ParseIssueSeverity,
+        code: ParseIssueCode,
+        message: String,
+        raw_line: Option<String>,
+        payload: Option<ParseIssuePayload>,
+    ) -> Self {
+        Self {
+            severity,
+            code,
+            message,
+            raw_line,
+            payload,
+        }
+    }
+
+    pub fn warning(
+        code: ParseIssueCode,
+        message: String,
+        raw_line: Option<String>,
+        payload: Option<ParseIssuePayload>,
+    ) -> Self {
+        Self::new(ParseIssueSeverity::Warning, code, message, raw_line, payload)
+    }
+
+    pub fn error(
+        code: ParseIssueCode,
+        message: String,
+        raw_line: Option<String>,
+        payload: Option<ParseIssuePayload>,
+    ) -> Self {
+        Self::new(ParseIssueSeverity::Error, code, message, raw_line, payload)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -612,5 +753,4 @@ pub struct NormalizedHand {
     pub actual: HandOutcomeActual,
     pub eliminations: Vec<HandElimination>,
     pub invariants: HandInvariants,
-    pub warnings: Vec<String>,
 }

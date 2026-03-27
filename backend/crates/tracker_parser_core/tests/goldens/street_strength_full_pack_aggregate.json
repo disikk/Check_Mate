@@ -1,0 +1,864 @@
+{
+  "fixture_count": 10,
+  "hand_count": 333,
+  "materialized_hand_count": 203,
+  "materialized_row_count": 1334,
+  "hero_row_count": 527,
+  "showdown_known_opponent_row_count": 807,
+  "hands_with_hero_only_rows": 60,
+  "hands_with_showdown_opponent_rows": 143,
+  "hands_with_multiple_showdown_opponents": 102,
+  "best_hand_class_counts": {
+    "flush": 15,
+    "full_house": 20,
+    "high_card": 393,
+    "pair": 618,
+    "quads": 1,
+    "straight": 35,
+    "trips": 71,
+    "two_pair": 181
+  },
+  "made_hand_category_counts": {
+    "board_pair_only": 195,
+    "flush": 15,
+    "full_house": 20,
+    "high_card": 393,
+    "overpair": 76,
+    "quads": 1,
+    "second_pair": 77,
+    "set": 31,
+    "straight": 35,
+    "third_pair": 76,
+    "top_pair_good": 41,
+    "top_pair_top": 15,
+    "top_pair_weak": 58,
+    "trips": 40,
+    "two_pair": 181,
+    "underpair": 80
+  },
+  "draw_category_counts": {
+    "backdoor_flush_only": 104,
+    "combo_draw": 18,
+    "double_gutshot": 13,
+    "flush_draw": 47,
+    "gutshot": 127,
+    "none": 995,
+    "open_ended": 30
+  },
+  "missed_flush_draw_true_count": 31,
+  "missed_straight_draw_true_count": 94,
+  "is_nut_hand_true_count": 12,
+  "is_nut_draw_true_count": 10,
+  "best_hand_class_witnesses": {
+    "flush": [
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011867"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002994"
+      },
+      {
+        "fixture_file": "GG20260316-0338 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065021848"
+      },
+      {
+        "fixture_file": "GG20260316-0342 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064995486"
+      },
+      {
+        "fixture_file": "GG20260316-0342 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064994943"
+      }
+    ],
+    "full_house": [
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993538"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993350"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002573"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011832"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002850"
+      }
+    ],
+    "high_card": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992721"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992662"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992554"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      }
+    ],
+    "pair": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992721"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992662"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992554"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      }
+    ],
+    "quads": [
+      {
+        "fixture_file": "GG20260316-0323 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065003863"
+      }
+    ],
+    "straight": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992157"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993629"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993299"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002487"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002318"
+      }
+    ],
+    "trips": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992721"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992307"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993350"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002573"
+      }
+    ],
+    "two_pair": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992458"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992430"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993721"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993629"
+      }
+    ]
+  },
+  "made_hand_category_witnesses": {
+    "board_pair_only": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992430"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993721"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993538"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993350"
+      }
+    ],
+    "flush": [
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011867"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002994"
+      },
+      {
+        "fixture_file": "GG20260316-0338 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065021848"
+      },
+      {
+        "fixture_file": "GG20260316-0342 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064995486"
+      },
+      {
+        "fixture_file": "GG20260316-0342 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064994943"
+      }
+    ],
+    "full_house": [
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993538"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993350"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002573"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011832"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002850"
+      }
+    ],
+    "high_card": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992721"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992662"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992554"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      }
+    ],
+    "overpair": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992307"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993410"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002318"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011945"
+      },
+      {
+        "fixture_file": "GG20260316-0323 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065004413"
+      }
+    ],
+    "quads": [
+      {
+        "fixture_file": "GG20260316-0323 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065003863"
+      }
+    ],
+    "second_pair": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992458"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992352"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993350"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993299"
+      }
+    ],
+    "set": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992721"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992307"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002470"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002850"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002580"
+      }
+    ],
+    "straight": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992157"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993629"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993299"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002487"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002318"
+      }
+    ],
+    "third_pair": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992662"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992458"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992430"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993629"
+      }
+    ],
+    "top_pair_good": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992352"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993410"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002400"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011219"
+      },
+      {
+        "fixture_file": "GG20260316-0319 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064994019"
+      }
+    ],
+    "top_pair_top": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992721"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992662"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993299"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002470"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002515"
+      }
+    ],
+    "top_pair_weak": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992554"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992488"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992430"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992352"
+      }
+    ],
+    "trips": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993350"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002573"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011832"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011570"
+      }
+    ],
+    "two_pair": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992458"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992430"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993721"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993629"
+      }
+    ],
+    "underpair": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992488"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993147"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011867"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011695"
+      }
+    ]
+  },
+  "draw_category_witnesses": {
+    "backdoor_flush_only": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992430"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992157"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993721"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993629"
+      }
+    ],
+    "combo_draw": [
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993054"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011945"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011867"
+      },
+      {
+        "fixture_file": "GG20260316-0319 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064976562"
+      },
+      {
+        "fixture_file": "GG20260316-0323 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065003863"
+      }
+    ],
+    "double_gutshot": [
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993299"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002689"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002400"
+      },
+      {
+        "fixture_file": "GG20260316-0342 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064995882"
+      },
+      {
+        "fixture_file": "GG20260316-0344 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065004819"
+      }
+    ],
+    "flush_draw": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992352"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993054"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002573"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011945"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011867"
+      }
+    ],
+    "gutshot": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992554"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992430"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993629"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993538"
+      }
+    ],
+    "none": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992721"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992662"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992554"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      }
+    ],
+    "open_ended": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992307"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993410"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993147"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002487"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011867"
+      }
+    ]
+  },
+  "scenario_witnesses": {
+    "hero_only_rows": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992157"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992993"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002733"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002689"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002673"
+      }
+    ],
+    "is_nut_draw_true": [
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002400"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002896"
+      },
+      {
+        "fixture_file": "GG20260316-0319 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064976432"
+      },
+      {
+        "fixture_file": "GG20260316-0323 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065004296"
+      },
+      {
+        "fixture_file": "GG20260316-0323 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065004037"
+      }
+    ],
+    "is_nut_hand_true": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992307"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992157"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993538"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002470"
+      },
+      {
+        "fixture_file": "GG20260316-0319 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064976551"
+      }
+    ],
+    "missed_flush_draw_true": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992352"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993054"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065002573"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011945"
+      },
+      {
+        "fixture_file": "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1065011129"
+      }
+    ],
+    "missed_straight_draw_true": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992554"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992430"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992307"
+      },
+      {
+        "fixture_file": "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064993629"
+      }
+    ],
+    "multiple_showdown_opponents": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992662"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992554"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992488"
+      }
+    ],
+    "showdown_opponent_rows": [
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992721"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992706"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992662"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992554"
+      },
+      {
+        "fixture_file": "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        "hand_id": "BR1064992513"
+      }
+    ]
+  }
+}

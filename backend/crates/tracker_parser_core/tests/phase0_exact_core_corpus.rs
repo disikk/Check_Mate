@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use tracker_parser_core::{
     models::{
         ActionType, AllInReason, CanonicalParsedHand, CertaintyState, InvariantIssue,
-        NormalizedHand, PotSettlementIssue, SettlementIssue, Street,
+        NormalizedHand, ParseIssue, ParseIssueCode, PotSettlementIssue, SettlementIssue, Street,
     },
     normalizer::normalize_hand,
     parsers::hand_history::{parse_canonical_hand, split_hand_history},
@@ -29,21 +29,21 @@ fn parses_phase0_exact_core_edge_matrix_with_only_reason_coded_explicit_warnings
             )
         });
 
-        for warning in &parsed.parse_warnings {
-            if !is_allowed_edge_warning(warning) {
-                unexpected.push(format!("{} :: {warning}", parsed.header.hand_id));
+        for issue in &parsed.parse_issues {
+            if !is_allowed_edge_issue(issue) {
+                unexpected.push(format!("{} :: {:?}", parsed.header.hand_id, issue));
             }
         }
 
         if parsed.header.hand_id == "BRCM0402" {
             saw_partial_reveal = parsed
-                .parse_warnings
+                .parse_issues
                 .iter()
-                .any(|warning| warning.starts_with("partial_reveal_show_line: "));
+                .any(|issue| issue.code == ParseIssueCode::PartialRevealShowLine);
             saw_no_show = parsed
-                .parse_warnings
+                .parse_issues
                 .iter()
-                .any(|warning| warning.starts_with("unsupported_no_show_line: "));
+                .any(|issue| issue.code == ParseIssueCode::UnsupportedNoShowLine);
         }
     }
 
@@ -247,10 +247,7 @@ fn parses_phase0_exact_core_edge_matrix_with_explicit_manifest_contracts() {
             "action contract mismatch for `{hand_id}`"
         );
         assert_eq!(
-            hand.parse_warnings
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
+            parse_issue_manifest(hand),
             contract.warnings,
             "warning contract mismatch for `{hand_id}`"
         );
@@ -588,9 +585,9 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                     ),
                 ],
                 warnings: vec![
-                    "unsupported_no_show_line: VillainNoShow: doesn't show hand",
-                    "partial_reveal_show_line: VillainPartial: shows [5d]",
-                    "partial_reveal_summary_show_surface: Seat 2: VillainPartial (small blind) showed [5d] and lost",
+                    "unsupported_no_show_line",
+                    "partial_reveal_show_line",
+                    "partial_reveal_summary_show_surface",
                 ],
             },
         ),
@@ -2646,11 +2643,33 @@ fn fixture_path(filename: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../fixtures/mbr/hh/{filename}"))
 }
 
-fn is_allowed_edge_warning(warning: &str) -> bool {
-    warning.starts_with("partial_reveal_show_line: ")
-        || warning.starts_with("partial_reveal_summary_show_surface: ")
-        || warning.starts_with("unsupported_no_show_line: ")
-        || warning.starts_with("unparsed_summary_seat_line: ")
+fn is_allowed_edge_issue(issue: &ParseIssue) -> bool {
+    matches!(
+        issue.code,
+        ParseIssueCode::PartialRevealShowLine
+            | ParseIssueCode::PartialRevealSummaryShowSurface
+            | ParseIssueCode::UnsupportedNoShowLine
+            | ParseIssueCode::UnparsedSummarySeatLine
+    )
+}
+
+fn parse_issue_manifest(hand: &CanonicalParsedHand) -> Vec<&str> {
+    hand.parse_issues
+        .iter()
+        .map(|issue| match issue.code {
+            ParseIssueCode::PartialRevealShowLine => "partial_reveal_show_line",
+            ParseIssueCode::PartialRevealSummaryShowSurface => {
+                "partial_reveal_summary_show_surface"
+            }
+            ParseIssueCode::UnsupportedNoShowLine => "unsupported_no_show_line",
+            ParseIssueCode::UnparsedSummarySeatLine => "unparsed_summary_seat_line",
+            ParseIssueCode::UnparsedSummarySeatTail => "unparsed_summary_seat_tail",
+            ParseIssueCode::UnparsedLine => "unparsed_line",
+            ParseIssueCode::TsTailFinishPlaceMismatch => "ts_tail_finish_place_mismatch",
+            ParseIssueCode::TsTailTotalReceivedMismatch => "ts_tail_total_received_mismatch",
+            _ => "unknown",
+        })
+        .collect()
 }
 
 fn find_action<'a>(

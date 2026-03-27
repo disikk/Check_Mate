@@ -1,6 +1,9 @@
 use regex::Regex;
 
-use crate::{ParserError, models::TournamentSummary};
+use crate::{
+    ParserError,
+    models::{ParseIssue, ParseIssueCode, ParseIssuePayload, TournamentSummary},
+};
 
 pub fn parse_tournament_summary(input: &str) -> Result<TournamentSummary, ParserError> {
     let normalized = normalize_newlines(input);
@@ -68,13 +71,39 @@ pub fn parse_tournament_summary(input: &str) -> Result<TournamentSummary, Parser
         find_confirmation_payout(lines.iter().skip(result_line_index + 1).copied())?;
     let finish_place = parse_u32(&captures["place"], "finish_place")?;
     let payout_cents = parse_money_to_cents(&captures["payout"], "payout")?;
-    let mut validation_issue_codes = Vec::new();
+    let mut parse_issues = Vec::new();
 
-    if confirmed_finish_place.is_some_and(|confirmed| confirmed != finish_place) {
-        validation_issue_codes.push("ts_tail_finish_place_mismatch".to_string());
+    if let Some(confirmed) = confirmed_finish_place
+        && confirmed != finish_place
+    {
+        parse_issues.push(ParseIssue::warning(
+            ParseIssueCode::TsTailFinishPlaceMismatch,
+            format!(
+                "result line finish_place={} conflicts with tail finish_place={confirmed}",
+                finish_place
+            ),
+            None,
+            Some(ParseIssuePayload::TsTailFinishPlaceMismatch {
+                result_finish_place: finish_place,
+                tail_finish_place: confirmed,
+            }),
+        ));
     }
-    if confirmed_payout_cents.is_some_and(|confirmed| confirmed != payout_cents) {
-        validation_issue_codes.push("ts_tail_total_received_mismatch".to_string());
+    if let Some(confirmed) = confirmed_payout_cents
+        && confirmed != payout_cents
+    {
+        parse_issues.push(ParseIssue::warning(
+            ParseIssueCode::TsTailTotalReceivedMismatch,
+            format!(
+                "result line payout_cents={} conflicts with tail payout_cents={confirmed}",
+                payout_cents
+            ),
+            None,
+            Some(ParseIssuePayload::TsTailTotalReceivedMismatch {
+                result_payout_cents: payout_cents,
+                tail_payout_cents: confirmed,
+            }),
+        ));
     }
 
     Ok(TournamentSummary {
@@ -92,7 +121,7 @@ pub fn parse_tournament_summary(input: &str) -> Result<TournamentSummary, Parser
         payout_cents,
         confirmed_finish_place,
         confirmed_payout_cents,
-        validation_issue_codes,
+        parse_issues,
     })
 }
 

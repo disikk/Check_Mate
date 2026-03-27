@@ -8,7 +8,23 @@
 
 - `backend/crates/tracker_parser_core/src/street_strength.rs`
 - `backend/crates/tracker_parser_core/tests/street_hand_strength.rs`
-- будущего reference/differential harness для `street_strength`
+- `backend/crates/tracker_parser_core/tests/street_strength_reference.rs`
+- `backend/crates/tracker_parser_core/tests/street_strength_corpus_golden.rs`
+
+## Proof Surface
+
+Текущий exact contract защищён тремя уровнями tests:
+
+- synthetic acceptance coverage в `street_hand_strength.rs`;
+- independent reference/differential harness в `street_strength_reference.rs`;
+- corpus-backed golden suite в `street_strength_corpus_golden.rs`.
+
+Corpus-backed layer разделён на два snapshot-формата:
+
+- curated raw real-hand golden с полным active row contract;
+- aggregated full-pack golden sweep по committed HH fixtures.
+
+Оба golden-файла обновляются только через explicit `UPDATE_GOLDENS=1`.
 
 ## Проблема
 

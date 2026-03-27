@@ -13,6 +13,8 @@ vite-dev.err.log
 __MACOSX/
 backend/target/
 backend/.env
+backend/.local/
 /.claude
 /.agent/tasks
 /.codex/agents
+/docs/plans

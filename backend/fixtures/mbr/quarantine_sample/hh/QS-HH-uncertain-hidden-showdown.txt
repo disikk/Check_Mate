@@ -1,0 +1,29 @@
+Poker Hand #QSWC0502: Tournament #990004, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(100)) - 2026/03/17 10:10:00
+Table '16' 4-max Seat #1 is the button
+Seat 1: ShortyA (100 in chips)
+Seat 2: ShortyB (100 in chips)
+Seat 3: Hero (300 in chips)
+Seat 4: Villain (300 in chips)
+ShortyA: posts the ante 100
+ShortyB: posts the ante 100
+Hero: posts the ante 100
+Villain: posts the ante 100
+*** HOLE CARDS ***
+Dealt to ShortyA
+Dealt to ShortyB
+Dealt to Hero [Ah Ad]
+Dealt to Villain
+Hero: bets 200 and is all-in
+Villain: calls 200 and is all-in
+Hero: shows [Ah Ad]
+*** SHOWDOWN ***
+Hero collected 400 from pot
+Villain collected 400 from pot
+*** SUMMARY ***
+Total pot 800 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: ShortyA mucked
+Seat 2: ShortyB mucked
+Seat 3: Hero showed [Ah Ad] and collected (400)
+Seat 4: Villain collected (400)
+

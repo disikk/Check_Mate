@@ -2,7 +2,7 @@
 
 ## Статус
 
-Этот документ freeze-ит текущий exact-core контракт `tracker_parser_core` по состоянию на 2026-03-26. Он описывает уже существующее поведение parser/normalizer/pot-resolution слоя и не считается redesign-документом для будущих фаз.
+Этот документ freeze-ит текущий exact-core контракт `tracker_parser_core` по состоянию на 2026-03-27. Он описывает уже существующее поведение parser/normalizer/pot-resolution слоя и не считается redesign-документом для будущих фаз.
 
 ## Проблема
 
@@ -27,6 +27,7 @@
 
 Этот контракт покрывает:
 - canonical parsed hand surface;
+- typed parser issue surface;
 - normalized hand surface;
 - chip/pot invariants;
 - pot slicing / eligibility / winner resolution;
@@ -41,7 +42,7 @@
 - `position_index` / `position_label` split;
 - pot-level evidence graph;
 - `KO semantics v2`;
-- typed parser issues / typed uncertainty reasons.
+- typed uncertainty reasons вне уже materialized invariant/settlement issue enums.
 
 ## Канонический surface
 
@@ -55,7 +56,19 @@
 - `board_final` / `summary_board`
 - `summary_total_pot`
 - `summary_rake_amount`
-- `parse_warnings`
+- `parse_issues`
+
+`TournamentSummary` тоже использует тот же parser-level issue surface:
+- `parse_issues`
+
+`parse_issues` является typed parser/import-boundary contract:
+- `severity`
+- стабильный machine-readable `code`
+- human-readable `message`
+- optional `raw_line`
+- optional structured `payload`
+
+Parser-layer issues не поднимаются в `NormalizedHand`; normalizer работает поверх facts из `CanonicalParsedHand`, а не поверх дублированного warning-list.
 
 ### Выход
 

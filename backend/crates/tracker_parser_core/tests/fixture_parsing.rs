@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use tracker_parser_core::{
     SourceKind, detect_source_kind,
-    models::{ActionType, AllInReason, Street},
+    models::{ActionType, AllInReason, ParseIssue, ParseIssueCode, ParseIssueSeverity, Street},
     parsers::{
         hand_history::{parse_canonical_hand, parse_hand_header, split_hand_history},
         tournament_summary::parse_tournament_summary,
@@ -79,7 +79,7 @@ fn parses_tournament_summary_fixture() {
     assert_eq!(summary.payout_cents, 20_500);
     assert_eq!(summary.confirmed_finish_place, Some(1));
     assert_eq!(summary.confirmed_payout_cents, Some(20_500));
-    assert!(summary.validation_issue_codes.is_empty());
+    assert!(summary.parse_issues.is_empty());
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn parses_tournament_summary_tail_confirmations_with_harmless_extra_lines() {
     assert_eq!(summary.payout_cents, 20_500);
     assert_eq!(summary.confirmed_finish_place, Some(1));
     assert_eq!(summary.confirmed_payout_cents, Some(20_500));
-    assert!(summary.validation_issue_codes.is_empty());
+    assert!(summary.parse_issues.is_empty());
 }
 
 #[test]
@@ -105,10 +105,14 @@ fn surfaces_tournament_summary_tail_conflicts_as_validation_issues() {
     assert_eq!(summary.confirmed_finish_place, Some(2));
     assert_eq!(summary.confirmed_payout_cents, Some(20_400));
     assert_eq!(
-        summary.validation_issue_codes,
+        summary
+            .parse_issues
+            .iter()
+            .map(|issue| issue.code)
+            .collect::<Vec<_>>(),
         vec![
-            "ts_tail_finish_place_mismatch".to_string(),
-            "ts_tail_total_received_mismatch".to_string()
+            ParseIssueCode::TsTailFinishPlaceMismatch,
+            ParseIssueCode::TsTailTotalReceivedMismatch,
         ]
     );
 }
@@ -226,21 +230,21 @@ fn parses_summary_fields_without_false_positive_warnings() {
     );
     assert!(
         !hand
-            .parse_warnings
+            .parse_issues
             .iter()
-            .any(|warning| warning.contains("Dealt to f02e54a6"))
+            .any(|issue| issue.message.contains("Dealt to f02e54a6"))
     );
     assert!(
         !hand
-            .parse_warnings
+            .parse_issues
             .iter()
-            .any(|warning| warning.contains("Total pot 3,984"))
+            .any(|issue| issue.message.contains("Total pot 3,984"))
     );
     assert!(
         !hand
-            .parse_warnings
+            .parse_issues
             .iter()
-            .any(|warning| warning.contains("Board [7d 2s 8h 2c Kh]"))
+            .any(|issue| issue.message.contains("Board [7d 2s 8h 2c Kh]"))
     );
 }
 
@@ -294,7 +298,7 @@ fn parses_committed_ante_hidden_dealt_and_ranked_show_surface_without_warnings()
     assert_eq!(hand.summary_total_pot, Some(1_944));
     assert_eq!(hand.summary_rake_amount, Some(0));
     assert_eq!(hand.summary_board.len(), 5);
-    assert!(hand.parse_warnings.is_empty());
+    assert!(hand.parse_issues.is_empty());
 }
 
 #[test]
@@ -324,7 +328,7 @@ fn parses_committed_check_bet_uncalled_and_collect_surface_without_warnings() {
             .any(|event| event.action_type == ActionType::Collect)
     );
     assert_eq!(hand.collected_amounts.get("Hero"), Some(&220));
-    assert!(hand.parse_warnings.is_empty());
+    assert!(hand.parse_issues.is_empty());
 }
 
 #[test]
@@ -425,11 +429,11 @@ fn parses_summary_seat_result_lines_into_structured_outcomes() {
             .iter()
             .any(|outcome| outcome.seat_no == 2 && outcome.player_name == "Hero")
     );
-    assert!(
-        hand.parse_warnings
-            .iter()
-            .any(|warning| warning == "unparsed_summary_seat_tail: Seat 9: VillainX (button) ???")
-    );
+    assert!(hand.parse_issues.iter().any(|issue| {
+        issue.code == ParseIssueCode::UnparsedSummarySeatTail
+            && issue.severity == ParseIssueSeverity::Warning
+            && issue.raw_line.as_deref() == Some("Seat 9: VillainX (button) ???")
+    }));
 }
 
 #[test]
@@ -452,18 +456,22 @@ fn unknown_summary_tail_uses_tail_specific_warning_when_head_is_valid() {
                     == tracker_parser_core::models::SummarySeatOutcomeKind::Collected)
     );
     assert!(
-        hand.parse_warnings.iter().any(|warning| {
-            warning == "unparsed_summary_seat_tail: Seat 1: Hero (button) celebrated the win"
+        hand.parse_issues.iter().any(|issue| {
+            issue.code == ParseIssueCode::UnparsedSummarySeatTail
+                && issue.raw_line.as_deref()
+                    == Some("Seat 1: Hero (button) celebrated the win")
         }),
         "expected tail-specific warning, got {:?}",
-        hand.parse_warnings
+        hand.parse_issues
     );
     assert!(
-        !hand.parse_warnings.iter().any(|warning| {
-            warning == "unparsed_summary_seat_line: Seat 1: Hero (button) celebrated the win"
+        !hand.parse_issues.iter().any(|issue| {
+            issue.code == ParseIssueCode::UnparsedSummarySeatLine
+                && issue.raw_line.as_deref()
+                    == Some("Seat 1: Hero (button) celebrated the win")
         }),
         "head-valid unknown tail must not downgrade to line-level warning: {:?}",
-        hand.parse_warnings
+        hand.parse_issues
     );
 }
 
@@ -482,7 +490,7 @@ fn parses_showed_collected_summary_tail_as_showed_won_surface() {
     );
     assert_eq!(outcome.shown_cards, Some(vec!["Ah".to_string(), "Ad".to_string()]));
     assert_eq!(outcome.won_amount, Some(300));
-    assert!(hand.parse_warnings.is_empty(), "got {:?}", hand.parse_warnings);
+    assert!(hand.parse_issues.is_empty(), "got {:?}", hand.parse_issues);
 }
 
 #[test]
@@ -511,18 +519,23 @@ fn marks_no_show_and_partial_reveal_surface_explicitly() {
     let hand = parse_canonical_hand(&cm04_show_surface_hand_text()).unwrap();
 
     assert!(
-        hand.parse_warnings
-            .iter()
-            .any(|warning| warning == "partial_reveal_show_line: VillainPartial: shows [5d]")
+        hand.parse_issues.iter().any(|issue| {
+            issue.code == ParseIssueCode::PartialRevealShowLine
+                && issue.raw_line.as_deref() == Some("VillainPartial: shows [5d]")
+        })
     );
     assert!(
-        hand.parse_warnings
-            .iter()
-            .any(|warning| warning == "unsupported_no_show_line: VillainNoShow: doesn't show hand")
+        hand.parse_issues.iter().any(|issue| {
+            issue.code == ParseIssueCode::UnsupportedNoShowLine
+                && issue.raw_line.as_deref() == Some("VillainNoShow: doesn't show hand")
+        })
     );
-    assert!(!hand.parse_warnings.iter().any(|warning| {
-        warning == "unparsed_line: VillainPartial: shows [5d]"
-            || warning == "unparsed_line: VillainNoShow: doesn't show hand"
+    assert!(!hand.parse_issues.iter().any(|issue| {
+        issue.code == ParseIssueCode::UnparsedLine
+            && matches!(
+                issue.raw_line.as_deref(),
+                Some("VillainPartial: shows [5d]" | "VillainNoShow: doesn't show hand")
+            )
     }));
 }
 
@@ -582,8 +595,15 @@ Seat 2: Villain folded before Flop"#,
     .unwrap();
 
     assert_eq!(
-        hand.parse_warnings,
-        vec!["unparsed_line: Dealer note: this line is not part of the parser contract"]
+        hand.parse_issues,
+        vec![ParseIssue {
+            severity: ParseIssueSeverity::Warning,
+            code: ParseIssueCode::UnparsedLine,
+            message: "unparsed_line: Dealer note: this line is not part of the parser contract"
+                .to_string(),
+            raw_line: Some("Dealer note: this line is not part of the parser contract".to_string()),
+            payload: None,
+        }]
     );
 }
 
@@ -607,9 +627,9 @@ fn parses_all_committed_tournament_summary_fixtures() {
             "fixture `{fixture}` has finish_place beyond entrants"
         );
         assert!(
-            summary.validation_issue_codes.is_empty(),
+            summary.parse_issues.is_empty(),
             "fixture `{fixture}` has unexpected TS validation issues: {:?}",
-            summary.validation_issue_codes
+            summary.parse_issues
         );
     }
 }
@@ -632,10 +652,10 @@ fn parses_all_committed_hand_history_fixtures_without_unexpected_warnings() {
             });
 
             let unexpected_warnings = parsed
-                .parse_warnings
+                .parse_issues
                 .iter()
-                .filter(|warning| !is_expected_explicit_surface_warning(warning))
-                .cloned()
+                .filter(|issue| !is_expected_explicit_surface_issue(issue))
+                .map(|issue| format!("{:?}", issue))
                 .collect::<Vec<_>>();
 
             if !unexpected_warnings.is_empty() {
@@ -843,7 +863,9 @@ fn fixture_path(kind: &str, filename: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../fixtures/mbr/{kind}/{filename}"))
 }
 
-fn is_expected_explicit_surface_warning(warning: &str) -> bool {
-    warning.starts_with("partial_reveal_show_line: ")
-        || warning.starts_with("partial_reveal_summary_show_surface: ")
+fn is_expected_explicit_surface_issue(issue: &ParseIssue) -> bool {
+    matches!(
+        issue.code,
+        ParseIssueCode::PartialRevealShowLine | ParseIssueCode::PartialRevealSummaryShowSurface
+    )
 }

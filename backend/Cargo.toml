@@ -1,7 +1,9 @@
 [workspace]
 members = [
+  "crates/tracker_ingest_runtime",
   "crates/mbr_stats_runtime",
   "crates/parser_worker",
+  "crates/tracker_query_runtime",
   "crates/tracker_parser_core",
 ]
 resolver = "2"

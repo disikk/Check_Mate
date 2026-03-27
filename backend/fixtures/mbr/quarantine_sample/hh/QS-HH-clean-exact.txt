@@ -1,0 +1,17 @@
+Poker Hand #QSWC0001: Tournament #990001, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/17 10:00:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Villain (1,000 in chips)
+Hero: posts small blind 50
+Villain: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Hero: raises 100 to 200
+Villain: folds
+Uncalled bet (100) returned to Hero
+*** SHOWDOWN ***
+Hero collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Hero (button) collected (200)
+Seat 2: Villain (big blind) folded before Flop

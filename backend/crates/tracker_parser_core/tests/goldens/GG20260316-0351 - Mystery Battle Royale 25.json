@@ -238,8 +238,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022176": {
       "actual": {
@@ -717,8 +716,7 @@
         "snapshot_event_seq": 17,
         "snapshot_street": "turn",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022217": {
       "actual": {
@@ -1318,8 +1316,7 @@
         "snapshot_event_seq": 12,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022221": {
       "actual": {
@@ -1619,8 +1616,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022238": {
       "actual": {
@@ -1863,8 +1859,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022243": {
       "actual": {
@@ -2164,8 +2159,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022273": {
       "actual": {
@@ -2502,8 +2496,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022310": {
       "actual": {
@@ -2799,8 +2792,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022320": {
       "actual": {
@@ -3096,8 +3088,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022335": {
       "actual": {
@@ -3393,8 +3384,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022343": {
       "actual": {
@@ -3632,8 +3622,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022350": {
       "actual": {
@@ -4198,8 +4187,7 @@
         "snapshot_event_seq": 20,
         "snapshot_street": "turn",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022392": {
       "actual": {
@@ -4499,8 +4487,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022417": {
       "actual": {
@@ -4796,8 +4783,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022425": {
       "actual": {
@@ -5093,8 +5079,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022433": {
       "actual": {
@@ -5332,8 +5317,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022439": {
       "actual": {
@@ -5571,8 +5555,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022451": {
       "actual": {
@@ -5810,8 +5793,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022459": {
       "actual": {
@@ -6307,8 +6289,7 @@
         "snapshot_event_seq": 13,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022472": {
       "actual": {
@@ -6853,8 +6834,7 @@
         "snapshot_event_seq": 11,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022492": {
       "actual": {
@@ -7154,8 +7134,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022523": {
       "actual": {
@@ -7655,10 +7634,7 @@
         "snapshot_event_seq": 14,
         "snapshot_street": "flop",
         "terminal_allin_node": true
-      },
-      "warnings": [
-        "partial_reveal_show_line: 43b06066: shows [5d] (a pair of Fives)"
-      ]
+      }
     },
     "BR1065022537": {
       "actual": {
@@ -7896,8 +7872,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022542": {
       "actual": {
@@ -8193,8 +8168,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022555": {
       "actual": {
@@ -8438,8 +8412,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022566": {
       "actual": {
@@ -8935,8 +8908,7 @@
         "snapshot_event_seq": 11,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022581": {
       "actual": {
@@ -9484,8 +9456,7 @@
         "snapshot_event_seq": 12,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022596": {
       "actual": {
@@ -9759,8 +9730,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065022665": {
       "actual": {
@@ -10534,8 +10504,7 @@
         "snapshot_event_seq": 20,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022733": {
       "actual": {
@@ -11206,8 +11175,7 @@
         "snapshot_event_seq": 18,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022809": {
       "actual": {
@@ -11759,8 +11727,7 @@
         "snapshot_event_seq": 25,
         "snapshot_street": "river",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022875": {
       "actual": {
@@ -12355,8 +12322,7 @@
         "snapshot_event_seq": 15,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065022933": {
       "actual": {
@@ -13312,8 +13278,7 @@
         "snapshot_event_seq": 18,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     }
   }
 }

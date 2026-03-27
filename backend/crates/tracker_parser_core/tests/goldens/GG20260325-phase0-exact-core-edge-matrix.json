@@ -152,8 +152,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BRCM0402": {
       "actual": {
@@ -335,12 +334,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": [
-        "unsupported_no_show_line: VillainNoShow: doesn't show hand",
-        "partial_reveal_show_line: VillainPartial: shows [5d]",
-        "partial_reveal_summary_show_surface: Seat 2: VillainPartial (small blind) showed [5d] and lost"
-      ]
+      "snapshot": null
     },
     "BRCM0403": {
       "actual": {
@@ -585,8 +579,7 @@
         "snapshot_event_seq": 2,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BRCM0404": {
       "actual": {
@@ -831,8 +824,7 @@
         "snapshot_event_seq": 2,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BRCM0405": {
       "actual": {
@@ -1025,8 +1017,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BRCM0502": {
       "actual": {
@@ -1398,8 +1389,7 @@
         "snapshot_event_seq": 5,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BRCM0503": {
       "actual": {
@@ -1803,8 +1793,7 @@
         "snapshot_event_seq": 4,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BRCM0601": {
       "actual": {
@@ -2187,8 +2176,7 @@
         "snapshot_event_seq": 6,
         "snapshot_street": "flop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BRLEGAL2": {
       "actual": {
@@ -2356,8 +2344,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BRLEGAL3": {
       "actual": {
@@ -2498,8 +2485,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BRLEGAL4": {
       "actual": {
@@ -2869,8 +2855,7 @@
         "snapshot_event_seq": 6,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BRSIDE1": {
       "actual": {
@@ -3400,8 +3385,7 @@
         "snapshot_event_seq": 7,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     }
   }
 }

@@ -9,6 +9,7 @@
 - `fixtures/mbr/hh/` — committed GG HH;
 - `fixtures/mbr/ts/` — committed GG TS;
 - `crates/tracker_parser_core/` — parser + normalizer + street strength foundation;
+- `crates/tracker_query_runtime/` — generic typed hand/street query engine over exact and derived filter surface;
 - `crates/parser_worker/` — dev-only CLI importer;
 - `crates/mbr_stats_runtime/` — первый materializer и seed-safe stat queries.
 
@@ -26,6 +27,7 @@
 - importer уже раскладывает `regular_prize_money` и `mystery_money_total` для current listed GG Royal buy-ins;
 - schema v2 hardening уже добавил `player_aliases`, `source_file_members`, `job_attempts` и minimal analytics catalogs;
 - GG committed syntax surface теперь зафиксирован в `docs/COMMITTED_PACK_SYNTAX_CATALOG.md`;
+- offline `wide_corpus_triage` pipeline теперь есть: committed quarantine sample + optional local bulk corpus дают воспроизводимый parser coverage report;
 - parse issues теперь materialize-ятся со structured severity (`warning` / `error`);
 - pure non-greedy Big KO decoder уже есть как foundation-модуль.
 
@@ -41,8 +43,8 @@
 
 1. **Parser coverage**
    - committed GG pack покрывается чисто;
-   - committed syntax catalog и fixture tests уже есть;
-   - широкий реальный корпус ещё не доказан;
+   - committed syntax catalog, quarantine sample и offline triage runner уже есть;
+   - широкий реальный корпус теперь можно мерить числом, но он ещё не подключен как production/CI gate;
    - summary seat-result lines ещё не превращаются в полноценную структурную модель результата.
 
 2. **Normalizer**
@@ -70,24 +72,27 @@
 - `hand_started_at` и `started_at` пока фактически не нормализуются и не используются как надёжное время для аналитики;
 - raw/local/provenance timestamp contract уже пишется, но canonical UTC time всё ещё intentionally `NULL`;
 - `import-local` жёстко завязан на dev-контекст (`Hero`, `Check Mate Dev Org`);
-- `source_files` уже дедуплицируются по `(player_profile_id, room, file_kind, sha256)`, но ingest всё ещё dev-only и не заменяет будущий web/API pipeline;
-- runtime materializer делает полный refresh feature-rows для игрока после каждого импорта;
+- `tracker_ingest_runtime` уже даёт воспроизводимый DB-backed ingest contour: `bundle -> bundle_file -> file_ingest jobs -> single bundle_finalize`;
+- `source_files` дедуплицируются по `(player_profile_id, room, file_kind, sha256)`, а bundle membership живёт отдельно, так что повторные импорты не дублируют exact rows;
+- текущий entrypoint всё ещё dev-only: `parser_worker import-local` работает с локальными файлами и локальным runner loop, но это ещё не web upload pipeline;
+- runtime materializer теперь запускается один раз на bundle finalize, а не после каждого file job;
 - `hero_exact_ko_event_count` сейчас трактуется как число KO-событий, а не как KO-share/эквивалент полного KO;
-- `is_nut_hand` и `is_nut_draw` в street strength теперь exact postflop fields, но runtime filters для nut-предикатов все еще намеренно не включены;
+- generic hand/street query contract теперь живёт в `tracker_query_runtime`, возвращает стабильные `hand_id`-наборы и уже поддерживает `made hand / draw / missed draw / is_nut_hand / is_nut_draw`;
 - boundary KO persistence пока ограничена boundary v1 point estimate;
 - pure `big_ko` decoder ещё не подключён к final stat/materialization contract.
 
 ## Что нужно следующим слоем
 
-1. street hand strength v2;
-2. feature registry + stat registry + AST engine;
-3. web/API ingest.
+1. HTTP/API слой поверх `tracker_query_runtime`;
+2. web-facing upload/status layer поверх `tracker_ingest_runtime`;
+3. фронтенд-интеграция с реальным backend.
 
 ## Основные команды
 
 ```bash
 cd backend
 cargo test
+bash scripts/run_wide_corpus_triage.sh
 cargo run -p parser_worker -- "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local "fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt"

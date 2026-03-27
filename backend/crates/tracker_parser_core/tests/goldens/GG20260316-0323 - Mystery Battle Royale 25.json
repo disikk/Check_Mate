@@ -707,8 +707,7 @@
         "snapshot_event_seq": 19,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065003719": {
       "actual": {
@@ -1040,8 +1039,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065003784": {
       "actual": {
@@ -1805,8 +1803,7 @@
         "snapshot_event_seq": 19,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065003826": {
       "actual": {
@@ -2462,8 +2459,7 @@
         "snapshot_event_seq": 18,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065003863": {
       "actual": {
@@ -3236,8 +3232,7 @@
         "snapshot_event_seq": 17,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065003919": {
       "actual": {
@@ -3869,8 +3864,7 @@
         "snapshot_event_seq": 15,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065004019": {
       "actual": {
@@ -4204,8 +4198,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065004037": {
       "actual": {
@@ -4778,8 +4771,7 @@
         "snapshot_event_seq": 18,
         "snapshot_street": "flop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065004099": {
       "actual": {
@@ -5481,8 +5473,7 @@
         "snapshot_event_seq": 16,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065004153": {
       "actual": {
@@ -6171,8 +6162,7 @@
         "snapshot_event_seq": 16,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065004197": {
       "actual": {
@@ -6639,8 +6629,7 @@
         "snapshot_event_seq": 12,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065004236": {
       "actual": {
@@ -7053,8 +7042,7 @@
         "snapshot_event_seq": 11,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065004283": {
       "actual": {
@@ -7350,8 +7338,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065004296": {
       "actual": {
@@ -7862,8 +7849,7 @@
         "snapshot_event_seq": 11,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065004363": {
       "actual": {
@@ -8237,8 +8223,7 @@
         "snapshot_event_seq": 9,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065004413": {
       "actual": {
@@ -8710,8 +8695,7 @@
         "snapshot_event_seq": 9,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065004475": {
       "actual": {
@@ -9126,8 +9110,7 @@
         "snapshot_event_seq": 6,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065020413": {
       "actual": {
@@ -9427,8 +9410,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020473": {
       "actual": {
@@ -9724,8 +9706,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020491": {
       "actual": {
@@ -10085,8 +10066,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020502": {
       "actual": {
@@ -10451,8 +10431,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020535": {
       "actual": {
@@ -10690,8 +10669,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020545": {
       "actual": {
@@ -10987,8 +10965,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020562": {
       "actual": {
@@ -11284,8 +11261,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020580": {
       "actual": {
@@ -11645,8 +11621,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020593": {
       "actual": {
@@ -12010,8 +11985,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020621": {
       "actual": {
@@ -12249,8 +12223,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020630": {
       "actual": {
@@ -12546,8 +12519,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020644": {
       "actual": {
@@ -13032,8 +13004,7 @@
         "snapshot_event_seq": 13,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065020653": {
       "actual": {
@@ -13393,8 +13364,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020676": {
       "actual": {
@@ -13835,8 +13805,7 @@
         "snapshot_event_seq": 17,
         "snapshot_street": "river",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065020733": {
       "actual": {
@@ -14074,8 +14043,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020743": {
       "actual": {
@@ -14317,8 +14285,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020759": {
       "actual": {
@@ -14556,8 +14523,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020784": {
       "actual": {
@@ -14853,8 +14819,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020801": {
       "actual": {
@@ -15267,8 +15232,7 @@
         "snapshot_event_seq": 12,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065020821": {
       "actual": {
@@ -15510,8 +15474,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020838": {
       "actual": {
@@ -15807,8 +15770,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     },
     "BR1065020852": {
       "actual": {
@@ -16319,8 +16281,7 @@
         "snapshot_event_seq": 12,
         "snapshot_street": "preflop",
         "terminal_allin_node": true
-      },
-      "warnings": []
+      }
     },
     "BR1065020888": {
       "actual": {
@@ -16616,8 +16577,7 @@
           }
         ]
       },
-      "snapshot": null,
-      "warnings": []
+      "snapshot": null
     }
   }
 }

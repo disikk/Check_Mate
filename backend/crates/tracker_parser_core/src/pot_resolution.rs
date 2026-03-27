@@ -4,10 +4,10 @@ use crate::{
     ParserError,
     models::{
         CanonicalParsedHand, CertaintyState, HandSettlement, HandSettlementEvidence,
-        ParsedHandSeat, PlayerStatus, PotContribution, PotEligibility, PotSettlementIssue,
-        SettlementAllocation, SettlementAllocationSource, SettlementCollectEvent, SettlementIssue,
-        SettlementPot, SettlementShare, SettlementShowHand, SettlementSummaryOutcome,
-        SummarySeatOutcomeKind,
+        ParseIssueCode, ParsedHandSeat, PlayerStatus, PotContribution, PotEligibility,
+        PotSettlementIssue, SettlementAllocation, SettlementAllocationSource,
+        SettlementCollectEvent, SettlementIssue, SettlementPot, SettlementShare,
+        SettlementShowHand, SettlementSummaryOutcome, SummarySeatOutcomeKind,
     },
     street_strength::evaluate_street_hand_strength,
 };
@@ -558,10 +558,13 @@ fn build_pot_options(
         }]);
     }
 
-    if hand
-        .parse_warnings
-        .iter()
-        .any(|warning| warning.starts_with("partial_reveal_"))
+    if hand.parse_issues.iter().any(|issue| {
+        matches!(
+            issue.code,
+            ParseIssueCode::PartialRevealShowLine
+                | ParseIssueCode::PartialRevealSummaryShowSurface
+        )
+    })
     {
         PotOptionBuild::Uncertain(PotSettlementIssue::AmbiguousPartialReveal {
             eligible_players: contenders.to_vec(),
@@ -781,5 +784,175 @@ fn combinations_recursive(
         current.push(items[index].clone());
         combinations_recursive(items, k, index + 1, current, result);
         current.pop();
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+
+    use proptest::prelude::*;
+    use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
+    use std::{cell::RefCell, collections::BTreeMap};
+
+    #[test]
+    fn deterministic_generated_pot_scenarios_hold_constructed_pot_contract() {
+        for scenario in generated_constructed_pot_scenarios(128) {
+            assert_constructed_pot_contract(&scenario);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn generated_pot_scenarios_keep_eligibility_inside_contributors(
+            scenario in constructed_pot_scenario_strategy()
+        ) {
+            assert_constructed_pot_contract(&scenario);
+        }
+    }
+
+    #[test]
+    #[ignore = "stress suite for 10k+ generated pot math scenarios"]
+    fn stress_generated_pot_scenarios_hold_constructed_pot_contract_for_10k_cases() {
+        for scenario in generated_constructed_pot_scenarios(10_000) {
+            assert_constructed_pot_contract(&scenario);
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct ConstructedPotScenario {
+        ordered_seats: Vec<ParsedHandSeat>,
+        committed_total: BTreeMap<String, i64>,
+        status: BTreeMap<String, PlayerStatus>,
+    }
+
+    fn constructed_pot_scenario_strategy() -> BoxedStrategy<ConstructedPotScenario> {
+        (2_usize..=10)
+            .prop_flat_map(|player_count| {
+                (
+                    prop::collection::vec(0_i64..=2_000, player_count),
+                    prop::collection::vec(
+                        prop_oneof![
+                            Just(PlayerStatus::Live),
+                            Just(PlayerStatus::Folded),
+                            Just(PlayerStatus::AllIn),
+                        ],
+                        player_count,
+                    ),
+                )
+                    .prop_map(move |(mut commitments, statuses)| {
+                        if commitments.iter().all(|amount| *amount == 0) {
+                            commitments[0] = 1;
+                        }
+
+                        let mut ordered_seats = Vec::with_capacity(player_count);
+                        let mut committed_total = BTreeMap::new();
+                        let mut status = BTreeMap::new();
+
+                        for index in 0..player_count {
+                            let player_name = format!("P{}", index + 1);
+                            let committed = commitments[index];
+                            ordered_seats.push(ParsedHandSeat {
+                                seat_no: (index + 1) as u8,
+                                player_name: player_name.clone(),
+                                starting_stack: committed + 100,
+                                is_sitting_out: false,
+                            });
+                            committed_total.insert(player_name.clone(), committed);
+                            status.insert(player_name, statuses[index].clone());
+                        }
+
+                        ConstructedPotScenario {
+                            ordered_seats,
+                            committed_total,
+                            status,
+                        }
+                    })
+            })
+            .boxed()
+    }
+
+    fn generated_constructed_pot_scenarios(case_count: u32) -> Vec<ConstructedPotScenario> {
+        let strategy = constructed_pot_scenario_strategy();
+        let captured = RefCell::new(Vec::new());
+        let mut runner = TestRunner::new_with_rng(
+            Config::with_cases(case_count),
+            TestRng::deterministic_rng(RngAlgorithm::default()),
+        );
+
+        runner
+            .run(&strategy, |scenario| {
+                captured.borrow_mut().push(scenario);
+                Ok(())
+            })
+            .unwrap();
+
+        captured.into_inner()
+    }
+
+    fn assert_constructed_pot_contract(scenario: &ConstructedPotScenario) {
+        let pots = construct_pots(
+            &scenario.ordered_seats,
+            &scenario.committed_total,
+            &scenario.status,
+        );
+
+        let total_pot_amount = pots.iter().map(|pot| pot.amount).sum::<i64>();
+        let total_committed = scenario.committed_total.values().sum::<i64>();
+        assert_eq!(total_pot_amount, total_committed);
+
+        let mut committed_by_player_from_pots = BTreeMap::<String, i64>::new();
+
+        for (index, pot) in pots.iter().enumerate() {
+            assert_eq!(pot.pot_no as usize, index + 1);
+            assert_eq!(pot.is_main, index == 0);
+            assert!(pot.amount > 0);
+
+            let contribution_sum = pot.contributions.iter().map(|entry| entry.amount).sum::<i64>();
+            assert_eq!(contribution_sum, pot.amount);
+
+            let contributed_players = pot
+                .contributions
+                .iter()
+                .map(|entry| entry.player_name.clone())
+                .collect::<std::collections::BTreeSet<_>>();
+            let eligible_players = pot
+                .eligibilities
+                .iter()
+                .map(|entry| entry.player_name.clone())
+                .collect::<std::collections::BTreeSet<_>>();
+
+            assert!(eligible_players.is_subset(&contributed_players));
+
+            for contribution in &pot.contributions {
+                assert!(contribution.amount > 0);
+                *committed_by_player_from_pots
+                    .entry(contribution.player_name.clone())
+                    .or_default() += contribution.amount;
+
+                let player_status = scenario.status[&contribution.player_name].clone();
+                let player_is_eligible = eligible_players.contains(&contribution.player_name);
+
+                if player_status == PlayerStatus::Folded {
+                    assert!(!player_is_eligible);
+                } else {
+                    assert!(player_is_eligible);
+                }
+            }
+        }
+
+        for seat in &scenario.ordered_seats {
+            assert_eq!(
+                committed_by_player_from_pots
+                    .get(&seat.player_name)
+                    .copied()
+                    .unwrap_or(0),
+                scenario
+                    .committed_total
+                    .get(&seat.player_name)
+                    .copied()
+                    .unwrap_or(0)
+            );
+        }
     }
 }

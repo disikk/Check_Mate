@@ -40,7 +40,6 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         .hero_name
         .clone()
         .ok_or(ParserError::MissingLine("hero_name"))?;
-    let warnings = hand.parse_warnings.clone();
     let mut legality_errors = evaluate_action_legality(hand)?;
 
     let ordered_seats = {
@@ -154,7 +153,6 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
             pot_conservation_ok,
             issues: invariant_issues,
         },
-        warnings,
     })
 }
 

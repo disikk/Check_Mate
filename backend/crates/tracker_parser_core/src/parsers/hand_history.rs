@@ -2,7 +2,8 @@ use crate::{
     ParserError,
     models::{
         ActionType, AllInReason, CanonicalParsedHand, HandActionEvent, HandHeader, HandRecord,
-        ParsedHandSeat, Street, SummarySeatMarker, SummarySeatOutcome, SummarySeatOutcomeKind,
+        ParseIssue, ParseIssueCode, ParsedHandSeat, Street, SummarySeatMarker,
+        SummarySeatOutcome, SummarySeatOutcomeKind,
     },
 };
 
@@ -150,7 +151,7 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
     let mut showdown_hands = std::collections::BTreeMap::new();
     let mut summary_seat_outcomes = Vec::new();
     let mut collected_amounts = std::collections::BTreeMap::new();
-    let mut parse_warnings = Vec::new();
+    let mut parse_issues = Vec::new();
     let mut street = Street::Preflop;
     let mut seq = 0usize;
 
@@ -201,10 +202,10 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
                     summary_seat_outcomes.push(outcome)
                 }
                 SummarySeatOutcomeParseResult::UnknownTail => {
-                    parse_warnings.push(format!("unparsed_summary_seat_tail: {line}"));
+                    parse_issues.push(raw_line_warning(ParseIssueCode::UnparsedSummarySeatTail, line));
                 }
                 SummarySeatOutcomeParseResult::InvalidHead => {
-                    parse_warnings.push(format!("unparsed_summary_seat_line: {line}"));
+                    parse_issues.push(raw_line_warning(ParseIssueCode::UnparsedSummarySeatLine, line));
                 }
             }
             continue;
@@ -253,16 +254,16 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
         }
 
         if is_no_show_line(line) {
-            parse_warnings.push(format!("unsupported_no_show_line: {line}"));
+            parse_issues.push(raw_line_warning(ParseIssueCode::UnsupportedNoShowLine, line));
             continue;
         }
 
         if !line.starts_with("Seat ") {
-            parse_warnings.push(format!("unparsed_line: {line}"));
+            parse_issues.push(raw_line_warning(ParseIssueCode::UnparsedLine, line));
         }
     }
 
-    annotate_partial_reveal_warnings(&mut parse_warnings, &actions, &summary_seat_outcomes);
+    annotate_partial_reveal_parse_issues(&mut parse_issues, &actions, &summary_seat_outcomes);
     annotate_action_all_in_metadata(&seats, &mut actions)?;
 
     Ok(CanonicalParsedHand {
@@ -279,8 +280,17 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
         summary_seat_outcomes,
         collected_amounts,
         raw_hand_text: normalized,
-        parse_warnings,
+        parse_issues,
     })
+}
+
+fn raw_line_warning(code: ParseIssueCode, line: &str) -> ParseIssue {
+    ParseIssue::warning(
+        code,
+        format!("{}: {line}", code.as_str()),
+        Some(line.to_string()),
+        None,
+    )
 }
 
 fn normalize_newlines(input: &str) -> String {
@@ -1009,8 +1019,8 @@ fn is_no_show_line(line: &str) -> bool {
         .is_match(line)
 }
 
-fn annotate_partial_reveal_warnings(
-    parse_warnings: &mut Vec<String>,
+fn annotate_partial_reveal_parse_issues(
+    parse_issues: &mut Vec<ParseIssue>,
     actions: &[HandActionEvent],
     summary_seat_outcomes: &[SummarySeatOutcome],
 ) {
@@ -1018,7 +1028,10 @@ fn annotate_partial_reveal_warnings(
         if action.action_type == ActionType::Show
             && action.cards.as_ref().is_some_and(|cards| cards.len() != 2)
         {
-            parse_warnings.push(format!("partial_reveal_show_line: {}", action.raw_line));
+            parse_issues.push(raw_line_warning(
+                ParseIssueCode::PartialRevealShowLine,
+                &action.raw_line,
+            ));
         }
     }
 
@@ -1028,9 +1041,9 @@ fn annotate_partial_reveal_warnings(
             .as_ref()
             .is_some_and(|cards| cards.len() != 2)
         {
-            parse_warnings.push(format!(
-                "partial_reveal_summary_show_surface: {}",
-                outcome.raw_line
+            parse_issues.push(raw_line_warning(
+                ParseIssueCode::PartialRevealSummaryShowSurface,
+                &outcome.raw_line,
             ));
         }
     }

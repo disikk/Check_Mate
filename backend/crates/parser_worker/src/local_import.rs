@@ -9,12 +9,17 @@ use mbr_stats_runtime::{GG_MBR_FT_MAX_PLAYERS, materialize_player_hand_features}
 use postgres::{Client, NoTls, Transaction};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use tracker_ingest_runtime::{
+    BundleStatus as IngestBundleStatus, ClaimedJob as IngestClaimedJob, FileKind as IngestFileKind,
+    IngestBundleInput, IngestFileInput, JobExecutionError, JobExecutor, enqueue_bundle,
+    load_bundle_summary, run_next_job,
+};
 use tracker_parser_core::{
     EXACT_CORE_RESOLUTION_VERSION,
     SourceKind, detect_source_kind,
     models::{
-        ActionType, CanonicalParsedHand, CertaintyState, HandSettlement, InvariantIssue, Street,
-        TournamentSummary,
+        ActionType, CanonicalParsedHand, CertaintyState, HandSettlement, InvariantIssue,
+        ParseIssue, ParseIssueCode, ParseIssuePayload, Street, TournamentSummary,
     },
     normalizer::normalize_hand,
     parsers::{
@@ -39,6 +44,10 @@ pub struct LocalImportReport {
     pub tournament_id: Uuid,
     pub fragments_persisted: usize,
     pub hands_persisted: usize,
+}
+
+struct LocalImportExecutor {
+    report: Option<LocalImportReport>,
 }
 
 #[derive(Debug)]
@@ -140,6 +149,7 @@ struct ParseIssueRow {
     code: String,
     message: String,
     raw_line: Option<String>,
+    payload: serde_json::Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -309,7 +319,70 @@ struct StreetHandStrengthRow {
 pub fn import_path(path: &str) -> Result<LocalImportReport> {
     let database_url = env::var("CHECK_MATE_DATABASE_URL")
         .context("CHECK_MATE_DATABASE_URL is required for `import-local`")?;
-    import_path_with_database_url(&database_url, path)
+    let input = fs::read_to_string(path).with_context(|| format!("failed to read `{path}`"))?;
+
+    let mut client =
+        Client::connect(&database_url, NoTls).context("failed to connect to PostgreSQL")?;
+    let mut tx = client
+        .transaction()
+        .context("failed to start ingest enqueue transaction")?;
+    let context = ensure_dev_context(&mut tx)?;
+    let bundle = enqueue_bundle(
+        &mut tx,
+        &IngestBundleInput {
+            organization_id: context.organization_id,
+            player_profile_id: context.player_profile_id,
+            created_by_user_id: context.user_id,
+            files: vec![build_ingest_file_input(path, &input)?],
+        },
+    )?;
+    tx.commit()
+        .context("failed to commit ingest enqueue transaction")?;
+
+    let mut executor = LocalImportExecutor { report: None };
+    loop {
+        let mut tx = client
+            .transaction()
+            .context("failed to start ingest runner transaction")?;
+        let claimed = run_next_job(&mut tx, "parser_worker_local", 3, &mut executor)?;
+        let summary = load_bundle_summary(&mut tx, bundle.bundle_id)?;
+        tx.commit()
+            .context("failed to commit ingest runner transaction")?;
+
+        if matches!(
+            summary.status,
+            IngestBundleStatus::Succeeded
+                | IngestBundleStatus::PartialSuccess
+                | IngestBundleStatus::Failed
+        ) && !summary.finalize_job_running
+        {
+            break;
+        }
+
+        if claimed.is_none() && !summary.finalize_job_present {
+            break;
+        }
+    }
+
+    executor
+        .report
+        .ok_or_else(|| anyhow!("ingest bundle for `{path}` finished without successful file import"))
+}
+
+fn build_ingest_file_input(path: &str, input: &str) -> Result<IngestFileInput> {
+    let file_kind = match detect_source_kind(input)? {
+        SourceKind::TournamentSummary => IngestFileKind::TournamentSummary,
+        SourceKind::HandHistory => IngestFileKind::HandHistory,
+    };
+
+    Ok(IngestFileInput {
+        room: "gg".to_string(),
+        file_kind,
+        sha256: sha256_hex(input),
+        original_filename: source_filename(path)?,
+        byte_size: input.len() as i64,
+        storage_uri: format!("local://{}", path.replace('\\', "/")),
+    })
 }
 
 fn import_path_with_database_url(database_url: &str, path: &str) -> Result<LocalImportReport> {
@@ -334,47 +407,103 @@ fn import_path_with_database_url(database_url: &str, path: &str) -> Result<Local
     Ok(report)
 }
 
-fn ensure_dev_context(tx: &mut Transaction<'_>) -> Result<DevContext> {
-    let organization_id = if let Some(row) = tx.query_opt(
+impl JobExecutor for LocalImportExecutor {
+    fn execute_file_job<C: postgres::GenericClient>(
+        &mut self,
+        client: &mut C,
+        job: &IngestClaimedJob,
+    ) -> std::result::Result<(), JobExecutionError> {
+        let storage_uri = job
+            .storage_uri
+            .as_deref()
+            .ok_or_else(|| JobExecutionError::terminal("missing_storage_uri"))?;
+        let path = storage_uri
+            .strip_prefix("local://")
+            .ok_or_else(|| JobExecutionError::terminal("unsupported_storage_uri"))?;
+        let input = fs::read_to_string(path)
+            .map_err(|_| JobExecutionError::retriable("storage_read_failed"))?;
+        let context = ensure_dev_context(client)
+            .map_err(|_| JobExecutionError::terminal("missing_dev_context"))?;
+
+        let report: Result<LocalImportReport> = match job.file_kind {
+            Some(IngestFileKind::TournamentSummary) => import_tournament_summary_registered(
+                client,
+                &context,
+                path,
+                &input,
+                job.source_file_id
+                    .ok_or_else(|| JobExecutionError::terminal("missing_source_file_id"))?,
+                job.job_id,
+            ),
+            Some(IngestFileKind::HandHistory) => import_hand_history_registered(
+                client,
+                &context,
+                path,
+                &input,
+                job.source_file_id
+                    .ok_or_else(|| JobExecutionError::terminal("missing_source_file_id"))?,
+                job.job_id,
+            ),
+            None => Err(anyhow!("missing file kind for file_ingest job")),
+        };
+        let report = report.map_err(|error| JobExecutionError::terminal(error.to_string()))?;
+
+        self.report = Some(report);
+        Ok(())
+    }
+
+    fn finalize_bundle<C: postgres::GenericClient>(
+        &mut self,
+        client: &mut C,
+        job: &IngestClaimedJob,
+    ) -> std::result::Result<(), JobExecutionError> {
+        materialize_player_hand_features(client, job.organization_id, job.player_profile_id)
+            .map(|_| ())
+            .map_err(|error| JobExecutionError::retriable(error.to_string()))
+    }
+}
+
+fn ensure_dev_context(client: &mut impl postgres::GenericClient) -> Result<DevContext> {
+    let organization_id = if let Some(row) = client.query_opt(
         "SELECT id FROM org.organizations WHERE name = $1",
         &[&DEV_ORG_NAME],
     )? {
         row.get(0)
     } else {
-        tx.query_one(
+        client.query_one(
             "INSERT INTO org.organizations (name) VALUES ($1) RETURNING id",
             &[&DEV_ORG_NAME],
         )?
         .get(0)
     };
 
-    let user_id = if let Some(row) = tx.query_opt(
+    let user_id = if let Some(row) = client.query_opt(
         "SELECT id FROM auth.users WHERE email = $1",
         &[&DEV_USER_EMAIL],
     )? {
         row.get(0)
     } else {
-        tx.query_one(
+        client.query_one(
                 "INSERT INTO auth.users (email, auth_provider, status) VALUES ($1, 'seed', 'active') RETURNING id",
                 &[&DEV_USER_EMAIL],
             )?
             .get(0)
     };
 
-    tx.execute(
+    client.execute(
         "INSERT INTO org.organization_memberships (organization_id, user_id, role)
          VALUES ($1, $2, 'student')
          ON CONFLICT (organization_id, user_id) DO NOTHING",
         &[&organization_id, &user_id],
     )?;
 
-    let player_profile_id = if let Some(row) = tx.query_opt(
+    let player_profile_id = if let Some(row) = client.query_opt(
         "SELECT id FROM core.player_profiles WHERE organization_id = $1 AND room = 'gg' AND screen_name = $2",
         &[&organization_id, &DEV_PLAYER_NAME],
     )? {
         row.get(0)
     } else {
-        tx.query_one(
+        client.query_one(
             "INSERT INTO core.player_profiles (organization_id, owner_user_id, room, network, screen_name)
              VALUES ($1, $2, 'gg', 'gg', $3)
              RETURNING id",
@@ -383,7 +512,7 @@ fn ensure_dev_context(tx: &mut Transaction<'_>) -> Result<DevContext> {
         .get(0)
     };
 
-    tx.execute(
+    client.execute(
         "INSERT INTO core.player_aliases (
             organization_id,
             player_profile_id,
@@ -400,7 +529,7 @@ fn ensure_dev_context(tx: &mut Transaction<'_>) -> Result<DevContext> {
         &[&organization_id, &player_profile_id, &DEV_PLAYER_NAME],
     )?;
 
-    let player_aliases = tx
+    let player_aliases = client
         .query(
             "SELECT alias
              FROM core.player_aliases
@@ -414,10 +543,10 @@ fn ensure_dev_context(tx: &mut Transaction<'_>) -> Result<DevContext> {
         .map(|row| row.get::<_, String>(0))
         .collect::<Vec<_>>();
 
-    let room_id = tx
+    let room_id = client
         .query_one("SELECT id FROM core.rooms WHERE code = 'gg'", &[])?
         .get(0);
-    let format_id = tx
+    let format_id = client
         .query_one("SELECT id FROM core.formats WHERE code = 'mbr'", &[])?
         .get(0);
 
@@ -437,12 +566,23 @@ fn import_tournament_summary(
     path: &str,
     input: &str,
 ) -> Result<LocalImportReport> {
-    let summary = parse_tournament_summary(input)?;
-    let tournament_entry_economics = load_tournament_entry_economics(tx, context, &summary)?;
     let source_file_id = insert_source_file(tx, context, path, input, "ts")?;
-    insert_source_file_member(tx, source_file_id, path, "ts", input)?;
     let import_job_id = insert_import_job(tx, context.organization_id, source_file_id)?;
     insert_job_attempt(tx, import_job_id)?;
+    import_tournament_summary_registered(tx, context, path, input, source_file_id, import_job_id)
+}
+
+fn import_tournament_summary_registered(
+    tx: &mut impl postgres::GenericClient,
+    context: &DevContext,
+    path: &str,
+    input: &str,
+    source_file_id: Uuid,
+    import_job_id: Uuid,
+) -> Result<LocalImportReport> {
+    let summary = parse_tournament_summary(input)?;
+    let tournament_entry_economics = load_tournament_entry_economics(tx, context, &summary)?;
+    insert_source_file_member(tx, source_file_id, path, "ts", input)?;
     let fragment_id = insert_file_fragment(tx, source_file_id, 0, None, "summary", input)?;
 
     let tournament_id: Uuid = tx
@@ -563,9 +703,10 @@ fn import_tournament_summary(
                 severity,
                 code,
                 message,
-                raw_line
+                raw_line,
+                payload
             )
-            VALUES ($1, $2, NULL, $3, $4, $5, $6)",
+            VALUES ($1, $2, NULL, $3, $4, $5, $6, ($7::text)::jsonb)",
             &[
                 &source_file_id,
                 &fragment_id,
@@ -573,6 +714,7 @@ fn import_tournament_summary(
                 &issue.code,
                 &issue.message,
                 &issue.raw_line,
+                &issue.payload.to_string(),
             ],
         )?;
     }
@@ -592,6 +734,20 @@ fn import_hand_history(
     context: &DevContext,
     path: &str,
     input: &str,
+) -> Result<LocalImportReport> {
+    let source_file_id = insert_source_file(tx, context, path, input, "hh")?;
+    let import_job_id = insert_import_job(tx, context.organization_id, source_file_id)?;
+    insert_job_attempt(tx, import_job_id)?;
+    import_hand_history_registered(tx, context, path, input, source_file_id, import_job_id)
+}
+
+fn import_hand_history_registered(
+    tx: &mut impl postgres::GenericClient,
+    context: &DevContext,
+    path: &str,
+    input: &str,
+    source_file_id: Uuid,
+    import_job_id: Uuid,
 ) -> Result<LocalImportReport> {
     let hands = split_hand_history(input)?;
     let canonical_hands = hands
@@ -665,10 +821,7 @@ fn import_hand_history(
             )
         })?;
 
-    let source_file_id = insert_source_file(tx, context, path, input, "hh")?;
     insert_source_file_member(tx, source_file_id, path, "hh", input)?;
-    let import_job_id = insert_import_job(tx, context.organization_id, source_file_id)?;
-    insert_job_attempt(tx, import_job_id)?;
     let stage_facts = canonical_hands
         .iter()
         .zip(normalized_hands.iter())
@@ -773,7 +926,7 @@ fn import_hand_history(
 }
 
 fn upsert_hand_row(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     context: &DevContext,
     tournament_id: Uuid,
     source_file_id: Uuid,
@@ -857,7 +1010,7 @@ fn upsert_hand_row(
 }
 
 fn persist_canonical_hand(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     context: &DevContext,
     source_file_id: Uuid,
     fragment_id: Uuid,
@@ -1048,9 +1201,10 @@ fn persist_canonical_hand(
                 severity,
                 code,
                 message,
-                raw_line
+                raw_line,
+                payload
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb)",
             &[
                 &source_file_id,
                 &fragment_id,
@@ -1059,6 +1213,7 @@ fn persist_canonical_hand(
                 &issue.code,
                 &issue.message,
                 &issue.raw_line,
+                &issue.payload.to_string(),
             ],
         )?;
     }
@@ -1067,7 +1222,7 @@ fn persist_canonical_hand(
 }
 
 fn persist_normalized_hand(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     hand_id: Uuid,
     normalized_hand: &tracker_parser_core::models::NormalizedHand,
 ) -> Result<()> {
@@ -1244,7 +1399,7 @@ fn persist_normalized_hand(
 }
 
 fn persist_mbr_stage_resolution(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     hand_id: Uuid,
     row: &MbrStageResolutionRow,
 ) -> Result<()> {
@@ -1342,7 +1497,7 @@ fn persist_mbr_stage_resolution(
 }
 
 fn persist_mbr_tournament_ft_helper(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     row: &MbrTournamentFtHelperRow,
 ) -> Result<()> {
     tx.execute(
@@ -1406,7 +1561,7 @@ fn persist_mbr_tournament_ft_helper(
 }
 
 fn persist_street_hand_strength(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     hand_id: Uuid,
     rows: &[StreetHandStrengthRow],
 ) -> Result<()> {
@@ -1461,7 +1616,7 @@ fn persist_street_hand_strength(
 }
 
 fn replace_hand_children(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     source_file_id: Uuid,
     fragment_id: Uuid,
     hand_id: Uuid,
@@ -1952,7 +2107,7 @@ fn build_mbr_tournament_ft_helper_row(
 }
 
 fn load_tournament_entry_economics(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     context: &DevContext,
     summary: &TournamentSummary,
 ) -> Result<TournamentEntryEconomics> {
@@ -2028,9 +2183,9 @@ fn build_canonical_persistence(hand: &CanonicalParsedHand) -> Result<CanonicalHa
     let positions = build_position_rows(hand)?;
 
     let mut parse_issues = hand
-        .parse_warnings
+        .parse_issues
         .iter()
-        .map(|warning| parse_warning_to_issue(warning))
+        .map(parse_issue_row)
         .collect::<Vec<_>>();
 
     let mut hole_cards_by_seat = BTreeMap::new();
@@ -2043,10 +2198,13 @@ fn build_canonical_persistence(hand: &CanonicalParsedHand) -> Result<CanonicalHa
                 true,
                 hand.showdown_hands.contains_key(hero_name),
             ),
-            None => parse_issues.push(error_parse_issue(
-                "hero_cards_missing_seat",
+            None => parse_issues.push(error_issue_row(
+                ParseIssueCode::HeroCardsMissingSeat,
                 format!("hero hole cards exist but hero `{hero_name}` has no seat row"),
                 None,
+                Some(ParseIssuePayload::HeroCardsMissingSeat {
+                    hero_name: hero_name.clone(),
+                }),
             )),
         }
     }
@@ -2061,10 +2219,13 @@ fn build_canonical_persistence(hand: &CanonicalParsedHand) -> Result<CanonicalHa
                     shown_cards: shown_cards.clone(),
                 });
             }
-            None => parse_issues.push(error_parse_issue(
-                "showdown_player_missing_seat",
+            None => parse_issues.push(error_issue_row(
+                ParseIssueCode::ShowdownPlayerMissingSeat,
                 format!("showdown hand exists for `{player_name}` without seat row"),
                 None,
+                Some(ParseIssuePayload::ShowdownPlayerMissingSeat {
+                    player_name: player_name.clone(),
+                }),
             )),
         }
     }
@@ -2117,21 +2278,30 @@ fn build_canonical_persistence(hand: &CanonicalParsedHand) -> Result<CanonicalHa
                     raw_line: outcome.raw_line.clone(),
                 })
             }
-            Some(canonical_player_name) => parse_issues.push(error_parse_issue(
-                "summary_seat_outcome_seat_mismatch",
+            Some(canonical_player_name) => parse_issues.push(error_issue_row(
+                ParseIssueCode::SummarySeatOutcomeSeatMismatch,
                 format!(
                     "summary seat {} references `{}` but canonical seat belongs to `{}`",
                     outcome.seat_no, outcome.player_name, canonical_player_name
                 ),
                 Some(outcome.raw_line.clone()),
+                Some(ParseIssuePayload::SummarySeatOutcomeSeatMismatch {
+                    seat_no: outcome.seat_no,
+                    player_name: outcome.player_name.clone(),
+                    canonical_player_name: canonical_player_name.clone(),
+                }),
             )),
-            None => parse_issues.push(error_parse_issue(
-                "summary_seat_outcome_missing_seat",
+            None => parse_issues.push(error_issue_row(
+                ParseIssueCode::SummarySeatOutcomeMissingSeat,
                 format!(
                     "summary seat {} references `{}` without seat row",
                     outcome.seat_no, outcome.player_name
                 ),
                 Some(outcome.raw_line.clone()),
+                Some(ParseIssuePayload::SummarySeatOutcomeMissingSeat {
+                    seat_no: outcome.seat_no,
+                    player_name: outcome.player_name.clone(),
+                }),
             )),
         }
     }
@@ -2146,10 +2316,14 @@ fn build_canonical_persistence(hand: &CanonicalParsedHand) -> Result<CanonicalHa
         if let Some(player_name) = &event.player_name
             && seat_no.is_none()
         {
-            parse_issues.push(error_parse_issue(
-                "action_player_missing_seat",
+            parse_issues.push(error_issue_row(
+                ParseIssueCode::ActionPlayerMissingSeat,
                 format!("action references `{player_name}` without seat row"),
                 Some(event.raw_line.clone()),
+                Some(ParseIssuePayload::ActionPlayerMissingSeat {
+                    player_name: player_name.clone(),
+                    raw_line: event.raw_line.clone(),
+                }),
             ));
         }
 
@@ -2258,96 +2432,41 @@ fn build_board_row(cards: &[String]) -> Option<HandBoardRow> {
     })
 }
 
-fn parse_warning_to_issue(warning: &str) -> ParseIssueRow {
-    if let Some(raw_line) = warning.strip_prefix("unparsed_line: ") {
-        warning_parse_issue(
-            "unparsed_line",
-            warning.to_string(),
-            Some(raw_line.to_string()),
-        )
-    } else if let Some(raw_line) = warning.strip_prefix("unparsed_summary_seat_line: ") {
-        warning_parse_issue(
-            "unparsed_summary_seat_line",
-            warning.to_string(),
-            Some(raw_line.to_string()),
-        )
-    } else if let Some(raw_line) = warning.strip_prefix("unparsed_summary_seat_tail: ") {
-        warning_parse_issue(
-            "unparsed_summary_seat_tail",
-            warning.to_string(),
-            Some(raw_line.to_string()),
-        )
-    } else if let Some(raw_line) = warning.strip_prefix("unsupported_no_show_line: ") {
-        warning_parse_issue(
-            "unsupported_no_show_line",
-            warning.to_string(),
-            Some(raw_line.to_string()),
-        )
-    } else if let Some(raw_line) = warning.strip_prefix("partial_reveal_show_line: ") {
-        warning_parse_issue(
-            "partial_reveal_show_line",
-            warning.to_string(),
-            Some(raw_line.to_string()),
-        )
-    } else if let Some(raw_line) = warning.strip_prefix("partial_reveal_summary_show_surface: ") {
-        warning_parse_issue(
-            "partial_reveal_summary_show_surface",
-            warning.to_string(),
-            Some(raw_line.to_string()),
-        )
-    } else {
-        warning_parse_issue("parser_warning", warning.to_string(), None)
-    }
-}
-
 fn tournament_summary_parse_issues(
     summary: &tracker_parser_core::models::TournamentSummary,
 ) -> Vec<ParseIssueRow> {
     summary
-        .validation_issue_codes
+        .parse_issues
         .iter()
-        .filter_map(|code| match code.as_str() {
-            "ts_tail_finish_place_mismatch" => Some(warning_parse_issue(
-                code,
-                format!(
-                    "result line finish_place={} conflicts with tail finish_place={}",
-                    summary.finish_place, summary.confirmed_finish_place?
-                ),
-                None,
-            )),
-            "ts_tail_total_received_mismatch" => Some(warning_parse_issue(
-                code,
-                format!(
-                    "result line payout_cents={} conflicts with tail payout_cents={}",
-                    summary.payout_cents, summary.confirmed_payout_cents?
-                ),
-                None,
-            )),
-            _ => Some(warning_parse_issue(
-                code,
-                format!("tournament summary validation issue: {code}"),
-                None,
-            )),
-        })
+        .map(parse_issue_row)
         .collect()
 }
 
-fn warning_parse_issue(code: &str, message: String, raw_line: Option<String>) -> ParseIssueRow {
+fn parse_issue_row(issue: &ParseIssue) -> ParseIssueRow {
     ParseIssueRow {
-        severity: "warning".to_string(),
-        code: code.to_string(),
-        message,
-        raw_line,
+        severity: issue.severity.as_str().to_string(),
+        code: issue.code.as_str().to_string(),
+        message: issue.message.clone(),
+        raw_line: issue.raw_line.clone(),
+        payload: issue_payload_json(issue),
     }
 }
 
-fn error_parse_issue(code: &str, message: String, raw_line: Option<String>) -> ParseIssueRow {
-    ParseIssueRow {
-        severity: "error".to_string(),
-        code: code.to_string(),
-        message,
-        raw_line,
-    }
+fn error_issue_row(
+    code: ParseIssueCode,
+    message: String,
+    raw_line: Option<String>,
+    payload: Option<ParseIssuePayload>,
+) -> ParseIssueRow {
+    parse_issue_row(&ParseIssue::error(code, message, raw_line, payload))
+}
+
+fn issue_payload_json(issue: &ParseIssue) -> serde_json::Value {
+    issue
+        .payload
+        .as_ref()
+        .map(|payload| serde_json::to_value(payload).expect("parse issue payload must serialize"))
+        .unwrap_or_else(|| serde_json::json!({}))
 }
 
 fn street_code(street: Street) -> &'static str {
@@ -2468,7 +2587,7 @@ fn insert_source_file(
 }
 
 fn insert_source_file_member(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     source_file_id: Uuid,
     path: &str,
     member_kind: &str,
@@ -2553,7 +2672,7 @@ fn insert_job_attempt(tx: &mut Transaction<'_>, import_job_id: Uuid) -> Result<U
 }
 
 fn insert_file_fragment(
-    tx: &mut Transaction<'_>,
+    tx: &mut impl postgres::GenericClient,
     source_file_id: Uuid,
     fragment_index: i32,
     external_hand_id: Option<&str>,
@@ -2617,13 +2736,16 @@ mod tests {
         expected_big_ko_bucket_probabilities, expected_hero_mystery_cents,
     };
     use mbr_stats_runtime::{
-        CanonicalStatNumericValue, CanonicalStatState, FeatureRef, FilterCondition, FilterOperator,
-        FilterValue, MysteryEnvelope, RuntimeFilterSet, SeedStatsFilters, query_canonical_stats,
-        query_matching_hand_ids, query_seed_stats,
+        CanonicalStatNumericValue, CanonicalStatState, MysteryEnvelope, SeedStatsFilters,
+        query_canonical_stats, query_seed_stats,
     };
     use std::{
         path::PathBuf,
         sync::{Mutex, OnceLock},
+    };
+    use tracker_query_runtime::{
+        FeatureRef, FilterCondition, FilterOperator, FilterValue, HandQueryRequest,
+        query_matching_hand_ids,
     };
 
     const FT_HAND_ID: &str = "BR1064987693";
@@ -2669,6 +2791,20 @@ mod tests {
             "GG20260316-0351 - Mystery Battle Royale 25.txt",
         ),
     ];
+
+    fn hand_query_request(
+        organization_id: Uuid,
+        player_profile_id: Uuid,
+        hero_filters: Vec<FilterCondition>,
+        opponent_filters: Vec<FilterCondition>,
+    ) -> HandQueryRequest {
+        HandQueryRequest {
+            organization_id,
+            player_profile_id,
+            hero_filters,
+            opponent_filters,
+        }
+    }
 
     fn db_test_guard() -> std::sync::MutexGuard<'static, ()> {
         static DB_TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
@@ -2760,8 +2896,15 @@ mod tests {
     #[test]
     fn classifies_parse_issues_with_structured_severity_at_parser_worker_boundary() {
         let mut hand = parse_canonical_hand(&first_ft_hand_text()).unwrap();
-        hand.parse_warnings
-            .push("unparsed_line: Dealer note: test-only unexpected line".to_string());
+        hand.parse_issues.push(tracker_parser_core::models::ParseIssue {
+            severity: tracker_parser_core::models::ParseIssueSeverity::Warning,
+            code: tracker_parser_core::models::ParseIssueCode::UnparsedLine,
+            message: "unparsed_line: Dealer note: test-only unexpected line".to_string(),
+            raw_line: Some("Dealer note: test-only unexpected line".to_string()),
+            payload: Some(tracker_parser_core::models::ParseIssuePayload::RawLine {
+                raw_line: "Dealer note: test-only unexpected line".to_string(),
+            }),
+        });
         hand.actions
             .push(tracker_parser_core::models::HandActionEvent {
                 seq: 999,
@@ -2785,12 +2928,19 @@ mod tests {
             code: "unparsed_line".to_string(),
             message: "unparsed_line: Dealer note: test-only unexpected line".to_string(),
             raw_line: Some("Dealer note: test-only unexpected line".to_string()),
+            payload: serde_json::json!({
+                "raw_line": "Dealer note: test-only unexpected line"
+            }),
         }));
         assert!(rows.parse_issues.contains(&ParseIssueRow {
             severity: "error".to_string(),
             code: "action_player_missing_seat".to_string(),
             message: "action references `Ghost` without seat row".to_string(),
             raw_line: Some("Ghost: folds".to_string()),
+            payload: serde_json::json!({
+                "player_name": "Ghost",
+                "raw_line": "Ghost: folds"
+            }),
         }));
     }
 
@@ -3233,7 +3383,7 @@ mod tests {
             payout_cents: 20_500,
             confirmed_finish_place: Some(1),
             confirmed_payout_cents: Some(20_500),
-            validation_issue_codes: Vec::new(),
+            parse_issues: Vec::new(),
         };
         let economics = resolve_tournament_entry_economics(&summary, 10_000).unwrap();
 
@@ -3258,7 +3408,7 @@ mod tests {
             payout_cents: 5_000,
             confirmed_finish_place: Some(1),
             confirmed_payout_cents: Some(5_000),
-            validation_issue_codes: Vec::new(),
+            parse_issues: Vec::new(),
         };
 
         let error = resolve_tournament_entry_economics(&summary, 10_000).unwrap_err();
@@ -3287,6 +3437,10 @@ mod tests {
             code: "ts_tail_finish_place_mismatch".to_string(),
             message: "result line finish_place=1 conflicts with tail finish_place=2".to_string(),
             raw_line: None,
+            payload: serde_json::json!({
+                "result_finish_place": 1,
+                "tail_finish_place": 2
+            }),
         }));
         assert!(issues.contains(&ParseIssueRow {
             severity: "warning".to_string(),
@@ -3294,6 +3448,10 @@ mod tests {
             message:
                 "result line payout_cents=20500 conflicts with tail payout_cents=20400".to_string(),
             raw_line: None,
+            payload: serde_json::json!({
+                "result_payout_cents": 20500,
+                "tail_payout_cents": 20400
+            }),
         }));
     }
 
@@ -4349,6 +4507,131 @@ mod tests {
                 "last_busting_pot_no".to_string(),
                 "pots_causing_bust".to_string(),
                 "pots_participated_by_busted".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0021_adds_ingest_runtime_runner_contracts() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_core_schema_migrations(&mut client);
+
+        let table_contract_rows = client
+            .query(
+                "SELECT table_schema, table_name
+                 FROM information_schema.tables
+                 WHERE (table_schema, table_name) IN (
+                     ('import', 'ingest_bundles'),
+                     ('import', 'ingest_bundle_files')
+                 )
+                 ORDER BY table_schema, table_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            table_contract_rows,
+            vec![
+                ("import".to_string(), "ingest_bundle_files".to_string()),
+                ("import".to_string(), "ingest_bundles".to_string()),
+            ]
+        );
+
+        let import_job_columns = client
+            .query(
+                "SELECT column_name, is_nullable
+                 FROM information_schema.columns
+                 WHERE table_schema = 'import'
+                   AND table_name = 'import_jobs'
+                   AND column_name IN ('bundle_id', 'bundle_file_id', 'job_kind', 'source_file_id')
+                 ORDER BY column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            import_job_columns,
+            vec![
+                ("bundle_file_id".to_string(), "YES".to_string()),
+                ("bundle_id".to_string(), "YES".to_string()),
+                ("job_kind".to_string(), "NO".to_string()),
+                ("source_file_id".to_string(), "YES".to_string()),
+            ]
+        );
+
+        let status_stage_constraints = client
+            .query(
+                "SELECT c.conname, pg_get_constraintdef(c.oid)
+                 FROM pg_constraint c
+                 INNER JOIN pg_class t ON t.oid = c.conrelid
+                 INNER JOIN pg_namespace n ON n.oid = t.relnamespace
+                 WHERE n.nspname = 'import'
+                   AND t.relname IN ('import_jobs', 'job_attempts')
+                   AND c.contype = 'c'
+                   AND (
+                       c.conname LIKE '%status%'
+                       OR c.conname LIKE '%stage%'
+                       OR c.conname LIKE '%job_kind%'
+                   )
+                 ORDER BY c.conname",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        let joined_constraint_defs = status_stage_constraints
+            .iter()
+            .map(|(_, definition)| definition.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            joined_constraint_defs.contains("failed_retriable")
+                && joined_constraint_defs.contains("failed_terminal")
+                && joined_constraint_defs.contains("bundle_finalize")
+                && joined_constraint_defs.contains("materialize_refresh"),
+            "missing expected ingest runner constraint values: {joined_constraint_defs}"
+        );
+
+        let indexes = client
+            .query(
+                "SELECT indexname
+                 FROM pg_indexes
+                 WHERE schemaname = 'import'
+                   AND indexname IN (
+                       'idx_import_jobs_bundle_status',
+                       'idx_import_jobs_claim',
+                       'uniq_import_jobs_bundle_finalize',
+                       'uniq_import_jobs_bundle_file_ingest'
+                   )
+                 ORDER BY indexname",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            indexes,
+            vec![
+                "idx_import_jobs_bundle_status".to_string(),
+                "idx_import_jobs_claim".to_string(),
+                "uniq_import_jobs_bundle_file_ingest".to_string(),
+                "uniq_import_jobs_bundle_finalize".to_string(),
             ]
         );
     }
@@ -7836,10 +8119,10 @@ mod tests {
 
         let uncertainty_matches = query_matching_hand_ids(
             &mut client,
-            organization_id,
-            player_profile_id,
-            &RuntimeFilterSet {
-                hero_filters: vec![FilterCondition {
+            &hand_query_request(
+                organization_id,
+                player_profile_id,
+                vec![FilterCondition {
                     feature: FeatureRef::Hand {
                         feature_key:
                             "has_uncertain_reason_code:pot_settlement_ambiguous_hidden_showdown"
@@ -7848,10 +8131,11 @@ mod tests {
                     operator: FilterOperator::Eq,
                     value: FilterValue::Bool(true),
                 }],
-                opponent_filters: vec![],
-            },
+                vec![],
+            ),
         )
-        .unwrap();
+        .unwrap()
+        .hand_ids;
         assert_eq!(
             uncertainty_matches,
             vec![expected_hand_ids["uncertain_reason"]]
@@ -7859,29 +8143,30 @@ mod tests {
 
         let legality_matches = query_matching_hand_ids(
             &mut client,
-            organization_id,
-            player_profile_id,
-            &RuntimeFilterSet {
-                hero_filters: vec![FilterCondition {
+            &hand_query_request(
+                organization_id,
+                player_profile_id,
+                vec![FilterCondition {
                     feature: FeatureRef::Hand {
                         feature_key: "has_action_legality_issue:illegal_actor_order".to_string(),
                     },
                     operator: FilterOperator::Eq,
                     value: FilterValue::Bool(true),
                 }],
-                opponent_filters: vec![],
-            },
+                vec![],
+            ),
         )
-        .unwrap();
+        .unwrap()
+        .hand_ids;
         assert_eq!(legality_matches, vec![expected_hand_ids["legality_issue"]]);
 
         let position_all_in_matches = query_matching_hand_ids(
             &mut client,
-            organization_id,
-            player_profile_id,
-            &RuntimeFilterSet {
-                hero_filters: vec![],
-                opponent_filters: vec![
+            &hand_query_request(
+                organization_id,
+                player_profile_id,
+                vec![],
+                vec![
                     FilterCondition {
                         feature: FeatureRef::Street {
                             street: "seat".to_string(),
@@ -7907,9 +8192,10 @@ mod tests {
                         value: FilterValue::Enum("showed_won".to_string()),
                     },
                 ],
-            },
+            ),
         )
-        .unwrap();
+        .unwrap()
+        .hand_ids;
         assert_eq!(
             position_all_in_matches,
             vec![expected_hand_ids["position_all_in"]]
@@ -7917,11 +8203,11 @@ mod tests {
 
         let summary_position_matches = query_matching_hand_ids(
             &mut client,
-            organization_id,
-            player_profile_id,
-            &RuntimeFilterSet {
-                hero_filters: vec![],
-                opponent_filters: vec![
+            &hand_query_request(
+                organization_id,
+                player_profile_id,
+                vec![],
+                vec![
                     FilterCondition {
                         feature: FeatureRef::Street {
                             street: "seat".to_string(),
@@ -7939,9 +8225,10 @@ mod tests {
                         value: FilterValue::Enum("showed_lost".to_string()),
                     },
                 ],
-            },
+            ),
         )
-        .unwrap();
+        .unwrap()
+        .hand_ids;
         assert_eq!(
             summary_position_matches,
             vec![expected_hand_ids["ft_summary_position"]]
@@ -7949,10 +8236,10 @@ mod tests {
 
         let exact_ko_participant_matches = query_matching_hand_ids(
             &mut client,
-            organization_id,
-            player_profile_id,
-            &RuntimeFilterSet {
-                hero_filters: vec![FilterCondition {
+            &hand_query_request(
+                organization_id,
+                player_profile_id,
+                vec![FilterCondition {
                     feature: FeatureRef::Street {
                         street: "seat".to_string(),
                         feature_key: "is_exact_ko_participant".to_string(),
@@ -7960,10 +8247,11 @@ mod tests {
                     operator: FilterOperator::Eq,
                     value: FilterValue::Bool(true),
                 }],
-                opponent_filters: vec![],
-            },
+                vec![],
+            ),
         )
-        .unwrap();
+        .unwrap()
+        .hand_ids;
         let mut expected_exact_ko_participant_matches = vec![
             expected_hand_ids["ft_exact_ko"],
             expected_hand_ids["joint_ko_participant"],
@@ -8411,6 +8699,10 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
             client,
             &fixture_path("../../migrations/0020_hand_eliminations_v2.sql"),
         );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0021_ingest_runtime_runner.sql"),
+        );
     }
 
     fn dev_player_profile_id(client: &mut Client) -> Uuid {
@@ -8724,10 +9016,44 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
             .unwrap();
         client
             .execute(
+                "DELETE FROM import.job_attempts
+                 WHERE import_job_id IN (
+                     SELECT id
+                     FROM import.import_jobs
+                     WHERE source_file_id IN (
+                         SELECT id FROM import.source_files WHERE player_profile_id = $1
+                     )
+                        OR bundle_id IN (
+                            SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
+                        )
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
                 "DELETE FROM import.import_jobs
                  WHERE source_file_id IN (
                      SELECT id FROM import.source_files WHERE player_profile_id = $1
+                 )
+                    OR bundle_id IN (
+                        SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
+                    )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM import.ingest_bundle_files
+                 WHERE bundle_id IN (
+                     SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
                  )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        client
+            .execute(
+                "DELETE FROM import.ingest_bundles WHERE player_profile_id = $1",
                 &[&player_profile_id],
             )
             .unwrap();

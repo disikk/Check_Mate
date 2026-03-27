@@ -7,6 +7,7 @@ pub mod parsers;
 pub mod positions;
 mod pot_resolution;
 pub mod street_strength;
+pub mod wide_corpus_triage;
 
 pub use error::ParserError;
 pub use file_kind::{SourceKind, detect_source_kind};

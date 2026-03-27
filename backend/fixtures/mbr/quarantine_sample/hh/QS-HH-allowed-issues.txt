@@ -1,0 +1,66 @@
+Poker Hand #QSWC0402A: Tournament #990002, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/17 10:05:00
+Table '1' 3-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: PartialA (1,000 in chips)
+Seat 3: NoShowA (1,000 in chips)
+PartialA: posts small blind 50
+NoShowA: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Hero: calls 100
+PartialA: calls 50
+NoShowA: checks
+*** FLOP *** [2c 7d 9h]
+PartialA: checks
+NoShowA: checks
+Hero: checks
+*** TURN *** [2c 7d 9h] [Qs]
+PartialA: checks
+NoShowA: checks
+Hero: checks
+*** RIVER *** [2c 7d 9h Qs] [3c]
+*** SHOWDOWN ***
+PartialA: shows [5d]
+NoShowA: doesn't show hand
+Hero: shows [Ah Ad]
+Hero collected 300 from pot
+*** SUMMARY ***
+Total pot 300 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and won (300)
+Seat 2: PartialA (small blind) showed [5d] and lost
+Seat 3: NoShowA (big blind) lost
+
+Poker Hand #QSWC0402B: Tournament #990003, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/17 10:06:00
+Table '1' 3-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: PartialB (1,000 in chips)
+Seat 3: NoShowB (1,000 in chips)
+PartialB: posts small blind 50
+NoShowB: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Kh Kd]
+Hero: calls 100
+PartialB: calls 50
+NoShowB: checks
+*** FLOP *** [3c 8d 9h]
+PartialB: checks
+NoShowB: checks
+Hero: checks
+*** TURN *** [3c 8d 9h] [Qs]
+PartialB: checks
+NoShowB: checks
+Hero: checks
+*** RIVER *** [3c 8d 9h Qs] [2s]
+*** SHOWDOWN ***
+PartialB: shows [6d]
+NoShowB: doesn't show hand
+Hero: shows [Kh Kd]
+Hero collected 300 from pot
+*** SUMMARY ***
+Total pot 300 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [3c 8d 9h Qs 2s]
+Seat 1: Hero (button) showed [Kh Kd] and won (300)
+Seat 2: PartialB (small blind) showed [6d] and lost
+Seat 3: NoShowB (big blind) lost
+

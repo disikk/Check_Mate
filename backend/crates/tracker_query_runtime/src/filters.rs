@@ -4,7 +4,72 @@ use anyhow::{Result, anyhow};
 use postgres::GenericClient;
 use uuid::Uuid;
 
-use crate::registry::FEATURE_VERSION;
+pub const FEATURE_VERSION: &str = "mbr_runtime_v1";
+
+const HAND_BOOL_FEATURES: &[&str] = &[
+    "played_ft_hand",
+    "is_ft_hand",
+    "is_stage_2",
+    "is_stage_3_4",
+    "is_stage_4_5",
+    "is_stage_5_6",
+    "is_stage_6_9",
+    "is_boundary_hand",
+    "has_exact_ko_event",
+    "has_split_ko_event",
+    "has_sidepot_ko_event",
+];
+
+const HAND_NUM_FEATURES: &[&str] = &[
+    "ft_table_size",
+    "ft_players_remaining_exact",
+    "hero_exact_ko_event_count",
+    "hero_split_ko_event_count",
+    "hero_sidepot_ko_event_count",
+];
+
+const HAND_ENUM_FEATURES: &[&str] = &["ft_stage_bucket"];
+
+const STREET_BOOL_FEATURES: &[&str] = &[
+    "has_air",
+    "missed_flush_draw",
+    "missed_straight_draw",
+    "is_nut_hand",
+    "is_nut_draw",
+    "forced_all_in_preflop",
+    "summary_has_shown_cards",
+    "is_exact_ko_participant",
+    "is_exact_ko_eliminated",
+];
+
+const STREET_NUM_FEATURES: &[&str] = &[
+    "best_hand_rank_value",
+    "overcards_count",
+    "position_index",
+    "preflop_act_order_index",
+    "postflop_act_order_index",
+    "summary_won_amount",
+];
+
+const STREET_ENUM_FEATURES: &[&str] = &[
+    "best_hand_class",
+    "made_hand_category",
+    "draw_category",
+    "certainty_state",
+    "position_label",
+    "summary_outcome_kind",
+    "summary_position_marker",
+    "summary_folded_street",
+    "summary_hand_class",
+];
+
+const HAND_DYNAMIC_BOOL_PREFIXES: &[&str] = &[
+    "has_uncertain_reason_code:",
+    "has_invariant_error_code:",
+    "has_action_legality_issue:",
+];
+
+const STREET_DYNAMIC_BOOL_PREFIXES: &[&str] = &["has_all_in_reason:"];
 
 const EXACT_CORE_SEAT_SURFACE: &str = "seat";
 
@@ -35,10 +100,17 @@ pub struct FilterCondition {
     pub value: FilterValue,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct RuntimeFilterSet {
+#[derive(Debug, Clone, PartialEq)]
+pub struct HandQueryRequest {
+    pub organization_id: Uuid,
+    pub player_profile_id: Uuid,
     pub hero_filters: Vec<FilterCondition>,
     pub opponent_filters: Vec<FilterCondition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HandQueryResult {
+    pub hand_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -67,43 +139,271 @@ pub enum FilterError {
     InvalidComparison(String),
 }
 
-pub fn evaluate_runtime_filter_set(
+pub fn evaluate_hand_query_request(
     context: &HandFilterContext,
-    filters: &RuntimeFilterSet,
+    query: &HandQueryRequest,
 ) -> std::result::Result<bool, FilterError> {
-    let hero_matches = evaluate_group(context, &filters.hero_filters, true)?;
+    let hero_matches = evaluate_group(context, &query.hero_filters, true)?;
     if !hero_matches {
         return Ok(false);
     }
 
-    evaluate_group(context, &filters.opponent_filters, false)
+    evaluate_group(context, &query.opponent_filters, false)
+}
+
+pub fn collect_matching_hand_ids(
+    contexts: &[HandFilterContext],
+    query: &HandQueryRequest,
+) -> std::result::Result<HandQueryResult, FilterError> {
+    let mut hand_ids = Vec::new();
+    for context in contexts {
+        if evaluate_hand_query_request(context, query)? {
+            hand_ids.push(context.hand_id);
+        }
+    }
+    hand_ids.sort_unstable();
+    Ok(HandQueryResult { hand_ids })
 }
 
 pub fn query_matching_hand_ids(
     client: &mut impl GenericClient,
-    organization_id: Uuid,
-    player_profile_id: Uuid,
-    filters: &RuntimeFilterSet,
-) -> Result<Vec<Uuid>> {
-    let contexts = load_filter_contexts(client, organization_id, player_profile_id)?;
-    let mut matches = collect_matching_hand_ids(&contexts, filters)
-        .map_err(|error| anyhow!("runtime filter evaluation failed: {error:?}"))?;
-    matches.sort_unstable();
-    Ok(matches)
+    query: &HandQueryRequest,
+) -> Result<HandQueryResult> {
+    let contexts = load_filter_contexts(client, query.organization_id, query.player_profile_id)?;
+    collect_matching_hand_ids(&contexts, query)
+        .map_err(|error| anyhow!("runtime filter evaluation failed: {error:?}"))
 }
 
-fn collect_matching_hand_ids(
-    contexts: &[HandFilterContext],
-    filters: &RuntimeFilterSet,
-) -> std::result::Result<Vec<Uuid>, FilterError> {
-    let mut matches = Vec::new();
-    for context in contexts {
-        if evaluate_runtime_filter_set(context, filters)? {
-            matches.push(context.hand_id);
+fn evaluate_group(
+    context: &HandFilterContext,
+    filters: &[FilterCondition],
+    hero_group: bool,
+) -> std::result::Result<bool, FilterError> {
+    if filters.is_empty() {
+        return Ok(true);
+    }
+
+    let (hand_filters, street_filters): (Vec<_>, Vec<_>) = filters
+        .iter()
+        .cloned()
+        .partition(|condition| matches!(condition.feature, FeatureRef::Hand { .. }));
+
+    validate_conditions(&hand_filters)?;
+    validate_conditions(&street_filters)?;
+
+    for condition in &hand_filters {
+        if !evaluate_hand_condition(context, condition)? {
+            return Ok(false);
         }
     }
 
-    Ok(matches)
+    let candidate_rows = context
+        .street_rows
+        .iter()
+        .filter(|row| row.is_hero == hero_group)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if hero_group {
+        return evaluate_hero_street_conditions(&candidate_rows, &street_filters);
+    }
+
+    evaluate_opponent_street_conditions(&candidate_rows, &street_filters)
+}
+
+fn validate_conditions(filters: &[FilterCondition]) -> std::result::Result<(), FilterError> {
+    for condition in filters {
+        match &condition.feature {
+            FeatureRef::Hand { feature_key } => {
+                if !is_supported_hand_feature(feature_key) {
+                    return Err(FilterError::UnsupportedFeature(feature_key.clone()));
+                }
+            }
+            FeatureRef::Street { feature_key, .. } => {
+                if !is_supported_street_feature(feature_key) {
+                    return Err(FilterError::UnsupportedFeature(feature_key.clone()));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn evaluate_hero_street_conditions(
+    rows: &[StreetFilterRow],
+    street_filters: &[FilterCondition],
+) -> std::result::Result<bool, FilterError> {
+    for condition in street_filters {
+        let FeatureRef::Street { street, .. } = &condition.feature else {
+            continue;
+        };
+        let Some(row) = rows.iter().find(|row| &row.street == street) else {
+            return Ok(false);
+        };
+        if !evaluate_street_condition(row, condition)? {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+fn evaluate_opponent_street_conditions(
+    rows: &[StreetFilterRow],
+    street_filters: &[FilterCondition],
+) -> std::result::Result<bool, FilterError> {
+    if rows.is_empty() {
+        return Ok(false);
+    }
+
+    if street_filters.is_empty() {
+        return Ok(true);
+    }
+
+    let mut by_seat = BTreeMap::<i32, Vec<StreetFilterRow>>::new();
+    for row in rows {
+        by_seat.entry(row.seat_no).or_default().push(row.clone());
+    }
+
+    for seat_rows in by_seat.values() {
+        let mut seat_matches = true;
+        for condition in street_filters {
+            let FeatureRef::Street { street, .. } = &condition.feature else {
+                continue;
+            };
+            let Some(row) = seat_rows.iter().find(|row| &row.street == street) else {
+                seat_matches = false;
+                break;
+            };
+            if !evaluate_street_condition(row, condition)? {
+                seat_matches = false;
+                break;
+            }
+        }
+        if seat_matches {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn evaluate_hand_condition(
+    context: &HandFilterContext,
+    condition: &FilterCondition,
+) -> std::result::Result<bool, FilterError> {
+    let FeatureRef::Hand { feature_key } = &condition.feature else {
+        return Ok(false);
+    };
+
+    if let Some(value) = context.hand_bool_values.get(feature_key) {
+        return compare_bool(*value, &condition.operator, &condition.value);
+    }
+    if let Some(value) = context.hand_num_values.get(feature_key) {
+        return compare_num(*value, &condition.operator, &condition.value);
+    }
+    if let Some(value) = context.hand_enum_values.get(feature_key) {
+        return compare_enum(value, &condition.operator, &condition.value);
+    }
+
+    if is_sparse_exact_core_hand_feature(feature_key) {
+        return Ok(false);
+    }
+
+    Err(FilterError::MissingFeature(feature_key.clone()))
+}
+
+fn evaluate_street_condition(
+    row: &StreetFilterRow,
+    condition: &FilterCondition,
+) -> std::result::Result<bool, FilterError> {
+    let FeatureRef::Street { feature_key, .. } = &condition.feature else {
+        return Ok(false);
+    };
+
+    if let Some(value) = row.bool_values.get(feature_key) {
+        return compare_bool(*value, &condition.operator, &condition.value);
+    }
+    if let Some(value) = row.num_values.get(feature_key) {
+        return compare_num(*value, &condition.operator, &condition.value);
+    }
+    if let Some(value) = row.enum_values.get(feature_key) {
+        return compare_enum(value, &condition.operator, &condition.value);
+    }
+
+    if row.street == EXACT_CORE_SEAT_SURFACE {
+        return Ok(false);
+    }
+
+    Err(FilterError::MissingFeature(feature_key.clone()))
+}
+
+fn compare_bool(
+    actual: bool,
+    operator: &FilterOperator,
+    expected: &FilterValue,
+) -> std::result::Result<bool, FilterError> {
+    let FilterValue::Bool(expected) = expected else {
+        return Err(FilterError::InvalidComparison("bool feature".to_string()));
+    };
+    if *operator != FilterOperator::Eq {
+        return Err(FilterError::InvalidComparison("bool feature".to_string()));
+    }
+    Ok(actual == *expected)
+}
+
+fn compare_num(
+    actual: f64,
+    operator: &FilterOperator,
+    expected: &FilterValue,
+) -> std::result::Result<bool, FilterError> {
+    let FilterValue::Num(expected) = expected else {
+        return Err(FilterError::InvalidComparison("num feature".to_string()));
+    };
+    Ok(match operator {
+        FilterOperator::Eq => (actual - *expected).abs() < f64::EPSILON,
+        FilterOperator::Gte => actual >= *expected,
+        FilterOperator::Lte => actual <= *expected,
+    })
+}
+
+fn compare_enum(
+    actual: &str,
+    operator: &FilterOperator,
+    expected: &FilterValue,
+) -> std::result::Result<bool, FilterError> {
+    let FilterValue::Enum(expected) = expected else {
+        return Err(FilterError::InvalidComparison("enum feature".to_string()));
+    };
+    if *operator != FilterOperator::Eq {
+        return Err(FilterError::InvalidComparison("enum feature".to_string()));
+    }
+    Ok(actual == expected)
+}
+
+fn is_supported_hand_feature(feature_key: &str) -> bool {
+    HAND_BOOL_FEATURES.contains(&feature_key)
+        || HAND_NUM_FEATURES.contains(&feature_key)
+        || HAND_ENUM_FEATURES.contains(&feature_key)
+        || HAND_DYNAMIC_BOOL_PREFIXES
+            .iter()
+            .any(|prefix| feature_key.starts_with(prefix))
+}
+
+fn is_supported_street_feature(feature_key: &str) -> bool {
+    STREET_BOOL_FEATURES.contains(&feature_key)
+        || STREET_NUM_FEATURES.contains(&feature_key)
+        || STREET_ENUM_FEATURES.contains(&feature_key)
+        || STREET_DYNAMIC_BOOL_PREFIXES
+            .iter()
+            .any(|prefix| feature_key.starts_with(prefix))
+}
+
+fn is_sparse_exact_core_hand_feature(feature_key: &str) -> bool {
+    HAND_DYNAMIC_BOOL_PREFIXES
+        .iter()
+        .any(|prefix| feature_key.starts_with(prefix))
 }
 
 fn load_filter_contexts(
@@ -478,7 +778,9 @@ fn load_filter_contexts(
         &[&organization_id, &player_profile_id, &FEATURE_VERSION],
     )? {
         let key = street_key(&row);
-        let entry = street_rows.entry(key).or_insert_with(|| base_street_row(&row));
+        let entry = street_rows
+            .entry(key)
+            .or_insert_with(|| base_street_row(&row));
         entry.num_values.insert(row.get(4), row.get(5));
     }
 
@@ -522,217 +824,6 @@ fn base_street_row(row: &postgres::Row) -> StreetFilterRow {
     }
 }
 
-fn evaluate_group(
-    context: &HandFilterContext,
-    filters: &[FilterCondition],
-    hero_group: bool,
-) -> std::result::Result<bool, FilterError> {
-    if filters.is_empty() {
-        return Ok(true);
-    }
-
-    let (hand_filters, street_filters): (Vec<_>, Vec<_>) = filters
-        .iter()
-        .cloned()
-        .partition(|condition| matches!(condition.feature, FeatureRef::Hand { .. }));
-
-    validate_conditions(&hand_filters)?;
-    validate_conditions(&street_filters)?;
-
-    for condition in &hand_filters {
-        if !evaluate_hand_condition(context, condition)? {
-            return Ok(false);
-        }
-    }
-
-    let candidate_rows = context
-        .street_rows
-        .iter()
-        .filter(|row| row.is_hero == hero_group)
-        .cloned()
-        .collect::<Vec<_>>();
-
-    if hero_group {
-        return evaluate_hero_street_conditions(&candidate_rows, &street_filters);
-    }
-
-    evaluate_opponent_street_conditions(&candidate_rows, &street_filters)
-}
-
-fn validate_conditions(filters: &[FilterCondition]) -> std::result::Result<(), FilterError> {
-    for condition in filters {
-        match &condition.feature {
-            FeatureRef::Hand { feature_key } | FeatureRef::Street { feature_key, .. } => {
-                reject_unsupported_feature(feature_key)?
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn evaluate_hero_street_conditions(
-    rows: &[StreetFilterRow],
-    street_filters: &[FilterCondition],
-) -> std::result::Result<bool, FilterError> {
-    for condition in street_filters {
-        let FeatureRef::Street { street, .. } = &condition.feature else {
-            continue;
-        };
-        let Some(row) = rows.iter().find(|row| &row.street == street) else {
-            return Ok(false);
-        };
-        if !evaluate_street_condition(row, condition)? {
-            return Ok(false);
-        }
-    }
-
-    Ok(true)
-}
-
-fn evaluate_opponent_street_conditions(
-    rows: &[StreetFilterRow],
-    street_filters: &[FilterCondition],
-) -> std::result::Result<bool, FilterError> {
-    if rows.is_empty() {
-        return Ok(false);
-    }
-
-    if street_filters.is_empty() {
-        return Ok(true);
-    }
-
-    let mut by_seat = BTreeMap::<i32, Vec<StreetFilterRow>>::new();
-    for row in rows {
-        by_seat.entry(row.seat_no).or_default().push(row.clone());
-    }
-
-    for seat_rows in by_seat.values() {
-        let mut seat_matches = true;
-        for condition in street_filters {
-            let FeatureRef::Street { street, .. } = &condition.feature else {
-                continue;
-            };
-            let Some(row) = seat_rows.iter().find(|row| &row.street == street) else {
-                seat_matches = false;
-                break;
-            };
-            if !evaluate_street_condition(row, condition)? {
-                seat_matches = false;
-                break;
-            }
-        }
-        if seat_matches {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
-}
-
-fn evaluate_hand_condition(
-    context: &HandFilterContext,
-    condition: &FilterCondition,
-) -> std::result::Result<bool, FilterError> {
-    let FeatureRef::Hand { feature_key } = &condition.feature else {
-        return Ok(false);
-    };
-    reject_unsupported_feature(feature_key)?;
-
-    if let Some(value) = context.hand_bool_values.get(feature_key) {
-        return compare_bool(*value, &condition.operator, &condition.value);
-    }
-    if let Some(value) = context.hand_num_values.get(feature_key) {
-        return compare_num(*value, &condition.operator, &condition.value);
-    }
-    if let Some(value) = context.hand_enum_values.get(feature_key) {
-        return compare_enum(value, &condition.operator, &condition.value);
-    }
-
-    if is_sparse_exact_core_hand_feature(feature_key) {
-        return Ok(false);
-    }
-
-    Err(FilterError::MissingFeature(feature_key.clone()))
-}
-
-fn evaluate_street_condition(
-    row: &StreetFilterRow,
-    condition: &FilterCondition,
-) -> std::result::Result<bool, FilterError> {
-    let FeatureRef::Street { feature_key, .. } = &condition.feature else {
-        return Ok(false);
-    };
-    reject_unsupported_feature(feature_key)?;
-
-    if let Some(value) = row.bool_values.get(feature_key) {
-        return compare_bool(*value, &condition.operator, &condition.value);
-    }
-    if let Some(value) = row.num_values.get(feature_key) {
-        return compare_num(*value, &condition.operator, &condition.value);
-    }
-    if let Some(value) = row.enum_values.get(feature_key) {
-        return compare_enum(value, &condition.operator, &condition.value);
-    }
-
-    if row.street == EXACT_CORE_SEAT_SURFACE {
-        return Ok(false);
-    }
-
-    Err(FilterError::MissingFeature(feature_key.clone()))
-}
-
-fn reject_unsupported_feature(feature_key: &str) -> std::result::Result<(), FilterError> {
-    if matches!(feature_key, "is_nut_hand" | "is_nut_draw") {
-        return Err(FilterError::UnsupportedFeature(feature_key.to_string()));
-    }
-
-    Ok(())
-}
-
-fn compare_bool(
-    actual: bool,
-    operator: &FilterOperator,
-    expected: &FilterValue,
-) -> std::result::Result<bool, FilterError> {
-    let FilterValue::Bool(expected) = expected else {
-        return Err(FilterError::InvalidComparison("bool feature".to_string()));
-    };
-    if *operator != FilterOperator::Eq {
-        return Err(FilterError::InvalidComparison("bool feature".to_string()));
-    }
-    Ok(actual == *expected)
-}
-
-fn compare_num(
-    actual: f64,
-    operator: &FilterOperator,
-    expected: &FilterValue,
-) -> std::result::Result<bool, FilterError> {
-    let FilterValue::Num(expected) = expected else {
-        return Err(FilterError::InvalidComparison("num feature".to_string()));
-    };
-    Ok(match operator {
-        FilterOperator::Eq => (actual - *expected).abs() < f64::EPSILON,
-        FilterOperator::Gte => actual >= *expected,
-        FilterOperator::Lte => actual <= *expected,
-    })
-}
-
-fn compare_enum(
-    actual: &str,
-    operator: &FilterOperator,
-    expected: &FilterValue,
-) -> std::result::Result<bool, FilterError> {
-    let FilterValue::Enum(expected) = expected else {
-        return Err(FilterError::InvalidComparison("enum feature".to_string()));
-    };
-    if *operator != FilterOperator::Eq {
-        return Err(FilterError::InvalidComparison("enum feature".to_string()));
-    }
-    Ok(actual == expected)
-}
-
 fn is_action_legality_issue_code(code: &str) -> bool {
     matches!(
         code,
@@ -750,12 +841,6 @@ fn is_action_legality_issue_code(code: &str) -> bool {
             | "uncalled_return_actor_mismatch"
             | "uncalled_return_amount_mismatch"
     )
-}
-
-fn is_sparse_exact_core_hand_feature(feature_key: &str) -> bool {
-    feature_key.starts_with("has_uncertain_reason_code:")
-        || feature_key.starts_with("has_invariant_error_code:")
-        || feature_key.starts_with("has_action_legality_issue:")
 }
 
 fn canonical_settlement_issue_code(raw_code: &str, is_pot_issue: bool) -> String {
@@ -788,73 +873,20 @@ fn canonical_invariant_issue_code(raw_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        FeatureRef, FilterCondition, FilterError, FilterOperator, FilterValue, HandFilterContext,
-        RuntimeFilterSet, StreetFilterRow, canonical_invariant_issue_code,
-        canonical_settlement_issue_code, collect_matching_hand_ids, evaluate_runtime_filter_set,
+        FeatureRef, FilterCondition, FilterOperator, FilterValue, HandFilterContext,
+        HandQueryRequest, StreetFilterRow, canonical_invariant_issue_code,
+        canonical_settlement_issue_code, evaluate_hand_query_request,
     };
     use std::collections::BTreeMap;
     use uuid::Uuid;
 
-    #[test]
-    fn matches_combined_hero_and_opponent_groups_across_hand_and_street_features() {
-        let context = HandFilterContext {
-            hand_id: Uuid::nil(),
-            hand_bool_values: BTreeMap::from([("played_ft_hand".to_string(), true)]),
-            hand_num_values: BTreeMap::new(),
-            hand_enum_values: BTreeMap::new(),
-            street_rows: vec![
-                StreetFilterRow {
-                    seat_no: 7,
-                    street: "flop".to_string(),
-                    is_hero: true,
-                    enum_values: BTreeMap::from([(
-                        "made_hand_category".to_string(),
-                        "overpair".to_string(),
-                    )]),
-                    ..StreetFilterRow::default()
-                },
-                StreetFilterRow {
-                    seat_no: 3,
-                    street: "turn".to_string(),
-                    is_hero: false,
-                    enum_values: BTreeMap::from([(
-                        "draw_category".to_string(),
-                        "flush_draw".to_string(),
-                    )]),
-                    ..StreetFilterRow::default()
-                },
-            ],
-        };
-
-        let filters = RuntimeFilterSet {
-            hero_filters: vec![
-                FilterCondition {
-                    feature: FeatureRef::Hand {
-                        feature_key: "played_ft_hand".to_string(),
-                    },
-                    operator: FilterOperator::Eq,
-                    value: FilterValue::Bool(true),
-                },
-                FilterCondition {
-                    feature: FeatureRef::Street {
-                        street: "flop".to_string(),
-                        feature_key: "made_hand_category".to_string(),
-                    },
-                    operator: FilterOperator::Eq,
-                    value: FilterValue::Enum("overpair".to_string()),
-                },
-            ],
-            opponent_filters: vec![FilterCondition {
-                feature: FeatureRef::Street {
-                    street: "turn".to_string(),
-                    feature_key: "draw_category".to_string(),
-                },
-                operator: FilterOperator::Eq,
-                value: FilterValue::Enum("flush_draw".to_string()),
-            }],
-        };
-
-        assert_eq!(evaluate_runtime_filter_set(&context, &filters), Ok(true));
+    fn request(hero_filters: Vec<FilterCondition>) -> HandQueryRequest {
+        HandQueryRequest {
+            organization_id: Uuid::nil(),
+            player_profile_id: Uuid::nil(),
+            hero_filters,
+            opponent_filters: vec![],
+        }
     }
 
     #[test]
@@ -885,149 +917,21 @@ mod tests {
     }
 
     #[test]
-    fn opponent_group_requires_single_opponent_to_match_all_street_predicates() {
-        let context = HandFilterContext {
-            hand_id: Uuid::nil(),
-            hand_bool_values: BTreeMap::new(),
-            hand_num_values: BTreeMap::new(),
-            hand_enum_values: BTreeMap::new(),
-            street_rows: vec![
-                StreetFilterRow {
-                    seat_no: 3,
-                    street: "flop".to_string(),
-                    is_hero: false,
-                    enum_values: BTreeMap::from([(
-                        "made_hand_category".to_string(),
-                        "top_pair".to_string(),
-                    )]),
-                    ..StreetFilterRow::default()
-                },
-                StreetFilterRow {
-                    seat_no: 3,
-                    street: "turn".to_string(),
-                    is_hero: false,
-                    enum_values: BTreeMap::from([(
-                        "draw_category".to_string(),
-                        "none".to_string(),
-                    )]),
-                    ..StreetFilterRow::default()
-                },
-                StreetFilterRow {
-                    seat_no: 5,
-                    street: "flop".to_string(),
-                    is_hero: false,
-                    enum_values: BTreeMap::from([(
-                        "made_hand_category".to_string(),
-                        "none".to_string(),
-                    )]),
-                    ..StreetFilterRow::default()
-                },
-                StreetFilterRow {
-                    seat_no: 5,
-                    street: "turn".to_string(),
-                    is_hero: false,
-                    enum_values: BTreeMap::from([(
-                        "draw_category".to_string(),
-                        "flush_draw".to_string(),
-                    )]),
-                    ..StreetFilterRow::default()
-                },
-            ],
-        };
-
-        let filters = RuntimeFilterSet {
-            hero_filters: vec![],
-            opponent_filters: vec![
-                FilterCondition {
-                    feature: FeatureRef::Street {
-                        street: "flop".to_string(),
-                        feature_key: "made_hand_category".to_string(),
-                    },
-                    operator: FilterOperator::Eq,
-                    value: FilterValue::Enum("top_pair".to_string()),
-                },
-                FilterCondition {
-                    feature: FeatureRef::Street {
-                        street: "turn".to_string(),
-                        feature_key: "draw_category".to_string(),
-                    },
-                    operator: FilterOperator::Eq,
-                    value: FilterValue::Enum("flush_draw".to_string()),
-                },
-            ],
-        };
-
-        assert_eq!(evaluate_runtime_filter_set(&context, &filters), Ok(false));
-    }
-
-    #[test]
-    fn rejects_deferred_nut_predicates_honestly() {
-        let context = HandFilterContext {
-            hand_id: Uuid::nil(),
-            ..HandFilterContext::default()
-        };
-        let filters = RuntimeFilterSet {
-            hero_filters: vec![FilterCondition {
-                feature: FeatureRef::Street {
-                    street: "river".to_string(),
-                    feature_key: "is_nut_hand".to_string(),
-                },
-                operator: FilterOperator::Eq,
-                value: FilterValue::Bool(true),
-            }],
-            opponent_filters: vec![],
-        };
-
-        assert_eq!(
-            evaluate_runtime_filter_set(&context, &filters),
-            Err(FilterError::UnsupportedFeature("is_nut_hand".to_string()))
-        );
-    }
-
-    #[test]
-    fn query_collection_does_not_silence_filter_errors() {
-        let contexts = vec![HandFilterContext {
-            hand_id: Uuid::nil(),
-            ..HandFilterContext::default()
-        }];
-        let filters = RuntimeFilterSet {
-            hero_filters: vec![FilterCondition {
-                feature: FeatureRef::Street {
-                    street: "flop".to_string(),
-                    feature_key: "is_nut_draw".to_string(),
-                },
-                operator: FilterOperator::Eq,
-                value: FilterValue::Bool(true),
-            }],
-            opponent_filters: vec![],
-        };
-
-        assert_eq!(
-            collect_matching_hand_ids(&contexts, &filters),
-            Err(FilterError::UnsupportedFeature("is_nut_draw".to_string()))
-        );
-    }
-
-    #[test]
     fn missing_exact_core_hand_presence_feature_evaluates_to_false() {
         let context = HandFilterContext {
             hand_id: Uuid::nil(),
             ..HandFilterContext::default()
         };
-        let filters = RuntimeFilterSet {
-            hero_filters: vec![FilterCondition {
-                feature: FeatureRef::Hand {
-                    feature_key:
-                        "has_uncertain_reason_code:pot_settlement_ambiguous_hidden_showdown"
-                            .to_string(),
-                },
-                operator: FilterOperator::Eq,
-                value: FilterValue::Bool(true),
-            }],
-            opponent_filters: vec![],
-        };
+        let query = request(vec![FilterCondition {
+            feature: FeatureRef::Hand {
+                feature_key: "has_uncertain_reason_code:pot_settlement_ambiguous_hidden_showdown"
+                    .to_string(),
+            },
+            operator: FilterOperator::Eq,
+            value: FilterValue::Bool(true),
+        }]);
 
-        assert_eq!(evaluate_runtime_filter_set(&context, &filters), Ok(false));
+        assert_eq!(evaluate_hand_query_request(&context, &query), Ok(false));
     }
 
     #[test]
@@ -1045,28 +949,25 @@ mod tests {
                 ..StreetFilterRow::default()
             }],
         };
-        let filters = RuntimeFilterSet {
-            hero_filters: vec![
-                FilterCondition {
-                    feature: FeatureRef::Street {
-                        street: "seat".to_string(),
-                        feature_key: "position_label".to_string(),
-                    },
-                    operator: FilterOperator::Eq,
-                    value: FilterValue::Enum("BB".to_string()),
+        let query = request(vec![
+            FilterCondition {
+                feature: FeatureRef::Street {
+                    street: "seat".to_string(),
+                    feature_key: "position_label".to_string(),
                 },
-                FilterCondition {
-                    feature: FeatureRef::Street {
-                        street: "seat".to_string(),
-                        feature_key: "summary_outcome_kind".to_string(),
-                    },
-                    operator: FilterOperator::Eq,
-                    value: FilterValue::Enum("showed_won".to_string()),
+                operator: FilterOperator::Eq,
+                value: FilterValue::Enum("BB".to_string()),
+            },
+            FilterCondition {
+                feature: FeatureRef::Street {
+                    street: "seat".to_string(),
+                    feature_key: "summary_outcome_kind".to_string(),
                 },
-            ],
-            opponent_filters: vec![],
-        };
+                operator: FilterOperator::Eq,
+                value: FilterValue::Enum("showed_won".to_string()),
+            },
+        ]);
 
-        assert_eq!(evaluate_runtime_filter_set(&context, &filters), Ok(false));
+        assert_eq!(evaluate_hand_query_request(&context, &query), Ok(false));
     }
 }
