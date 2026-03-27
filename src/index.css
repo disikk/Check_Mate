@@ -1041,6 +1041,132 @@ body::after {
   gap: 16px;
 }
 
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 16px;
+}
+
+.settings-form-card,
+.settings-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-field label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.settings-field input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-family: var(--font);
+}
+
+.settings-field-hint {
+  color: var(--text-soft);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.settings-quick-picks,
+.settings-actions,
+.settings-preview-stack,
+.settings-note-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-actions {
+  margin-top: 4px;
+}
+
+.settings-preview-stack,
+.settings-note-list {
+  flex-direction: column;
+}
+
+.settings-preview-item {
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 65%),
+    rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 8px;
+}
+
+.settings-preview-item strong {
+  line-height: 1.5;
+}
+
+.settings-validation {
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  line-height: 1.6;
+}
+
+.settings-validation.valid {
+  background: var(--success-soft);
+  color: var(--text-primary);
+}
+
+.settings-validation.invalid {
+  background: var(--danger-soft);
+  color: var(--text-primary);
+}
+
+.upload-timezone-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+.upload-timezone-banner.warning {
+  border-color: rgba(245, 158, 11, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.12), transparent 42%),
+    var(--surface);
+}
+
+.upload-timezone-banner.success {
+  border-color: rgba(52, 211, 153, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(52, 211, 153, 0.12), transparent 42%),
+    var(--surface);
+}
+
+.upload-timezone-banner-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.upload-timezone-banner-text {
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
 .upload-dropzone {
   display: flex;
   flex-direction: column;
@@ -1335,7 +1461,8 @@ body::after {
 @media (max-width: 1280px) {
   .upload-top-grid,
   .upload-bottom-grid,
-  .upload-summary-grid {
+  .upload-summary-grid,
+  .settings-grid {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -1381,6 +1508,7 @@ body::after {
   .upload-top-grid,
   .upload-bottom-grid,
   .upload-summary-grid,
+  .settings-grid,
   .mbr-grid-row,
   .ft-stats-row {
     grid-template-columns: 1fr;
@@ -1421,12 +1549,15 @@ body::after {
   }
 
   .upload-dropzone-actions,
-  .page-stat-list {
+  .page-stat-list,
+  .settings-actions,
+  .upload-timezone-banner {
     width: 100%;
   }
 
   .action-btn,
   .page-stat-pill,
+  .upload-timezone-banner .action-btn,
   .placeholder-badge,
   .ft-inline-stat {
     width: 100%;

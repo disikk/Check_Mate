@@ -31,10 +31,9 @@ use tracker_parser_core::{
 };
 use uuid::Uuid;
 
-const DEV_ORG_NAME: &str = "Check Mate Dev Org";
-const DEV_USER_EMAIL: &str = "mbr-dev-student@example.com";
-const DEV_PLAYER_NAME: &str = "Hero";
 const HAND_RESOLUTION_VERSION: &str = EXACT_CORE_RESOLUTION_VERSION;
+const GG_TIMESTAMP_PROVENANCE_PRESENT: &str = "gg_user_timezone";
+const GG_TIMESTAMP_PROVENANCE_MISSING: &str = "gg_user_timezone_missing";
 
 #[derive(Debug)]
 pub struct LocalImportReport {
@@ -51,13 +50,23 @@ struct LocalImportExecutor {
 }
 
 #[derive(Debug)]
-struct DevContext {
+struct ImportContext {
     organization_id: Uuid,
     user_id: Uuid,
     player_profile_id: Uuid,
     player_aliases: Vec<String>,
+    timezone_name: Option<String>,
     room_id: Uuid,
     format_id: Uuid,
+}
+
+#[derive(Debug)]
+pub struct TimezoneUpdateReport {
+    pub user_id: Uuid,
+    pub timezone_name: Option<String>,
+    pub affected_profiles: usize,
+    pub tournaments_recomputed: u64,
+    pub hands_recomputed: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -288,6 +297,7 @@ struct BoundaryResolution {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TournamentFtHelperSourceHand {
     hand_id: Uuid,
+    tournament_hand_order: i32,
     external_hand_id: String,
     hand_started_at_local: String,
     played_ft_hand: bool,
@@ -316,9 +326,8 @@ struct StreetHandStrengthRow {
     certainty_state: String,
 }
 
-pub fn import_path(path: &str) -> Result<LocalImportReport> {
-    let database_url = env::var("CHECK_MATE_DATABASE_URL")
-        .context("CHECK_MATE_DATABASE_URL is required for `import-local`")?;
+pub fn import_path(path: &str, player_profile_id: Uuid) -> Result<LocalImportReport> {
+    let database_url = database_url_from_env()?;
     let input = fs::read_to_string(path).with_context(|| format!("failed to read `{path}`"))?;
 
     let mut client =
@@ -326,7 +335,7 @@ pub fn import_path(path: &str) -> Result<LocalImportReport> {
     let mut tx = client
         .transaction()
         .context("failed to start ingest enqueue transaction")?;
-    let context = ensure_dev_context(&mut tx)?;
+    let context = load_import_context(&mut tx, player_profile_id)?;
     let bundle = enqueue_bundle(
         &mut tx,
         &IngestBundleInput {
@@ -385,7 +394,11 @@ fn build_ingest_file_input(path: &str, input: &str) -> Result<IngestFileInput> {
     })
 }
 
-fn import_path_with_database_url(database_url: &str, path: &str) -> Result<LocalImportReport> {
+fn import_path_with_database_url(
+    database_url: &str,
+    path: &str,
+    player_profile_id: Uuid,
+) -> Result<LocalImportReport> {
     let input = fs::read_to_string(path).with_context(|| format!("failed to read `{path}`"))?;
 
     let mut client =
@@ -393,7 +406,7 @@ fn import_path_with_database_url(database_url: &str, path: &str) -> Result<Local
     let mut tx = client
         .transaction()
         .context("failed to start import transaction")?;
-    let context = ensure_dev_context(&mut tx)?;
+    let context = load_import_context(&mut tx, player_profile_id)?;
 
     let report = match detect_source_kind(&input)? {
         SourceKind::TournamentSummary => {
@@ -422,8 +435,8 @@ impl JobExecutor for LocalImportExecutor {
             .ok_or_else(|| JobExecutionError::terminal("unsupported_storage_uri"))?;
         let input = fs::read_to_string(path)
             .map_err(|_| JobExecutionError::retriable("storage_read_failed"))?;
-        let context = ensure_dev_context(client)
-            .map_err(|_| JobExecutionError::terminal("missing_dev_context"))?;
+        let context = load_import_context(client, job.player_profile_id)
+            .map_err(|_| JobExecutionError::terminal("missing_import_context"))?;
 
         let report: Result<LocalImportReport> = match job.file_kind {
             Some(IngestFileKind::TournamentSummary) => import_tournament_summary_registered(
@@ -463,73 +476,85 @@ impl JobExecutor for LocalImportExecutor {
     }
 }
 
-fn ensure_dev_context(client: &mut impl postgres::GenericClient) -> Result<DevContext> {
-    let organization_id = if let Some(row) = client.query_opt(
-        "SELECT id FROM org.organizations WHERE name = $1",
-        &[&DEV_ORG_NAME],
-    )? {
-        row.get(0)
-    } else {
-        client.query_one(
-            "INSERT INTO org.organizations (name) VALUES ($1) RETURNING id",
-            &[&DEV_ORG_NAME],
-        )?
-        .get(0)
-    };
+pub fn set_user_timezone(user_id: Uuid, timezone_name: &str) -> Result<TimezoneUpdateReport> {
+    let database_url = database_url_from_env()?;
+    let mut client =
+        Client::connect(&database_url, NoTls).context("failed to connect to PostgreSQL")?;
+    let mut tx = client
+        .transaction()
+        .context("failed to start timezone update transaction")?;
+    validate_timezone_name(&mut tx, timezone_name)?;
 
-    let user_id = if let Some(row) = client.query_opt(
-        "SELECT id FROM auth.users WHERE email = $1",
-        &[&DEV_USER_EMAIL],
-    )? {
-        row.get(0)
-    } else {
-        client.query_one(
-                "INSERT INTO auth.users (email, auth_provider, status) VALUES ($1, 'seed', 'active') RETURNING id",
-                &[&DEV_USER_EMAIL],
-            )?
-            .get(0)
-    };
-
-    client.execute(
-        "INSERT INTO org.organization_memberships (organization_id, user_id, role)
-         VALUES ($1, $2, 'student')
-         ON CONFLICT (organization_id, user_id) DO NOTHING",
-        &[&organization_id, &user_id],
+    let updated_rows = tx.execute(
+        "UPDATE auth.users
+         SET timezone_name = $2
+         WHERE id = $1",
+        &[&user_id, &timezone_name],
     )?;
+    if updated_rows == 0 {
+        return Err(anyhow!("user `{user_id}` does not exist"));
+    }
 
-    let player_profile_id = if let Some(row) = client.query_opt(
-        "SELECT id FROM core.player_profiles WHERE organization_id = $1 AND room = 'gg' AND screen_name = $2",
-        &[&organization_id, &DEV_PLAYER_NAME],
-    )? {
-        row.get(0)
-    } else {
-        client.query_one(
-            "INSERT INTO core.player_profiles (organization_id, owner_user_id, room, network, screen_name)
-             VALUES ($1, $2, 'gg', 'gg', $3)
-             RETURNING id",
-            &[&organization_id, &user_id, &DEV_PLAYER_NAME],
-        )?
-        .get(0)
-    };
+    let report = recompute_user_timezone_contract(&mut tx, user_id, Some(timezone_name))?;
+    tx.commit()
+        .context("failed to commit timezone update transaction")?;
+    Ok(report)
+}
 
-    client.execute(
-        "INSERT INTO core.player_aliases (
-            organization_id,
-            player_profile_id,
-            room,
-            alias,
-            is_primary,
-            source
-        )
-        VALUES ($1, $2, 'gg', $3, TRUE, 'dev_context')
-        ON CONFLICT (player_profile_id, room, alias)
-        DO UPDATE SET
-            is_primary = TRUE,
-            source = EXCLUDED.source",
-        &[&organization_id, &player_profile_id, &DEV_PLAYER_NAME],
+pub fn clear_user_timezone(user_id: Uuid) -> Result<TimezoneUpdateReport> {
+    let database_url = database_url_from_env()?;
+    let mut client =
+        Client::connect(&database_url, NoTls).context("failed to connect to PostgreSQL")?;
+    let mut tx = client
+        .transaction()
+        .context("failed to start timezone clear transaction")?;
+
+    let updated_rows = tx.execute(
+        "UPDATE auth.users
+         SET timezone_name = NULL
+         WHERE id = $1",
+        &[&user_id],
     )?;
+    if updated_rows == 0 {
+        return Err(anyhow!("user `{user_id}` does not exist"));
+    }
 
-    let player_aliases = client
+    let report = recompute_user_timezone_contract(&mut tx, user_id, None)?;
+    tx.commit()
+        .context("failed to commit timezone clear transaction")?;
+    Ok(report)
+}
+
+fn database_url_from_env() -> Result<String> {
+    env::var("CHECK_MATE_DATABASE_URL")
+        .context("CHECK_MATE_DATABASE_URL is required for parser_worker database operations")
+}
+
+fn load_import_context(
+    client: &mut impl postgres::GenericClient,
+    player_profile_id: Uuid,
+) -> Result<ImportContext> {
+    let row = client
+        .query_opt(
+            "SELECT
+                player_profiles.organization_id,
+                player_profiles.owner_user_id,
+                player_profiles.screen_name,
+                users.timezone_name
+             FROM core.player_profiles AS player_profiles
+             INNER JOIN auth.users AS users
+                ON users.id = player_profiles.owner_user_id
+             WHERE player_profiles.id = $1
+               AND player_profiles.room = 'gg'",
+            &[&player_profile_id],
+        )?
+        .ok_or_else(|| anyhow!("player profile `{player_profile_id}` does not exist for room `gg`"))?;
+
+    let organization_id: Uuid = row.get(0);
+    let user_id: Uuid = row.get(1);
+    let player_screen_name: String = row.get(2);
+    let timezone_name: Option<String> = row.get(3);
+    let mut player_aliases = client
         .query(
             "SELECT alias
              FROM core.player_aliases
@@ -540,8 +565,14 @@ fn ensure_dev_context(client: &mut impl postgres::GenericClient) -> Result<DevCo
             &[&organization_id, &player_profile_id],
         )?
         .into_iter()
-        .map(|row| row.get::<_, String>(0))
+        .map(|alias_row| alias_row.get::<_, String>(0))
         .collect::<Vec<_>>();
+    if !player_aliases
+        .iter()
+        .any(|alias| alias == &player_screen_name)
+    {
+        player_aliases.push(player_screen_name.clone());
+    }
 
     let room_id = client
         .query_one("SELECT id FROM core.rooms WHERE code = 'gg'", &[])?
@@ -550,19 +581,108 @@ fn ensure_dev_context(client: &mut impl postgres::GenericClient) -> Result<DevCo
         .query_one("SELECT id FROM core.formats WHERE code = 'mbr'", &[])?
         .get(0);
 
-    Ok(DevContext {
+    Ok(ImportContext {
         organization_id,
         user_id,
         player_profile_id,
         player_aliases,
+        timezone_name,
         room_id,
         format_id,
     })
 }
 
+fn validate_timezone_name(
+    client: &mut impl postgres::GenericClient,
+    timezone_name: &str,
+) -> Result<()> {
+    client
+        .query_one("SELECT now() AT TIME ZONE $1", &[&timezone_name])
+        .with_context(|| format!("invalid IANA timezone `{timezone_name}`"))?;
+    Ok(())
+}
+
+fn recompute_user_timezone_contract(
+    tx: &mut Transaction<'_>,
+    user_id: Uuid,
+    timezone_name: Option<&str>,
+) -> Result<TimezoneUpdateReport> {
+    let tournaments_recomputed = tx.execute(
+        "UPDATE core.tournaments AS tournaments
+         SET started_at = CASE
+                 WHEN users.timezone_name IS NULL OR tournaments.started_at_local IS NULL THEN NULL
+                 ELSE tournaments.started_at_local AT TIME ZONE users.timezone_name
+             END,
+             started_at_tz_provenance = CASE
+                 WHEN users.timezone_name IS NULL THEN $2
+                 ELSE $3
+             END
+         FROM core.player_profiles AS player_profiles
+         INNER JOIN auth.users AS users
+             ON users.id = player_profiles.owner_user_id
+         WHERE tournaments.player_profile_id = player_profiles.id
+           AND player_profiles.owner_user_id = $1
+           AND player_profiles.room = 'gg'
+           AND tournaments.started_at_raw IS NOT NULL",
+        &[
+            &user_id,
+            &GG_TIMESTAMP_PROVENANCE_MISSING,
+            &GG_TIMESTAMP_PROVENANCE_PRESENT,
+        ],
+    )?;
+    let hands_recomputed = tx.execute(
+        "UPDATE core.hands AS hands
+         SET hand_started_at = CASE
+                 WHEN users.timezone_name IS NULL OR hands.hand_started_at_local IS NULL THEN NULL
+                 ELSE hands.hand_started_at_local AT TIME ZONE users.timezone_name
+             END,
+             hand_started_at_tz_provenance = CASE
+                 WHEN users.timezone_name IS NULL THEN $2
+                 ELSE $3
+             END
+         FROM core.player_profiles AS player_profiles
+         INNER JOIN auth.users AS users
+             ON users.id = player_profiles.owner_user_id
+         WHERE hands.player_profile_id = player_profiles.id
+           AND player_profiles.owner_user_id = $1
+           AND player_profiles.room = 'gg'
+           AND hands.hand_started_at_raw IS NOT NULL",
+        &[
+            &user_id,
+            &GG_TIMESTAMP_PROVENANCE_MISSING,
+            &GG_TIMESTAMP_PROVENANCE_PRESENT,
+        ],
+    )?;
+
+    let affected_profiles = tx
+        .query(
+            "SELECT id, organization_id
+             FROM core.player_profiles
+             WHERE owner_user_id = $1
+               AND room = 'gg'
+             ORDER BY created_at, id",
+            &[&user_id],
+        )?
+        .into_iter()
+        .map(|row| (row.get::<_, Uuid>(0), row.get::<_, Uuid>(1)))
+        .collect::<Vec<_>>();
+
+    for (player_profile_id, organization_id) in &affected_profiles {
+        materialize_player_hand_features(tx, *organization_id, *player_profile_id)?;
+    }
+
+    Ok(TimezoneUpdateReport {
+        user_id,
+        timezone_name: timezone_name.map(str::to_string),
+        affected_profiles: affected_profiles.len(),
+        tournaments_recomputed,
+        hands_recomputed,
+    })
+}
+
 fn import_tournament_summary(
     tx: &mut Transaction<'_>,
-    context: &DevContext,
+    context: &ImportContext,
     path: &str,
     input: &str,
 ) -> Result<LocalImportReport> {
@@ -574,7 +694,7 @@ fn import_tournament_summary(
 
 fn import_tournament_summary_registered(
     tx: &mut impl postgres::GenericClient,
-    context: &DevContext,
+    context: &ImportContext,
     path: &str,
     input: &str,
     source_file_id: Uuid,
@@ -613,11 +733,14 @@ fn import_tournament_summary_registered(
                 ($9::double precision)::numeric(12,2),
                 'USD',
                 $10,
-                NULL,
+                CASE
+                    WHEN $12::text IS NULL THEN NULL
+                    ELSE replace($11, '/', '-')::timestamp AT TIME ZONE $12
+                END,
                 $11,
                 replace($11, '/', '-')::timestamp,
-                'gg_text_without_timezone',
-                $12
+                $13,
+                $14
             )
             ON CONFLICT (player_profile_id, room_id, external_tournament_id)
             DO UPDATE SET
@@ -627,7 +750,7 @@ fn import_tournament_summary_registered(
                 fee_component = EXCLUDED.fee_component,
                 currency = EXCLUDED.currency,
                 max_players = EXCLUDED.max_players,
-                started_at = COALESCE(EXCLUDED.started_at, core.tournaments.started_at),
+                started_at = EXCLUDED.started_at,
                 started_at_raw = EXCLUDED.started_at_raw,
                 started_at_local = EXCLUDED.started_at_local,
                 started_at_tz_provenance = EXCLUDED.started_at_tz_provenance,
@@ -645,6 +768,8 @@ fn import_tournament_summary_registered(
                 &cents_to_f64(summary.rake_cents),
                 &(summary.entrants as i32),
                 &summary.started_at,
+                &context.timezone_name,
+                &gg_timestamp_provenance(context.timezone_name.as_deref()),
                 &source_file_id,
             ],
         )?
@@ -731,7 +856,7 @@ fn import_tournament_summary_registered(
 
 fn import_hand_history(
     tx: &mut Transaction<'_>,
-    context: &DevContext,
+    context: &ImportContext,
     path: &str,
     input: &str,
 ) -> Result<LocalImportReport> {
@@ -743,7 +868,7 @@ fn import_hand_history(
 
 fn import_hand_history_registered(
     tx: &mut impl postgres::GenericClient,
-    context: &DevContext,
+    context: &ImportContext,
     path: &str,
     input: &str,
     source_file_id: Uuid,
@@ -908,6 +1033,30 @@ fn import_hand_history_registered(
         &[&tournament_id],
     )?;
 
+    let tournament_hand_order_by_id = tx
+        .query(
+            "SELECT id, tournament_hand_order
+             FROM core.hands
+             WHERE tournament_id = $1",
+            &[&tournament_id],
+        )?
+        .into_iter()
+        .map(|row| (row.get::<_, Uuid>(0), row.get::<_, Option<i32>>(1)))
+        .collect::<BTreeMap<_, _>>();
+    for source_hand in &mut tournament_ft_helper_source_hands {
+        source_hand.tournament_hand_order = tournament_hand_order_by_id
+            .get(&source_hand.hand_id)
+            .copied()
+            .flatten()
+            .ok_or_else(|| {
+                anyhow!(
+                    "missing tournament_hand_order for hand {} in tournament {}",
+                    source_hand.hand_id,
+                    tournament_id
+                )
+            })?;
+    }
+
     let tournament_ft_helper_row = build_mbr_tournament_ft_helper_row(
         tournament_id,
         context.player_profile_id,
@@ -927,7 +1076,7 @@ fn import_hand_history_registered(
 
 fn upsert_hand_row(
     tx: &mut impl postgres::GenericClient,
-    context: &DevContext,
+    context: &ImportContext,
     tournament_id: Uuid,
     source_file_id: Uuid,
     fragment_id: Uuid,
@@ -960,18 +1109,21 @@ fn upsert_hand_row(
                 $3,
                 $4,
                 $5,
-                NULL,
+                CASE
+                    WHEN $7::text IS NULL THEN NULL
+                    ELSE replace($6, '/', '-')::timestamp AT TIME ZONE $7
+                END,
                 $6,
                 replace($6, '/', '-')::timestamp,
-                'gg_text_without_timezone',
-                $7,
                 $8,
                 $9,
                 $10,
                 $11,
                 $12,
+                $13,
+                $14,
                 'USD',
-                $13
+                $15
             )
             ON CONFLICT (player_profile_id, external_hand_id)
             DO UPDATE SET
@@ -997,6 +1149,8 @@ fn upsert_hand_row(
                 &source_file_id,
                 &hand.header.hand_id,
                 &hand.header.played_at,
+                &context.timezone_name,
+                &gg_timestamp_provenance(context.timezone_name.as_deref()),
                 &hand.header.table_name,
                 &(hand.header.max_players as i32),
                 &(hand.header.button_seat as i32),
@@ -1011,7 +1165,7 @@ fn upsert_hand_row(
 
 fn persist_canonical_hand(
     tx: &mut impl postgres::GenericClient,
-    context: &DevContext,
+    context: &ImportContext,
     source_file_id: Uuid,
     fragment_id: Uuid,
     hand_id: Uuid,
@@ -1999,6 +2153,7 @@ fn build_tournament_ft_helper_source_hand(
 ) -> TournamentFtHelperSourceHand {
     TournamentFtHelperSourceHand {
         hand_id,
+        tournament_hand_order: 0,
         external_hand_id: hand.header.hand_id.clone(),
         hand_started_at_local: hand.header.played_at.clone(),
         played_ft_hand: stage_row.played_ft_hand,
@@ -2023,8 +2178,8 @@ fn build_mbr_tournament_ft_helper_row(
 ) -> MbrTournamentFtHelperRow {
     let mut chronological = facts.iter().collect::<Vec<_>>();
     chronological.sort_by(|left, right| {
-        left.hand_started_at_local
-            .cmp(&right.hand_started_at_local)
+        left.tournament_hand_order
+            .cmp(&right.tournament_hand_order)
             .then_with(|| left.external_hand_id.cmp(&right.external_hand_id))
     });
 
@@ -2108,7 +2263,7 @@ fn build_mbr_tournament_ft_helper_row(
 
 fn load_tournament_entry_economics(
     tx: &mut impl postgres::GenericClient,
-    context: &DevContext,
+    context: &ImportContext,
     summary: &TournamentSummary,
 ) -> Result<TournamentEntryEconomics> {
     let regular_prize_cents: i64 = tx
@@ -2538,7 +2693,7 @@ fn hero_ko_share_fraction(
 
 fn insert_source_file(
     tx: &mut Transaction<'_>,
-    context: &DevContext,
+    context: &ImportContext,
     path: &str,
     input: &str,
     file_kind: &str,
@@ -2584,6 +2739,14 @@ fn insert_source_file(
             ],
         )?
         .get(0))
+}
+
+fn gg_timestamp_provenance(timezone_name: Option<&str>) -> &'static str {
+    if timezone_name.is_some() {
+        GG_TIMESTAMP_PROVENANCE_PRESENT
+    } else {
+        GG_TIMESTAMP_PROVENANCE_MISSING
+    }
 }
 
 fn insert_source_file_member(
@@ -2753,6 +2916,9 @@ mod tests {
     const BOUNDARY_RUSH_HAND_ID: &str = "BR1065004819";
     const EARLY_RUSH_HAND_ID: &str = "BR1065004261";
     const MULTI_COLLECT_HAND_ID: &str = "BR1064987148";
+    const DEV_ORG_NAME: &str = "Check Mate Dev Org";
+    const DEV_USER_EMAIL: &str = "mbr-dev-student@example.com";
+    const DEV_PLAYER_NAME: &str = "Hero";
     const FULL_PACK_FIXTURE_PAIRS: &[(&str, &str)] = &[
         (
             "GG20260316 - Tournament #271767530 - Mystery Battle Royale 25.txt",
@@ -2810,6 +2976,129 @@ mod tests {
         static DB_TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
 
         DB_TEST_MUTEX.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    fn import_path(path: &str) -> Result<LocalImportReport> {
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .context("CHECK_MATE_DATABASE_URL must exist for integration test")?;
+        let mut client = Client::connect(&database_url, NoTls)
+            .context("failed to connect to PostgreSQL for test import")?;
+        let player_profile_id = ensure_test_import_actor(&mut client)?;
+        drop(client);
+        super::import_path_with_database_url(&database_url, path, player_profile_id)
+    }
+
+    fn import_path_with_database_url(database_url: &str, path: &str) -> Result<LocalImportReport> {
+        let mut client = Client::connect(database_url, NoTls)
+            .context("failed to connect to PostgreSQL for test import")?;
+        let player_profile_id = ensure_test_import_actor(&mut client)?;
+        drop(client);
+        super::import_path_with_database_url(database_url, path, player_profile_id)
+    }
+
+    fn seed_import_actor(
+        client: &mut Client,
+        organization_name: &str,
+        user_email: &str,
+        screen_name: &str,
+        primary_alias: Option<&str>,
+        timezone_name: Option<&str>,
+    ) -> Result<(Uuid, Uuid, Uuid)> {
+        let organization_id: Uuid = if let Some(row) = client.query_opt(
+            "SELECT id FROM org.organizations WHERE name = $1",
+            &[&organization_name],
+        )? {
+            row.get(0)
+        } else {
+            client
+                .query_one(
+                    "INSERT INTO org.organizations (name) VALUES ($1) RETURNING id",
+                    &[&organization_name],
+                )?
+                .get(0)
+        };
+
+        let user_id: Uuid = if let Some(row) = client.query_opt(
+            "SELECT id FROM auth.users WHERE email = $1",
+            &[&user_email],
+        )? {
+            row.get(0)
+        } else {
+            client
+                .query_one(
+                    "INSERT INTO auth.users (email, auth_provider, status, timezone_name)
+                     VALUES ($1, 'seed', 'active', $2)
+                     RETURNING id",
+                    &[&user_email, &timezone_name],
+                )?
+                .get(0)
+        };
+        client.execute(
+            "UPDATE auth.users
+             SET timezone_name = $2
+             WHERE id = $1",
+            &[&user_id, &timezone_name],
+        )?;
+
+        client.execute(
+            "INSERT INTO org.organization_memberships (organization_id, user_id, role)
+             VALUES ($1, $2, 'student')
+             ON CONFLICT (organization_id, user_id) DO NOTHING",
+            &[&organization_id, &user_id],
+        )?;
+
+        let player_profile_id: Uuid = if let Some(row) = client.query_opt(
+            "SELECT id
+             FROM core.player_profiles
+             WHERE organization_id = $1
+               AND room = 'gg'
+               AND screen_name = $2",
+            &[&organization_id, &screen_name],
+        )? {
+            row.get(0)
+        } else {
+            client
+                .query_one(
+                    "INSERT INTO core.player_profiles (organization_id, owner_user_id, room, network, screen_name)
+                     VALUES ($1, $2, 'gg', 'gg', $3)
+                     RETURNING id",
+                    &[&organization_id, &user_id, &screen_name],
+                )?
+                .get(0)
+        };
+
+        if let Some(primary_alias) = primary_alias {
+            client.execute(
+                "INSERT INTO core.player_aliases (
+                    organization_id,
+                    player_profile_id,
+                    room,
+                    alias,
+                    is_primary,
+                    source
+                )
+                VALUES ($1, $2, 'gg', $3, TRUE, 'test_context')
+                ON CONFLICT (player_profile_id, room, alias)
+                DO UPDATE SET
+                    is_primary = TRUE,
+                    source = EXCLUDED.source",
+                &[&organization_id, &player_profile_id, &primary_alias],
+            )?;
+        }
+
+        Ok((organization_id, user_id, player_profile_id))
+    }
+
+    fn ensure_test_import_actor(client: &mut Client) -> Result<Uuid> {
+        let (_organization_id, _user_id, player_profile_id) = seed_import_actor(
+            client,
+            DEV_ORG_NAME,
+            DEV_USER_EMAIL,
+            DEV_PLAYER_NAME,
+            Some(DEV_PLAYER_NAME),
+            None,
+        )?;
+        Ok(player_profile_id)
     }
 
     fn assert_canonical_float_close(
@@ -3903,6 +4192,7 @@ mod tests {
             &[
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(1),
+                    tournament_hand_order: 1,
                     external_hand_id: "ft-1".to_string(),
                     hand_started_at_local: "2026/03/16 10:00:00".to_string(),
                     played_ft_hand: true,
@@ -3931,6 +4221,7 @@ mod tests {
             &[
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(1),
+                    tournament_hand_order: 1,
                     external_hand_id: "ft-a".to_string(),
                     hand_started_at_local: "2026/03/16 10:00:00".to_string(),
                     played_ft_hand: true,
@@ -3943,6 +4234,7 @@ mod tests {
                 },
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(2),
+                    tournament_hand_order: 2,
                     external_hand_id: "ft-b".to_string(),
                     hand_started_at_local: "2026/03/16 10:05:00".to_string(),
                     played_ft_hand: true,
@@ -3955,6 +4247,7 @@ mod tests {
                 },
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(3),
+                    tournament_hand_order: 3,
                     external_hand_id: "ft-c".to_string(),
                     hand_started_at_local: "2026/03/16 10:10:00".to_string(),
                     played_ft_hand: true,
@@ -3996,7 +4289,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let stage_rows = build_mbr_stage_resolutions_from_facts(Uuid::nil(), &stage_facts);
-        let helper_source_hands = canonical_hands
+        let mut helper_source_hands = canonical_hands
             .iter()
             .enumerate()
             .map(|(index, hand)| {
@@ -4007,6 +4300,14 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
+        helper_source_hands.sort_by(|left, right| {
+            left.hand_started_at_local
+                .cmp(&right.hand_started_at_local)
+                .then_with(|| left.external_hand_id.cmp(&right.external_hand_id))
+        });
+        for (index, source_hand) in helper_source_hands.iter_mut().enumerate() {
+            source_hand.tournament_hand_order = index as i32 + 1;
+        }
 
         let helper_row =
             build_mbr_tournament_ft_helper_row(Uuid::nil(), Uuid::nil(), &helper_source_hands);
@@ -4060,6 +4361,7 @@ mod tests {
             &[
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(1),
+                    tournament_hand_order: 1,
                     external_hand_id: "rush-1".to_string(),
                     hand_started_at_local: "2026/03/16 10:00:00".to_string(),
                     played_ft_hand: false,
@@ -4072,6 +4374,7 @@ mod tests {
                 },
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(2),
+                    tournament_hand_order: 2,
                     external_hand_id: "rush-2".to_string(),
                     hand_started_at_local: "2026/03/16 10:01:00".to_string(),
                     played_ft_hand: false,
@@ -4105,6 +4408,7 @@ mod tests {
             &[
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(1),
+                    tournament_hand_order: 1,
                     external_hand_id: "rush".to_string(),
                     hand_started_at_local: "2026/03/16 10:00:00".to_string(),
                     played_ft_hand: false,
@@ -4117,6 +4421,7 @@ mod tests {
                 },
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(2),
+                    tournament_hand_order: 2,
                     external_hand_id: "ft-6".to_string(),
                     hand_started_at_local: "2026/03/16 10:01:00".to_string(),
                     played_ft_hand: true,
@@ -4129,6 +4434,7 @@ mod tests {
                 },
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(3),
+                    tournament_hand_order: 3,
                     external_hand_id: "ft-3".to_string(),
                     hand_started_at_local: "2026/03/16 10:02:00".to_string(),
                     played_ft_hand: true,
@@ -4161,6 +4467,7 @@ mod tests {
             &[
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(1),
+                    tournament_hand_order: 1,
                     external_hand_id: "rush-a".to_string(),
                     hand_started_at_local: "2026/03/16 10:00:00".to_string(),
                     played_ft_hand: false,
@@ -4173,6 +4480,7 @@ mod tests {
                 },
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(2),
+                    tournament_hand_order: 2,
                     external_hand_id: "rush-b".to_string(),
                     hand_started_at_local: "2026/03/16 10:00:00".to_string(),
                     played_ft_hand: false,
@@ -4185,6 +4493,7 @@ mod tests {
                 },
                 TournamentFtHelperSourceHand {
                     hand_id: Uuid::from_u128(3),
+                    tournament_hand_order: 3,
                     external_hand_id: "ft".to_string(),
                     hand_started_at_local: "2026/03/16 10:01:00".to_string(),
                     played_ft_hand: true,
@@ -4202,6 +4511,49 @@ mod tests {
         assert!(helper_row.entered_boundary_zone);
         assert_eq!(helper_row.boundary_resolution_state, "uncertain");
         assert_eq!(helper_row.first_ft_table_size, Some(9));
+    }
+
+    #[test]
+    fn ft_helper_prefers_tournament_hand_order_over_local_timestamp() {
+        let helper_row = build_mbr_tournament_ft_helper_row(
+            Uuid::nil(),
+            Uuid::nil(),
+            &[
+                TournamentFtHelperSourceHand {
+                    hand_id: Uuid::from_u128(1),
+                    tournament_hand_order: 2,
+                    external_hand_id: "ft-late-clock".to_string(),
+                    hand_started_at_local: "2026/03/16 10:01:00".to_string(),
+                    played_ft_hand: true,
+                    played_ft_hand_state: "exact".to_string(),
+                    ft_table_size: Some(9),
+                    entered_boundary_zone: false,
+                    boundary_resolution_state: "exact".to_string(),
+                    hero_starting_stack: Some(4_000),
+                    big_blind: 100,
+                },
+                TournamentFtHelperSourceHand {
+                    hand_id: Uuid::from_u128(2),
+                    tournament_hand_order: 1,
+                    external_hand_id: "ft-early-order".to_string(),
+                    hand_started_at_local: "2026/03/16 10:05:00".to_string(),
+                    played_ft_hand: true,
+                    played_ft_hand_state: "exact".to_string(),
+                    ft_table_size: Some(8),
+                    entered_boundary_zone: false,
+                    boundary_resolution_state: "exact".to_string(),
+                    hero_starting_stack: Some(3_200),
+                    big_blind: 100,
+                },
+            ],
+        );
+
+        assert_eq!(helper_row.first_ft_hand_id, Some(Uuid::from_u128(2)));
+        assert_eq!(helper_row.first_ft_table_size, Some(8));
+        assert_eq!(
+            helper_row.first_ft_hand_started_local.as_deref(),
+            Some("2026/03/16 10:05:00")
+        );
     }
 
     #[test]
@@ -4632,6 +4984,113 @@ mod tests {
                 "idx_import_jobs_claim".to_string(),
                 "uniq_import_jobs_bundle_file_ingest".to_string(),
                 "uniq_import_jobs_bundle_finalize".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0022_adds_user_timezone_and_gg_time_contracts() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_core_schema_migrations(&mut client);
+
+        let timezone_columns = client
+            .query(
+                "SELECT table_schema, table_name, column_name, is_nullable
+                 FROM information_schema.columns
+                 WHERE (table_schema, table_name, column_name) IN (
+                     ('auth', 'users', 'timezone_name'),
+                     ('core', 'tournaments', 'started_at_tz_provenance'),
+                     ('core', 'hands', 'hand_started_at_tz_provenance')
+                 )
+                 ORDER BY table_schema, table_name, column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, String>(0),
+                    row.get::<_, String>(1),
+                    row.get::<_, String>(2),
+                    row.get::<_, String>(3),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            timezone_columns,
+            vec![
+                (
+                    "auth".to_string(),
+                    "users".to_string(),
+                    "timezone_name".to_string(),
+                    "YES".to_string(),
+                ),
+                (
+                    "core".to_string(),
+                    "hands".to_string(),
+                    "hand_started_at_tz_provenance".to_string(),
+                    "YES".to_string(),
+                ),
+                (
+                    "core".to_string(),
+                    "tournaments".to_string(),
+                    "started_at_tz_provenance".to_string(),
+                    "YES".to_string(),
+                ),
+            ]
+        );
+
+        let constraint_defs = client
+            .query(
+                "SELECT conname, pg_get_constraintdef(oid)
+                 FROM pg_constraint
+                 WHERE conrelid IN ('core.tournaments'::regclass, 'core.hands'::regclass)
+                 ORDER BY conname",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| format!("{} {}", row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            constraint_defs.contains("gg_user_timezone"),
+            "expected gg_user_timezone provenance constraint, got:\n{constraint_defs}"
+        );
+        assert!(
+            constraint_defs.contains("gg_user_timezone_missing"),
+            "expected gg_user_timezone_missing provenance constraint, got:\n{constraint_defs}"
+        );
+
+        let unique_indexes = client
+            .query(
+                "SELECT indexname
+                 FROM pg_indexes
+                 WHERE schemaname = 'import'
+                   AND indexname IN (
+                       'idx_source_file_members_source_member_index_unique',
+                       'idx_file_fragments_source_fragment_unique'
+                   )
+                 ORDER BY indexname",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            unique_indexes,
+            vec![
+                "idx_file_fragments_source_fragment_unique".to_string(),
+                "idx_source_file_members_source_member_index_unique".to_string(),
             ]
         );
     }
@@ -5512,7 +5971,7 @@ mod tests {
         );
         assert_eq!(
             tournament_time.get::<_, Option<String>>(3).as_deref(),
-            Some("gg_text_without_timezone")
+            Some("gg_user_timezone_missing")
         );
 
         let hand_time = client
@@ -5540,7 +5999,7 @@ mod tests {
         );
         assert_eq!(
             hand_time.get::<_, Option<String>>(3).as_deref(),
-            Some("gg_text_without_timezone")
+            Some("gg_user_timezone_missing")
         );
 
         let source_file_members = client
@@ -5637,6 +6096,281 @@ mod tests {
             .unwrap();
         assert_eq!(hero_seat.get::<_, String>(0), DEV_PLAYER_NAME);
         assert_eq!(hero_seat.get::<_, Option<Uuid>>(1), Some(player_profile_id));
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn import_local_uses_explicit_profile_aliases_without_creating_dev_context() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_core_schema_migrations(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+        let (_organization_id, _user_id, player_profile_id) = seed_import_actor(
+            &mut setup_client,
+            "P2-03 Explicit Org",
+            "p203-explicit@example.com",
+            "TableHero",
+            Some("Hero"),
+            None,
+        )
+        .unwrap();
+        drop(setup_client);
+
+        let ts_path = fixture_path(
+            "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        );
+        let hh_path =
+            fixture_path("../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+
+        let ts_report =
+            super::import_path_with_database_url(&database_url, &ts_path, player_profile_id)
+                .unwrap();
+        let hh_report =
+            super::import_path_with_database_url(&database_url, &hh_path, player_profile_id)
+                .unwrap();
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let hero_seat = client
+            .query_one(
+                "SELECT player_name, player_profile_id
+                 FROM core.hand_seats
+                 WHERE hand_id = (
+                     SELECT id
+                     FROM core.hands
+                     WHERE source_file_id = $1
+                       AND external_hand_id = $2
+                 )
+                   AND player_name = 'Hero'",
+                &[&hh_report.source_file_id, &FT_HAND_ID],
+            )
+            .unwrap();
+        assert_eq!(hero_seat.get::<_, String>(0), "Hero");
+        assert_eq!(hero_seat.get::<_, Option<Uuid>>(1), Some(player_profile_id));
+
+        let dev_artifacts: i64 = client
+            .query_one(
+                "SELECT
+                    (SELECT COUNT(*) FROM org.organizations WHERE name = $1)
+                  + (SELECT COUNT(*) FROM auth.users WHERE email = $2)
+                  + (SELECT COUNT(*) FROM core.player_profiles WHERE screen_name = $3 AND owner_user_id IN (
+                        SELECT id FROM auth.users WHERE email = $2
+                    ))",
+                &[&DEV_ORG_NAME, &DEV_USER_EMAIL, &DEV_PLAYER_NAME],
+            )
+            .unwrap()
+            .get(0);
+        assert_eq!(dev_artifacts, 0);
+
+        let tournament_profile_id: Uuid = client
+            .query_one(
+                "SELECT player_profile_id
+                 FROM core.tournaments
+                 WHERE id = $1",
+                &[&ts_report.tournament_id],
+            )
+            .unwrap()
+            .get(0);
+        assert_eq!(tournament_profile_id, player_profile_id);
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn import_local_with_user_timezone_populates_canonical_utc() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_core_schema_migrations(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+        let (_organization_id, _user_id, player_profile_id) = seed_import_actor(
+            &mut setup_client,
+            "P2-03 Timezone Org",
+            "p203-timezone@example.com",
+            "Hero",
+            Some("Hero"),
+            Some("Asia/Krasnoyarsk"),
+        )
+        .unwrap();
+        drop(setup_client);
+
+        let ts_path = fixture_path(
+            "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        );
+        let hh_path =
+            fixture_path("../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+
+        let ts_report =
+            super::import_path_with_database_url(&database_url, &ts_path, player_profile_id)
+                .unwrap();
+        let hh_report =
+            super::import_path_with_database_url(&database_url, &hh_path, player_profile_id)
+                .unwrap();
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let tournament_time = client
+            .query_one(
+                "SELECT
+                    timezone('UTC', started_at)::text,
+                    started_at_tz_provenance
+                 FROM core.tournaments
+                 WHERE id = $1",
+                &[&ts_report.tournament_id],
+            )
+            .unwrap();
+        assert_eq!(
+            tournament_time.get::<_, Option<String>>(0).as_deref(),
+            Some("2026-03-16 03:44:11")
+        );
+        assert_eq!(
+            tournament_time.get::<_, Option<String>>(1).as_deref(),
+            Some("gg_user_timezone")
+        );
+
+        let hand_time = client
+            .query_one(
+                "SELECT
+                    timezone('UTC', hand_started_at)::text,
+                    hand_started_at_tz_provenance
+                 FROM core.hands
+                 WHERE source_file_id = $1
+                   AND external_hand_id = $2",
+                &[&hh_report.source_file_id, &FT_HAND_ID],
+            )
+            .unwrap();
+        assert_eq!(
+            hand_time.get::<_, Option<String>>(0).as_deref(),
+            Some("2026-03-16 04:07:34")
+        );
+        assert_eq!(
+            hand_time.get::<_, Option<String>>(1).as_deref(),
+            Some("gg_user_timezone")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn set_and_clear_user_timezone_recompute_historical_gg_timestamps() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_core_schema_migrations(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+        let (_organization_id, user_id, player_profile_id) = seed_import_actor(
+            &mut setup_client,
+            "P2-03 Recompute Org",
+            "p203-recompute@example.com",
+            "Hero",
+            Some("Hero"),
+            None,
+        )
+        .unwrap();
+        drop(setup_client);
+
+        let ts_path = fixture_path(
+            "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        );
+        let hh_path =
+            fixture_path("../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+        let ts_report =
+            super::import_path_with_database_url(&database_url, &ts_path, player_profile_id)
+                .unwrap();
+        let hh_report =
+            super::import_path_with_database_url(&database_url, &hh_path, player_profile_id)
+                .unwrap();
+
+        let set_report = super::set_user_timezone(user_id, "Asia/Krasnoyarsk").unwrap();
+        assert_eq!(set_report.user_id, user_id);
+        assert_eq!(
+            set_report.timezone_name.as_deref(),
+            Some("Asia/Krasnoyarsk")
+        );
+        assert_eq!(set_report.affected_profiles, 1);
+        assert!(set_report.tournaments_recomputed >= 1);
+        assert!(set_report.hands_recomputed >= 1);
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let tournament_after_set = client
+            .query_one(
+                "SELECT timezone('UTC', started_at)::text, started_at_tz_provenance
+                 FROM core.tournaments
+                 WHERE id = $1",
+                &[&ts_report.tournament_id],
+            )
+            .unwrap();
+        assert_eq!(
+            tournament_after_set.get::<_, Option<String>>(0).as_deref(),
+            Some("2026-03-16 03:44:11")
+        );
+        assert_eq!(
+            tournament_after_set.get::<_, Option<String>>(1).as_deref(),
+            Some("gg_user_timezone")
+        );
+
+        let hand_after_set = client
+            .query_one(
+                "SELECT timezone('UTC', hand_started_at)::text, hand_started_at_tz_provenance
+                 FROM core.hands
+                 WHERE source_file_id = $1
+                   AND external_hand_id = $2",
+                &[&hh_report.source_file_id, &FT_HAND_ID],
+            )
+            .unwrap();
+        assert_eq!(
+            hand_after_set.get::<_, Option<String>>(0).as_deref(),
+            Some("2026-03-16 04:07:34")
+        );
+        assert_eq!(
+            hand_after_set.get::<_, Option<String>>(1).as_deref(),
+            Some("gg_user_timezone")
+        );
+
+        let clear_report = super::clear_user_timezone(user_id).unwrap();
+        assert_eq!(clear_report.user_id, user_id);
+        assert_eq!(clear_report.timezone_name, None);
+
+        let tournament_after_clear = client
+            .query_one(
+                "SELECT started_at::text, started_at_tz_provenance
+                 FROM core.tournaments
+                 WHERE id = $1",
+                &[&ts_report.tournament_id],
+            )
+            .unwrap();
+        assert_eq!(tournament_after_clear.get::<_, Option<String>>(0), None);
+        assert_eq!(
+            tournament_after_clear.get::<_, Option<String>>(1).as_deref(),
+            Some("gg_user_timezone_missing")
+        );
+
+        let hand_after_clear = client
+            .query_one(
+                "SELECT hand_started_at::text, hand_started_at_tz_provenance
+                 FROM core.hands
+                 WHERE source_file_id = $1
+                   AND external_hand_id = $2",
+                &[&hh_report.source_file_id, &FT_HAND_ID],
+            )
+            .unwrap();
+        assert_eq!(hand_after_clear.get::<_, Option<String>>(0), None);
+        assert_eq!(
+            hand_after_clear.get::<_, Option<String>>(1).as_deref(),
+            Some("gg_user_timezone_missing")
+        );
     }
 
     #[test]
@@ -8703,6 +9437,10 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
             client,
             &fixture_path("../../migrations/0021_ingest_runtime_runner.sql"),
         );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0022_user_timezone_and_gg_timestamp_contract.sql"),
+        );
     }
 
     fn dev_player_profile_id(client: &mut Client) -> Uuid {
@@ -8736,51 +9474,10 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
             .unwrap()
             .map(|row| row.get::<_, Uuid>(0));
 
-        let Some(player_profile_id) = player_profile_id else {
-            return;
-        };
-
-        client
-            .execute(
-                "DELETE FROM analytics.player_hand_bool_features
-                 WHERE player_profile_id = $1
-                    OR hand_id IN (
-                        SELECT id FROM core.hands WHERE player_profile_id = $1
-                    )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM analytics.player_hand_num_features
-                 WHERE player_profile_id = $1
-                    OR hand_id IN (
-                        SELECT id FROM core.hands WHERE player_profile_id = $1
-                    )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM analytics.player_hand_enum_features
-                 WHERE player_profile_id = $1
-                    OR hand_id IN (
-                        SELECT id FROM core.hands WHERE player_profile_id = $1
-                    )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        if client
-            .query_one(
-                "SELECT to_regclass('analytics.player_street_bool_features') IS NOT NULL",
-                &[],
-            )
-            .unwrap()
-            .get::<_, bool>(0)
-        {
+        if let Some(player_profile_id) = player_profile_id {
             client
                 .execute(
-                    "DELETE FROM analytics.player_street_bool_features
+                    "DELETE FROM analytics.player_hand_bool_features
                      WHERE player_profile_id = $1
                         OR hand_id IN (
                             SELECT id FROM core.hands WHERE player_profile_id = $1
@@ -8790,7 +9487,7 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
                 .unwrap();
             client
                 .execute(
-                    "DELETE FROM analytics.player_street_num_features
+                    "DELETE FROM analytics.player_hand_num_features
                      WHERE player_profile_id = $1
                         OR hand_id IN (
                             SELECT id FROM core.hands WHERE player_profile_id = $1
@@ -8800,7 +9497,7 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
                 .unwrap();
             client
                 .execute(
-                    "DELETE FROM analytics.player_street_enum_features
+                    "DELETE FROM analytics.player_hand_enum_features
                      WHERE player_profile_id = $1
                         OR hand_id IN (
                             SELECT id FROM core.hands WHERE player_profile_id = $1
@@ -8808,265 +9505,331 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
                     &[&player_profile_id],
                 )
                 .unwrap();
-        }
-        client
-            .execute(
-                "DELETE FROM derived.mbr_stage_resolution
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM derived.hand_eliminations
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM derived.hand_state_resolutions
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM derived.street_hand_strength
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        if client
-            .query_one(
-                "SELECT to_regclass('derived.mbr_tournament_ft_helper') IS NOT NULL",
-                &[],
-            )
-            .unwrap()
-            .get::<_, bool>(0)
-        {
-            client
-                .execute(
-                    "DELETE FROM derived.mbr_tournament_ft_helper
-                     WHERE player_profile_id = $1",
-                    &[&player_profile_id],
+            if client
+                .query_one(
+                    "SELECT to_regclass('analytics.player_street_bool_features') IS NOT NULL",
+                    &[],
                 )
-                .unwrap();
-        }
-        client
-            .execute(
-                "DELETE FROM core.parse_issues
-                 WHERE source_file_id IN (
-                     SELECT id FROM import.source_files WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM import.source_file_members
-                 WHERE source_file_id IN (
-                     SELECT id FROM import.source_files WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hand_returns
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hand_pot_winners
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hand_pot_eligibility
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hand_pot_contributions
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hand_pots
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hand_showdowns
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        if client
-            .query_one(
-                "SELECT to_regclass('core.hand_summary_results') IS NOT NULL",
-                &[],
-            )
-            .unwrap()
-            .get::<_, bool>(0)
-        {
+                .unwrap()
+                .get::<_, bool>(0)
+            {
+                client
+                    .execute(
+                        "DELETE FROM analytics.player_street_bool_features
+                         WHERE player_profile_id = $1
+                            OR hand_id IN (
+                                SELECT id FROM core.hands WHERE player_profile_id = $1
+                            )",
+                        &[&player_profile_id],
+                    )
+                    .unwrap();
+                client
+                    .execute(
+                        "DELETE FROM analytics.player_street_num_features
+                         WHERE player_profile_id = $1
+                            OR hand_id IN (
+                                SELECT id FROM core.hands WHERE player_profile_id = $1
+                            )",
+                        &[&player_profile_id],
+                    )
+                    .unwrap();
+                client
+                    .execute(
+                        "DELETE FROM analytics.player_street_enum_features
+                         WHERE player_profile_id = $1
+                            OR hand_id IN (
+                                SELECT id FROM core.hands WHERE player_profile_id = $1
+                            )",
+                        &[&player_profile_id],
+                    )
+                    .unwrap();
+            }
             client
                 .execute(
-                    "DELETE FROM core.hand_summary_results
+                    "DELETE FROM derived.mbr_stage_resolution
                      WHERE hand_id IN (
                          SELECT id FROM core.hands WHERE player_profile_id = $1
                      )",
                     &[&player_profile_id],
                 )
                 .unwrap();
-        }
-        client
-            .execute(
-                "DELETE FROM core.hand_hole_cards
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hand_actions
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hand_boards
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hand_seats
-                 WHERE hand_id IN (
-                     SELECT id FROM core.hands WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.hands WHERE player_profile_id = $1",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.tournament_entries WHERE player_profile_id = $1",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM core.tournaments WHERE player_profile_id = $1",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM import.file_fragments
-                 WHERE source_file_id IN (
-                     SELECT id FROM import.source_files WHERE player_profile_id = $1
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM import.job_attempts
-                 WHERE import_job_id IN (
-                     SELECT id
-                     FROM import.import_jobs
+            client
+                .execute(
+                    "DELETE FROM derived.hand_eliminations
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM derived.hand_state_resolutions
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM derived.street_hand_strength
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            if client
+                .query_one(
+                    "SELECT to_regclass('derived.mbr_tournament_ft_helper') IS NOT NULL",
+                    &[],
+                )
+                .unwrap()
+                .get::<_, bool>(0)
+            {
+                client
+                    .execute(
+                        "DELETE FROM derived.mbr_tournament_ft_helper
+                         WHERE player_profile_id = $1",
+                        &[&player_profile_id],
+                    )
+                    .unwrap();
+            }
+            client
+                .execute(
+                    "DELETE FROM core.parse_issues
+                     WHERE source_file_id IN (
+                         SELECT id FROM import.source_files WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.hand_returns
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.hand_pot_winners
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.hand_pot_eligibility
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.hand_pot_contributions
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.hand_pots
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.hand_showdowns
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            if client
+                .query_one(
+                    "SELECT to_regclass('core.hand_summary_results') IS NOT NULL",
+                    &[],
+                )
+                .unwrap()
+                .get::<_, bool>(0)
+            {
+                client
+                    .execute(
+                        "DELETE FROM core.hand_summary_results
+                         WHERE hand_id IN (
+                             SELECT id FROM core.hands WHERE player_profile_id = $1
+                         )",
+                        &[&player_profile_id],
+                    )
+                    .unwrap();
+            }
+            client
+                .execute(
+                    "DELETE FROM core.hand_hole_cards
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.hand_actions
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.hand_boards
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.hand_seats
+                     WHERE hand_id IN (
+                         SELECT id FROM core.hands WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute("DELETE FROM core.hands WHERE player_profile_id = $1", &[&player_profile_id])
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.tournament_entries WHERE player_profile_id = $1",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.tournaments WHERE player_profile_id = $1",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM import.file_fragments
+                     WHERE source_file_id IN (
+                         SELECT id FROM import.source_files WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM import.source_file_members
+                     WHERE source_file_id IN (
+                         SELECT id FROM import.source_files WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM import.job_attempts
+                     WHERE import_job_id IN (
+                         SELECT id
+                         FROM import.import_jobs
+                         WHERE source_file_id IN (
+                             SELECT id FROM import.source_files WHERE player_profile_id = $1
+                         )
+                            OR bundle_id IN (
+                                SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
+                            )
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM import.import_jobs
                      WHERE source_file_id IN (
                          SELECT id FROM import.source_files WHERE player_profile_id = $1
                      )
                         OR bundle_id IN (
                             SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
-                        )
-                 )",
-                &[&player_profile_id],
-            )
-            .unwrap();
+                        )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM import.ingest_bundle_files
+                     WHERE bundle_id IN (
+                         SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
+                     )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM import.ingest_bundles WHERE player_profile_id = $1",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.player_aliases WHERE player_profile_id = $1",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM import.source_files WHERE player_profile_id = $1",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM core.player_profiles WHERE id = $1",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+        }
         client
             .execute(
-                "DELETE FROM import.import_jobs
-                 WHERE source_file_id IN (
-                     SELECT id FROM import.source_files WHERE player_profile_id = $1
+                "DELETE FROM org.organization_memberships
+                 WHERE organization_id = (
+                     SELECT id FROM org.organizations WHERE name = $1
                  )
-                    OR bundle_id IN (
-                        SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
-                    )",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM import.ingest_bundle_files
-                 WHERE bundle_id IN (
-                     SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
+                   AND user_id = (
+                     SELECT id FROM auth.users WHERE email = $2
                  )",
-                &[&player_profile_id],
+                &[&DEV_ORG_NAME, &DEV_USER_EMAIL],
             )
             .unwrap();
         client
             .execute(
-                "DELETE FROM import.ingest_bundles WHERE player_profile_id = $1",
-                &[&player_profile_id],
+                "DELETE FROM auth.users WHERE email = $1",
+                &[&DEV_USER_EMAIL],
             )
             .unwrap();
         client
             .execute(
-                "DELETE FROM core.player_aliases WHERE player_profile_id = $1",
-                &[&player_profile_id],
-            )
-            .unwrap();
-        client
-            .execute(
-                "DELETE FROM import.source_files WHERE player_profile_id = $1",
-                &[&player_profile_id],
+                "DELETE FROM org.organizations WHERE name = $1",
+                &[&DEV_ORG_NAME],
             )
             .unwrap();
     }

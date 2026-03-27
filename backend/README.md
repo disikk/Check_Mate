@@ -69,9 +69,8 @@
 
 ## Важные технические ограничения текущего состояния
 
-- `hand_started_at` и `started_at` пока фактически не нормализуются и не используются как надёжное время для аналитики;
-- raw/local/provenance timestamp contract уже пишется, но canonical UTC time всё ещё intentionally `NULL`;
-- `import-local` жёстко завязан на dev-контекст (`Hero`, `Check Mate Dev Org`);
+- `hand_started_at` и `started_at` для GG теперь вычисляются только из `auth.users.timezone_name`; без настроенной IANA timezone canonical UTC остаётся `NULL`, а raw/local нельзя трактовать как глобально надёжное время;
+- `parser_worker import-local` больше не поднимает dev-контекст автоматически и требует явный `--player-profile-id`;
 - `tracker_ingest_runtime` уже даёт воспроизводимый DB-backed ingest contour: `bundle -> bundle_file -> file_ingest jobs -> single bundle_finalize`;
 - `source_files` дедуплицируются по `(player_profile_id, room, file_kind, sha256)`, а bundle membership живёт отдельно, так что повторные импорты не дублируют exact rows;
 - текущий entrypoint всё ещё dev-only: `parser_worker import-local` работает с локальными файлами и локальным runner loop, но это ещё не web upload pipeline;
@@ -94,8 +93,10 @@ cd backend
 cargo test
 bash scripts/run_wide_corpus_triage.sh
 cargo run -p parser_worker -- "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
-cargo run -p parser_worker -- import-local "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
-cargo run -p parser_worker -- import-local "fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt"
+cargo run -p parser_worker -- import-local --player-profile-id <uuid> "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
+cargo run -p parser_worker -- import-local --player-profile-id <uuid> "fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt"
+cargo run -p parser_worker -- set-user-timezone --user-id <uuid> --timezone Asia/Krasnoyarsk
+cargo run -p parser_worker -- clear-user-timezone --user-id <uuid>
 ```
 
 Canonical first-run path для проекта всё равно идёт **из корня репозитория** через:
