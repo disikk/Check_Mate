@@ -848,9 +848,7 @@ fn canonical_settlement_issue_code(raw_code: &str, is_pot_issue: bool) -> String
         (true, "ambiguous_hidden_showdown") => {
             "pot_settlement_ambiguous_hidden_showdown".to_string()
         }
-        (true, "ambiguous_partial_reveal") => {
-            "pot_settlement_ambiguous_partial_reveal".to_string()
-        }
+        (true, "ambiguous_partial_reveal") => "pot_settlement_ambiguous_partial_reveal".to_string(),
         (false, "collect_events_without_pots") => "collect_events_without_pots".to_string(),
         (false, "missing_collections") => "pot_winners_missing_collections".to_string(),
         (false, "multiple_exact_allocations") => {

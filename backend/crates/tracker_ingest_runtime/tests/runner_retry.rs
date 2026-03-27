@@ -4,8 +4,8 @@ use std::sync::{Mutex, OnceLock};
 
 use postgres::{Client, NoTls};
 use tracker_ingest_runtime::{
-    BundleStatus, FailureDisposition, FileKind, IngestBundleInput, IngestFileInput,
-    claim_next_job, enqueue_bundle, load_bundle_summary, mark_job_failed, retry_failed_job,
+    BundleStatus, FailureDisposition, FileKind, IngestBundleInput, IngestFileInput, claim_next_job,
+    enqueue_bundle, load_bundle_summary, mark_job_failed, retry_failed_job,
 };
 use uuid::Uuid;
 
@@ -26,9 +26,8 @@ fn apply_all_migrations(client: &mut Client) {
     paths.sort();
 
     for path in paths {
-        let sql = fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!("failed to read migration {}: {error}", path.display())
-        });
+        let sql = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read migration {}: {error}", path.display()));
         client
             .batch_execute(&sql)
             .unwrap_or_else(|error| panic!("failed to apply {}: {error}", path.display()));

@@ -122,8 +122,8 @@
 2. `hero_involved` в `derived.hand_eliminations` трактуется правильно: Hero реально получил долю KO через pot winner mapping.
 3. `boundary_ko_ev / min / max` уже пишутся для boundary v1 candidate-hand как legacy-compatible point estimate.
 4. `regular_prize_money` и `mystery_money_total` уже декомпозируются через seeded `ref.mbr_*` tables для current listed GG Royal buy-ins.
-5. `hand_started_at` и `tournament.started_at` пока не нормализуются и фактически не используются как рабочее время для запросов.
-6. current `import-local` — это dev-only CLI-path с жёстко прошитым `Hero`, а не реальный ingest для школы.
+5. `hand_started_at` и `tournament.started_at` для GG теперь зависят от пользовательской IANA timezone: без неё canonical UTC честно остаётся `NULL`.
+6. current `import-local` требует явный `--player-profile-id`; production-path больше не поднимает `Hero` / dev-org автоматически.
 
 ## Быстрый старт
 

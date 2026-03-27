@@ -1,16 +1,11 @@
 mod support;
 
-use std::{
-    collections::BTreeMap,
-    env, fs,
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, env, fs, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 use support::street_strength_reference::reference_draw_rows_for_seat;
 use tracker_parser_core::{
-    parsers::hand_history::parse_canonical_hand,
-    street_strength::evaluate_street_hand_strength,
+    parsers::hand_history::parse_canonical_hand, street_strength::evaluate_street_hand_strength,
 };
 
 #[test]

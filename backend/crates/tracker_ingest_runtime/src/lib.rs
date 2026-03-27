@@ -543,7 +543,13 @@ fn append_ingest_event(
             payload
         )
         VALUES ($1, $2, $3, $4, ($5::text)::jsonb)",
-        &[&bundle_id, &bundle_file_id, &event_kind, &message, &payload.to_string()],
+        &[
+            &bundle_id,
+            &bundle_file_id,
+            &event_kind,
+            &message,
+            &payload.to_string(),
+        ],
     )?;
 
     Ok(())
@@ -644,7 +650,10 @@ fn bundle_progress_percent(status: BundleStatus, files: &[BundleFileSnapshot]) -
             if files.is_empty() {
                 0
             } else {
-                (files.iter().map(|file| i64::from(file.progress_percent)).sum::<i64>()
+                (files
+                    .iter()
+                    .map(|file| i64::from(file.progress_percent))
+                    .sum::<i64>()
                     / files.len() as i64) as i32
             }
         }
@@ -869,7 +878,10 @@ pub fn load_bundle_summary(
     })
 }
 
-pub fn claim_next_job(client: &mut impl GenericClient, runner_name: &str) -> Result<Option<ClaimedJob>> {
+pub fn claim_next_job(
+    client: &mut impl GenericClient,
+    runner_name: &str,
+) -> Result<Option<ClaimedJob>> {
     let Some(row) = client.query_opt(
         "WITH next_job AS (
              SELECT
@@ -908,7 +920,8 @@ pub fn claim_next_job(client: &mut impl GenericClient, runner_name: &str) -> Res
          LEFT JOIN import.source_file_members members
            ON members.id = next_job.source_file_member_id",
         &[],
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
 
@@ -975,9 +988,7 @@ pub fn claim_next_job(client: &mut impl GenericClient, runner_name: &str) -> Res
 
     refresh_bundle_status(client, bundle_id)?;
     if let Some(bundle_file_id) = bundle_file_id {
-        let member_path = member_path
-            .clone()
-            .unwrap_or_else(|| "файл".to_string());
+        let member_path = member_path.clone().unwrap_or_else(|| "файл".to_string());
         emit_file_updated_event(
             client,
             bundle_id,
@@ -1014,13 +1025,12 @@ pub fn mark_job_succeeded(
     job_id: Uuid,
     attempt_no: i32,
 ) -> Result<()> {
-    let row = client
-        .query_one(
-            "SELECT bundle_id, bundle_file_id, job_kind
+    let row = client.query_one(
+        "SELECT bundle_id, bundle_file_id, job_kind
              FROM import.import_jobs
              WHERE id = $1",
-            &[&job_id],
-        )?;
+        &[&job_id],
+    )?;
     let bundle_id: Uuid = row.get(0);
     let bundle_file_id: Option<Uuid> = row.get(1);
     let job_kind = JobKind::from_db(&row.get::<_, String>(2));
@@ -1076,13 +1086,12 @@ pub fn mark_job_failed(
     disposition: FailureDisposition,
     error_code: &str,
 ) -> Result<()> {
-    let row = client
-        .query_one(
-            "SELECT bundle_id, bundle_file_id, job_kind
+    let row = client.query_one(
+        "SELECT bundle_id, bundle_file_id, job_kind
              FROM import.import_jobs
              WHERE id = $1",
-            &[&job_id],
-        )?;
+        &[&job_id],
+    )?;
     let bundle_id: Uuid = row.get(0);
     let bundle_file_id: Option<Uuid> = row.get(1);
     let job_kind = JobKind::from_db(&row.get::<_, String>(2));

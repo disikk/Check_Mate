@@ -221,7 +221,10 @@ pub fn build_app(config: WebApiConfig) -> Router {
     Router::new()
         .route("/api/session", get(get_session))
         .route("/api/ingest/bundles", post(create_ingest_bundle))
-        .route("/api/ingest/bundles/{bundle_id}", get(get_bundle_snapshot_handler))
+        .route(
+            "/api/ingest/bundles/{bundle_id}",
+            get(get_bundle_snapshot_handler),
+        )
         .route("/api/ingest/bundles/{bundle_id}/ws", get(bundle_events_ws))
         .with_state(state)
 }
@@ -247,11 +250,7 @@ async fn create_ingest_bundle(
         .map_err(ApiError::internal)?;
 
     let mut files = Vec::new();
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(ApiError::internal)?
-    {
+    while let Some(field) = multipart.next_field().await.map_err(ApiError::internal)? {
         files.push(store_and_classify_upload_field(&state.config.spool_dir, field).await?);
     }
 
@@ -272,7 +271,8 @@ async fn create_ingest_bundle(
     let response = run_db_api(&state, move |client| {
         let mut tx = client.transaction().map_err(ApiError::internal)?;
         let bundle = enqueue_bundle(&mut tx, &input).map_err(ApiError::internal)?;
-        let snapshot = load_bundle_snapshot(&mut tx, bundle.bundle_id).map_err(ApiError::internal)?;
+        let snapshot =
+            load_bundle_snapshot(&mut tx, bundle.bundle_id).map_err(ApiError::internal)?;
         tx.commit().map_err(ApiError::internal)?;
 
         Ok(CreateBundleResponse {
@@ -366,7 +366,10 @@ async fn stream_bundle_events(
 
 async fn send_ws_message(socket: &mut WebSocket, message: &WsServerMessage) -> Result<(), ()> {
     let payload = serde_json::to_string(message).map_err(|_| ())?;
-    socket.send(Message::Text(payload.into())).await.map_err(|_| ())
+    socket
+        .send(Message::Text(payload.into()))
+        .await
+        .map_err(|_| ())
 }
 
 fn map_ws_message(event: PersistedIngestEvent) -> WsServerMessage {
@@ -565,7 +568,11 @@ fn ensure_stub_session_context(
         DO UPDATE SET
             is_primary = TRUE,
             source = EXCLUDED.source",
-        &[&organization_id, &player_profile_id, &seed.player_screen_name],
+        &[
+            &organization_id,
+            &player_profile_id,
+            &seed.player_screen_name,
+        ],
     )?;
 
     Ok(SessionContext {
@@ -590,12 +597,13 @@ fn ensure_bundle_access(
              WHERE id = $1",
             &[&bundle_id],
         )
-        .map_err(ApiError::internal)? else {
-            return Err(ApiError::new(
-                StatusCode::NOT_FOUND,
-                format!("bundle `{bundle_id}` was not found"),
-            ));
-        };
+        .map_err(ApiError::internal)?
+    else {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("bundle `{bundle_id}` was not found"),
+        ));
+    };
 
     let organization_id: Uuid = row.get(0);
     let player_profile_id: Uuid = row.get(1);
@@ -614,10 +622,12 @@ async fn store_and_classify_upload_field(
     spool_dir: &Path,
     field: axum::extract::multipart::Field<'_>,
 ) -> Result<IngestFileInput, ApiError> {
-    let filename = field
-        .file_name()
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "multipart field is missing filename"))?;
+    let filename = field.file_name().map(ToOwned::to_owned).ok_or_else(|| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "multipart field is missing filename",
+        )
+    })?;
     let bytes = field.bytes().await.map_err(ApiError::internal)?;
 
     if !is_supported_upload_filename(&filename) {
@@ -632,7 +642,9 @@ async fn store_and_classify_upload_field(
         Uuid::new_v4(),
         sanitize_filename(&filename)
     ));
-    fs::write(&spool_path, &bytes).await.map_err(ApiError::internal)?;
+    fs::write(&spool_path, &bytes)
+        .await
+        .map_err(ApiError::internal)?;
     let storage_uri = format!("local://{}", spool_path.display());
 
     classify_upload_file(&filename, bytes.as_ref(), storage_uri)
@@ -703,7 +715,8 @@ fn classify_archive_upload(
 
         let member_path = entry.name().to_string();
         let mut member_bytes = Vec::new();
-        entry.read_to_end(&mut member_bytes)
+        entry
+            .read_to_end(&mut member_bytes)
             .map_err(|error| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
 
         let Ok(text) = std::str::from_utf8(&member_bytes) else {

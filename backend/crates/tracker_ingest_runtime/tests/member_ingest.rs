@@ -26,9 +26,8 @@ fn apply_all_migrations(client: &mut Client) {
     paths.sort();
 
     for path in paths {
-        let sql = fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!("failed to read migration {}: {error}", path.display())
-        });
+        let sql = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read migration {}: {error}", path.display()));
         client
             .batch_execute(&sql)
             .unwrap_or_else(|error| panic!("failed to apply {}: {error}", path.display()));
@@ -197,7 +196,10 @@ fn archive_enqueue_expands_supported_members_and_logs_skipped_entries() {
     .unwrap();
 
     assert_eq!(bundle.file_jobs.len(), 2);
-    assert_eq!(bundle.file_jobs[0].source_file_id, bundle.file_jobs[1].source_file_id);
+    assert_eq!(
+        bundle.file_jobs[0].source_file_id,
+        bundle.file_jobs[1].source_file_id
+    );
     assert_ne!(
         bundle.file_jobs[0].source_file_member_id,
         bundle.file_jobs[1].source_file_member_id

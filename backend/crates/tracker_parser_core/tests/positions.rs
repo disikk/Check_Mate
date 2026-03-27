@@ -182,10 +182,7 @@ fn excludes_inactive_and_sitting_out_seats_from_position_facts() {
     let facts = compute_position_facts(9, 5, &seats).expect("position engine must resolve");
 
     assert_eq!(
-        facts
-            .iter()
-            .map(position_signature)
-            .collect::<Vec<_>>(),
+        facts.iter().map(position_signature).collect::<Vec<_>>(),
         vec![
             (2, 5, "HJ", 2, 4),
             (4, 6, "CO", 3, 5),

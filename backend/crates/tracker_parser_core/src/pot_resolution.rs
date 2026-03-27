@@ -61,7 +61,9 @@ impl ObservedPayouts {
         match self {
             Self::Missing => BTreeMap::new(),
             Self::Ready(payouts) => payouts.clone(),
-            Self::Conflict { collect_payouts, .. } => collect_payouts.clone(),
+            Self::Conflict {
+                collect_payouts, ..
+            } => collect_payouts.clone(),
         }
     }
 }
@@ -204,18 +206,15 @@ fn settle_pots(
         pot_builds.push((pot, contenders, build));
     }
 
-    let pot_uncertainty = pot_builds.iter().any(|(_, _, build)| matches!(build, PotOptionBuild::Uncertain(_)));
+    let pot_uncertainty = pot_builds
+        .iter()
+        .any(|(_, _, build)| matches!(build, PotOptionBuild::Uncertain(_)));
     if pot_uncertainty {
         return Ok(HandSettlement {
             certainty_state: CertaintyState::Uncertain,
             issues: Vec::new(),
             evidence,
-            pots: build_settlement_pots(
-                seat_by_player,
-                pot_builds,
-                &BTreeMap::new(),
-                false,
-            )?,
+            pots: build_settlement_pots(seat_by_player, pot_builds, &BTreeMap::new(), false)?,
         });
     }
 
@@ -223,14 +222,11 @@ fn settle_pots(
         ObservedPayouts::Conflict { .. } => {
             return Ok(HandSettlement {
                 certainty_state: CertaintyState::Inconsistent,
-                issues: vec![SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts],
+                issues: vec![
+                    SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts,
+                ],
                 evidence,
-                pots: build_settlement_pots(
-                    seat_by_player,
-                    pot_builds,
-                    &BTreeMap::new(),
-                    false,
-                )?,
+                pots: build_settlement_pots(seat_by_player, pot_builds, &BTreeMap::new(), false)?,
             });
         }
         ObservedPayouts::Missing => {
@@ -250,12 +246,7 @@ fn settle_pots(
                 certainty_state,
                 issues,
                 evidence,
-                pots: build_settlement_pots(
-                    seat_by_player,
-                    pot_builds,
-                    &BTreeMap::new(),
-                    false,
-                )?,
+                pots: build_settlement_pots(seat_by_player, pot_builds, &BTreeMap::new(), false)?,
             });
         }
         ObservedPayouts::Ready(_) => {}
@@ -290,12 +281,7 @@ fn settle_pots(
                 certainty_state: CertaintyState::Uncertain,
                 issues: vec![SettlementIssue::MultipleExactAllocations],
                 evidence,
-                pots: build_settlement_pots(
-                    seat_by_player,
-                    pot_builds,
-                    &BTreeMap::new(),
-                    false,
-                )?,
+                pots: build_settlement_pots(seat_by_player, pot_builds, &BTreeMap::new(), false)?,
             });
         }
 
@@ -308,12 +294,7 @@ fn settle_pots(
             certainty_state: CertaintyState::Inconsistent,
             issues: vec![SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts],
             evidence,
-            pots: build_settlement_pots(
-                seat_by_player,
-                pot_builds,
-                &BTreeMap::new(),
-                false,
-            )?,
+            pots: build_settlement_pots(seat_by_player, pot_builds, &BTreeMap::new(), false)?,
         });
     };
 
@@ -321,12 +302,7 @@ fn settle_pots(
         certainty_state: CertaintyState::Exact,
         issues: Vec::new(),
         evidence,
-        pots: build_settlement_pots(
-            seat_by_player,
-            pot_builds,
-            &selected_allocations,
-            true,
-        )?,
+        pots: build_settlement_pots(seat_by_player, pot_builds, &selected_allocations, true)?,
     })
 }
 
@@ -429,13 +405,12 @@ fn option_to_allocation(
             .shares
             .iter()
             .map(|(player_name, share_amount)| {
-                let seat_no = seat_by_player
-                    .get(player_name)
-                    .copied()
-                    .ok_or_else(|| ParserError::InvalidField {
+                let seat_no = seat_by_player.get(player_name).copied().ok_or_else(|| {
+                    ParserError::InvalidField {
                         field: "collect_player_missing_seat",
                         value: player_name.clone(),
-                    })?;
+                    }
+                })?;
                 Ok(SettlementShare {
                     seat_no,
                     player_name: player_name.clone(),
@@ -561,11 +536,9 @@ fn build_pot_options(
     if hand.parse_issues.iter().any(|issue| {
         matches!(
             issue.code,
-            ParseIssueCode::PartialRevealShowLine
-                | ParseIssueCode::PartialRevealSummaryShowSurface
+            ParseIssueCode::PartialRevealShowLine | ParseIssueCode::PartialRevealSummaryShowSurface
         )
-    })
-    {
+    }) {
         PotOptionBuild::Uncertain(PotSettlementIssue::AmbiguousPartialReveal {
             eligible_players: contenders.to_vec(),
         })
@@ -908,7 +881,11 @@ mod property_tests {
             assert_eq!(pot.is_main, index == 0);
             assert!(pot.amount > 0);
 
-            let contribution_sum = pot.contributions.iter().map(|entry| entry.amount).sum::<i64>();
+            let contribution_sum = pot
+                .contributions
+                .iter()
+                .map(|entry| entry.amount)
+                .sum::<i64>();
             assert_eq!(contribution_sum, pot.amount);
 
             let contributed_players = pot

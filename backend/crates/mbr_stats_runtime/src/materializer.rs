@@ -10,7 +10,7 @@ use crate::{
         MaterializedStreetFeatures, StreetFeatureFacts, StreetFeatureParticipant,
     },
     registry::{
-        FEATURE_VERSION, GG_MBR_FT_MAX_PLAYERS, FeatureGrain, FeatureTableFamily, feature_registry,
+        FEATURE_VERSION, FeatureGrain, FeatureTableFamily, GG_MBR_FT_MAX_PLAYERS, feature_registry,
         ft_stage_bucket,
     },
 };

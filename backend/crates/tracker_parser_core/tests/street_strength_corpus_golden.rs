@@ -220,7 +220,8 @@ fn build_curated_corpus_snapshot() -> StreetStrengthCuratedCorpusSnapshot {
                 fixture_file: hand.fixture_file.clone(),
                 hands: BTreeMap::new(),
             });
-        found.entry(hand.fixture_file.clone())
+        found
+            .entry(hand.fixture_file.clone())
             .or_default()
             .insert(hand.hand_id.clone());
         fixture_entry.hands.insert(
@@ -346,11 +347,19 @@ fn build_full_pack_aggregate_snapshot() -> StreetStrengthFullPackAggregateSnapsh
             }
             if row.is_nut_hand == Some(true) {
                 snapshot.is_nut_hand_true_count += 1;
-                push_witness(&mut snapshot.scenario_witnesses, "is_nut_hand_true", &hand_ref);
+                push_witness(
+                    &mut snapshot.scenario_witnesses,
+                    "is_nut_hand_true",
+                    &hand_ref,
+                );
             }
             if row.is_nut_draw == Some(true) {
                 snapshot.is_nut_draw_true_count += 1;
-                push_witness(&mut snapshot.scenario_witnesses, "is_nut_draw_true", &hand_ref);
+                push_witness(
+                    &mut snapshot.scenario_witnesses,
+                    "is_nut_draw_true",
+                    &hand_ref,
+                );
             }
         }
     }
@@ -370,13 +379,15 @@ fn build_corpus_index() -> StreetStrengthCorpusIndex {
     for fixture_path in &fixture_paths {
         let fixture_text =
             fs::read_to_string(fixture_path).expect("fixture file must be readable as UTF-8");
-        let hand_records = split_hand_history(&fixture_text).expect("fixture must split into hands");
+        let hand_records =
+            split_hand_history(&fixture_text).expect("fixture must split into hands");
         hand_count += hand_records.len();
 
         for record in hand_records {
-            let parsed =
-                parse_canonical_hand(&record.raw_text).expect("fixture hand must parse canonically");
-            let rows = evaluate_street_hand_strength(&parsed).expect("street strength must evaluate");
+            let parsed = parse_canonical_hand(&record.raw_text)
+                .expect("fixture hand must parse canonically");
+            let rows =
+                evaluate_street_hand_strength(&parsed).expect("street strength must evaluate");
             if rows.is_empty() {
                 continue;
             }
@@ -475,11 +486,13 @@ fn known_seats_snapshot(hand: &CanonicalParsedHand) -> BTreeMap<u8, KnownSeatSna
         let Some(&seat_no) = seat_by_name.get(player_name.as_str()) else {
             continue;
         };
-        known_seats.entry(seat_no).or_insert_with(|| KnownSeatSnapshot {
-            player_name: player_name.clone(),
-            hole_cards: cards.clone(),
-            is_hero: hand.hero_name.as_deref() == Some(player_name.as_str()),
-        });
+        known_seats
+            .entry(seat_no)
+            .or_insert_with(|| KnownSeatSnapshot {
+                player_name: player_name.clone(),
+                hole_cards: cards.clone(),
+                is_hero: hand.hero_name.as_deref() == Some(player_name.as_str()),
+            });
     }
 
     known_seats
@@ -655,7 +668,10 @@ fn curated_selection_covers_required_real_hand_buckets() {
         );
     }
 
-    assert!(has_hero_only_hand, "curated selection must include a hero-only hand");
+    assert!(
+        has_hero_only_hand,
+        "curated selection must include a hero-only hand"
+    );
     assert!(
         has_showdown_opponent_hand,
         "curated selection must include showdown-known opponent materialization"

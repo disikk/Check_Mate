@@ -37,9 +37,8 @@ fn apply_all_migrations(client: &mut Client) {
     paths.sort();
 
     for path in paths {
-        let sql = fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!("failed to read migration {}: {error}", path.display())
-        });
+        let sql = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read migration {}: {error}", path.display()));
         client
             .batch_execute(&sql)
             .unwrap_or_else(|error| panic!("failed to apply {}: {error}", path.display()));
@@ -117,7 +116,11 @@ fn seed_actor_shell(client: &mut impl postgres::GenericClient) -> (Uuid, Uuid, U
             DO UPDATE SET
                 is_primary = TRUE,
                 source = EXCLUDED.source",
-            &[&organization_id, &player_profile_id, &format!("Hero-{player_profile_id}")],
+            &[
+                &organization_id,
+                &player_profile_id,
+                &format!("Hero-{player_profile_id}"),
+            ],
         )
         .unwrap();
 
@@ -138,7 +141,9 @@ fn separate_runner_process_helper_drains_ingest_queue_until_idle() {
     apply_all_migrations(&mut client);
     reset_ingest_runtime_tables(&mut client);
 
-    let ts_path = fixture_path("fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt");
+    let ts_path = fixture_path(
+        "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+    );
     let ts_text = fs::read_to_string(&ts_path).unwrap();
 
     let bundle_id = {
@@ -179,7 +184,10 @@ fn separate_runner_process_helper_drains_ingest_queue_until_idle() {
 
     let mut check_client = Client::connect(&db_url(), NoTls).unwrap();
     let summary = load_bundle_summary(&mut check_client, bundle_id).unwrap();
-    assert_eq!(summary.status, tracker_ingest_runtime::BundleStatus::Succeeded);
+    assert_eq!(
+        summary.status,
+        tracker_ingest_runtime::BundleStatus::Succeeded
+    );
     assert_eq!(summary.queued_file_jobs, 0);
     assert_eq!(summary.running_file_jobs, 0);
     assert!(summary.finalize_job_present);

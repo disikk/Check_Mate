@@ -56,8 +56,12 @@ pub fn reference_draw_rows_for_seat(
         let street_board = street_board_cards(&board_cards, *street);
         let current_cards = all_cards(&hole_cards, &street_board);
         let evaluated = evaluate_best_hand(&current_cards);
-        let draw_category =
-            reference_draw_category(&hole_cards, &street_board, evaluated.best_hand_class, *street);
+        let draw_category = reference_draw_category(
+            &hole_cards,
+            &street_board,
+            evaluated.best_hand_class,
+            *street,
+        );
         let has_frontdoor_flush_draw = matches!(
             draw_category,
             DrawCategory::FlushDraw | DrawCategory::ComboDraw
@@ -96,8 +100,7 @@ pub fn reference_draw_rows_for_seat(
         );
 
         river_row.missed_flush_draw = had_frontdoor_flush_draw && !flush_completed;
-        river_row.missed_straight_draw =
-            had_player_specific_straight_draw && !straight_completed;
+        river_row.missed_straight_draw = had_player_specific_straight_draw && !straight_completed;
     }
 
     rows
@@ -116,8 +119,8 @@ fn reference_draw_category(
     let double_gutshot = !is_straight_family(best_hand_class)
         && improving_outs.straight_completion_ranks.len() >= 2
         && !open_ended;
-    let gutshot = !is_straight_family(best_hand_class)
-        && improving_outs.straight_completion_ranks.len() == 1;
+    let gutshot =
+        !is_straight_family(best_hand_class) && improving_outs.straight_completion_ranks.len() == 1;
     let has_straight_draw = open_ended || gutshot || double_gutshot;
     let backdoor_flush_only = has_backdoor_flush_only(
         hole_cards,
@@ -264,24 +267,22 @@ fn known_hole_cards(hand: &CanonicalParsedHand, seat_no: u8) -> Option<[TestCard
         .map(|seat| (seat.player_name.as_str(), seat.seat_no))
         .collect::<BTreeMap<_, _>>();
 
-    let raw_cards = if let (Some(hero_name), Some(hero_cards)) = (&hand.hero_name, &hand.hero_hole_cards)
-    {
-        if seat_by_name.get(hero_name.as_str()).copied() == Some(seat_no) {
-            Some(hero_cards.as_slice())
-        } else {
-            hand.showdown_hands
-                .iter()
-                .find_map(|(player_name, cards)| {
+    let raw_cards =
+        if let (Some(hero_name), Some(hero_cards)) = (&hand.hero_name, &hand.hero_hole_cards) {
+            if seat_by_name.get(hero_name.as_str()).copied() == Some(seat_no) {
+                Some(hero_cards.as_slice())
+            } else {
+                hand.showdown_hands.iter().find_map(|(player_name, cards)| {
                     (seat_by_name.get(player_name.as_str()).copied() == Some(seat_no))
                         .then_some(cards.as_slice())
                 })
-        }
-    } else {
-        hand.showdown_hands.iter().find_map(|(player_name, cards)| {
-            (seat_by_name.get(player_name.as_str()).copied() == Some(seat_no))
-                .then_some(cards.as_slice())
-        })
-    }?;
+            }
+        } else {
+            hand.showdown_hands.iter().find_map(|(player_name, cards)| {
+                (seat_by_name.get(player_name.as_str()).copied() == Some(seat_no))
+                    .then_some(cards.as_slice())
+            })
+        }?;
 
     let parsed = raw_cards
         .iter()
@@ -395,7 +396,10 @@ fn evaluate_five_card_hand(cards: &[TestCard; 5]) -> EvaluatedHand {
     } else if counts[0].1 == 2 && counts[1].1 == 2 {
         let high_pair = counts[0].0.max(counts[1].0);
         let low_pair = counts[0].0.min(counts[1].0);
-        (BestHandClass::TwoPair, vec![high_pair, low_pair, counts[2].0])
+        (
+            BestHandClass::TwoPair,
+            vec![high_pair, low_pair, counts[2].0],
+        )
     } else if counts[0].1 == 2 {
         let mut ordered = vec![counts[0].0];
         ordered.extend(counts.iter().skip(1).map(|(rank, _)| *rank));
@@ -446,14 +450,18 @@ fn best_combo_uses_hole_card(
     })
 }
 
-fn has_player_specific_four_consecutive_run(hole_cards: &[TestCard; 2], board: &[TestCard]) -> bool {
+fn has_player_specific_four_consecutive_run(
+    hole_cards: &[TestCard; 2],
+    board: &[TestCard],
+) -> bool {
     let rank_set = mirrored_rank_set(
         &all_cards(hole_cards, board)
             .iter()
             .map(|card| card.rank)
             .collect::<Vec<_>>(),
     );
-    let hole_rank_set = mirrored_rank_set(&hole_cards.iter().map(|card| card.rank).collect::<Vec<_>>());
+    let hole_rank_set =
+        mirrored_rank_set(&hole_cards.iter().map(|card| card.rank).collect::<Vec<_>>());
 
     (1_u8..=11_u8).any(|start| {
         let mut window = start..=start + 3;

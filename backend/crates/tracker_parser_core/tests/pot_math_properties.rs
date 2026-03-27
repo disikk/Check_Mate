@@ -50,7 +50,13 @@ fn canonical_smoke_hands_keep_non_negative_stacks() {
         let hand = parse_canonical_hand(raw).unwrap();
         let normalized = normalize_hand(&hand).unwrap();
 
-        assert!(normalized.actual.stacks_after_actual.values().all(|stack| *stack >= 0));
+        assert!(
+            normalized
+                .actual
+                .stacks_after_actual
+                .values()
+                .all(|stack| *stack >= 0)
+        );
     }
 }
 
@@ -233,7 +239,9 @@ fn normalize_projection(raw: &str) -> ProjectionResult {
 }
 
 fn reorder_collect_lines(raw: &str) -> String {
-    reorder_matching_lines(raw, |line| line.contains(" collected ") && line.ends_with("from pot"))
+    reorder_matching_lines(raw, |line| {
+        line.contains(" collected ") && line.ends_with("from pot")
+    })
 }
 
 fn reorder_summary_seat_lines(raw: &str) -> String {
@@ -299,7 +307,8 @@ fn reorder_exact_lines(raw: &str, targets: &[&str]) -> String {
     let indices = targets
         .iter()
         .map(|target| {
-            lines.iter()
+            lines
+                .iter()
                 .position(|line| line == target)
                 .unwrap_or_else(|| panic!("missing target line `{target}`"))
         })

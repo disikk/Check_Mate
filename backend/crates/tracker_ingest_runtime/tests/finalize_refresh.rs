@@ -27,9 +27,8 @@ fn apply_all_migrations(client: &mut Client) {
     paths.sort();
 
     for path in paths {
-        let sql = fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!("failed to read migration {}: {error}", path.display())
-        });
+        let sql = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read migration {}: {error}", path.display()));
         client
             .batch_execute(&sql)
             .unwrap_or_else(|error| panic!("failed to apply {}: {error}", path.display()));
@@ -163,12 +162,16 @@ fn bundle_finalize_runs_once_after_all_file_jobs_terminalize() {
         finalize_calls: 0,
     };
 
-    assert!(run_next_job(&mut tx, "finalize-test", 3, &mut executor)
-        .unwrap()
-        .is_some());
-    assert!(run_next_job(&mut tx, "finalize-test", 3, &mut executor)
-        .unwrap()
-        .is_some());
+    assert!(
+        run_next_job(&mut tx, "finalize-test", 3, &mut executor)
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        run_next_job(&mut tx, "finalize-test", 3, &mut executor)
+            .unwrap()
+            .is_some()
+    );
 
     let summary_before_finalize = load_bundle_summary(&mut tx, bundle.bundle_id).unwrap();
     assert!(summary_before_finalize.finalize_job_present);

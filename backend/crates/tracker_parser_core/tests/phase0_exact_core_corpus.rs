@@ -68,7 +68,10 @@ fn parses_phase0_exact_core_edge_matrix_acceptance_rows() {
     assert_eq!(short_bb_post.amount, Some(60));
     assert!(short_bb_post.is_forced);
     assert!(short_bb_post.is_all_in);
-    assert_eq!(short_bb_post.all_in_reason, Some(AllInReason::BlindExhausted));
+    assert_eq!(
+        short_bb_post.all_in_reason,
+        Some(AllInReason::BlindExhausted)
+    );
     assert!(short_bb_post.forced_all_in_preflop);
 
     let dead_blind_with_ante = parsed.get("BRCM0405").unwrap();
@@ -2185,7 +2188,10 @@ fn elimination_json(elimination: &tracker_parser_core::models::HandElimination) 
     serde_json::to_value(elimination).unwrap()
 }
 
-fn invariant_issue_manifest(hand: &NormalizedHand, parsed_hand: &CanonicalParsedHand) -> Vec<String> {
+fn invariant_issue_manifest(
+    hand: &NormalizedHand,
+    parsed_hand: &CanonicalParsedHand,
+) -> Vec<String> {
     hand.invariants
         .issues
         .iter()
@@ -2561,7 +2567,9 @@ fn materialize_committed_contract(contracts: &[CommittedContract]) -> Vec<(Strin
 fn materialize_returns_contract(contracts: &[ReturnContract]) -> Vec<(String, i64, String)> {
     contracts
         .iter()
-        .map(|(player_name, amount, reason)| ((*player_name).to_string(), *amount, (*reason).to_string()))
+        .map(|(player_name, amount, reason)| {
+            ((*player_name).to_string(), *amount, (*reason).to_string())
+        })
         .collect()
 }
 
@@ -2584,7 +2592,10 @@ fn materialize_pot_eligibilities_contract(
 }
 
 fn materialize_str_contract(contracts: &[&'static str]) -> Vec<String> {
-    contracts.iter().map(|contract| (*contract).to_string()).collect()
+    contracts
+        .iter()
+        .map(|contract| (*contract).to_string())
+        .collect()
 }
 
 fn action_raw_line<'a>(parsed_hand: &'a CanonicalParsedHand, seq: usize) -> &'a str {
@@ -2593,7 +2604,12 @@ fn action_raw_line<'a>(parsed_hand: &'a CanonicalParsedHand, seq: usize) -> &'a 
         .iter()
         .find(|event| event.seq == seq)
         .map(|event| event.raw_line.as_str())
-        .unwrap_or_else(|| panic!("missing action seq {seq} in `{}`", parsed_hand.header.hand_id))
+        .unwrap_or_else(|| {
+            panic!(
+                "missing action seq {seq} in `{}`",
+                parsed_hand.header.hand_id
+            )
+        })
 }
 
 fn street_name(street: Street) -> &'static str {

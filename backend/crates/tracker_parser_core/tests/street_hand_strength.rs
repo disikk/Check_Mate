@@ -443,8 +443,7 @@ fn excludes_board_only_draws_from_canonical_draw_category() {
 }
 
 #[test]
-fn excludes_non_improving_straight_patterns_from_turn_draw_category_but_keeps_river_miss_history()
-{
+fn excludes_non_improving_straight_patterns_from_turn_draw_category_but_keeps_river_miss_history() {
     let made_flush_with_rank_completion = parse_canonical_hand(
         &showdown_hand(
             "BRSTR043",
@@ -484,7 +483,11 @@ fn excludes_non_improving_straight_patterns_from_turn_draw_category_but_keeps_ri
         row(&flush_rows, 2, Street::Turn).unwrap().draw_category,
         DrawCategory::None
     );
-    assert!(row(&flush_rows, 2, Street::River).unwrap().missed_straight_draw);
+    assert!(
+        row(&flush_rows, 2, Street::River)
+            .unwrap()
+            .missed_straight_draw
+    );
     assert_eq!(
         row(&open_ended_flush_rows, 2, Street::Turn)
             .unwrap()
@@ -847,8 +850,7 @@ fn classifies_is_nut_draw_relative_to_ordinary_draw_families() {
         let descriptor = row(&rows, 2, street).unwrap();
 
         assert_eq!(
-            descriptor.draw_category,
-            expected_draw_category,
+            descriptor.draw_category, expected_draw_category,
             "case_id={case_id}"
         );
         assert_eq!(

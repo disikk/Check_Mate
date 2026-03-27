@@ -120,7 +120,11 @@ impl SyntaxFamilyAccumulator {
         if self.example_lines.len() >= example_limit {
             return;
         }
-        if self.example_lines.iter().any(|existing| existing == &example_line) {
+        if self
+            .example_lines
+            .iter()
+            .any(|existing| existing == &example_line)
+        {
             return;
         }
         self.example_lines.push(example_line);
@@ -345,7 +349,11 @@ fn process_hh_file(
     for record in records {
         let hand = parse_canonical_hand(&record.raw_text).map_err(|error| FileProcessFailure {
             failure_kind: "parse_canonical_hand_failed",
-            example: format!("{}: {}: {error}", file_path.display(), record.header.hand_id),
+            example: format!(
+                "{}: {}: {error}",
+                file_path.display(),
+                record.header.hand_id
+            ),
         })?;
         let normalized = normalize_hand(&hand).map_err(|error| FileProcessFailure {
             failure_kind: "normalize_hand_failed",
@@ -362,12 +370,7 @@ fn process_hh_file(
 
         let mut hand_has_unexpected_parse_issue = false;
         for issue in &hand.parse_issues {
-            let is_allowed = record_issue(
-                &mut stats,
-                issue,
-                allowed_issue_codes,
-                example_limit,
-            );
+            let is_allowed = record_issue(&mut stats, issue, allowed_issue_codes, example_limit);
             hand_has_unexpected_parse_issue |= !is_allowed;
         }
         if hand_has_unexpected_parse_issue {
@@ -408,12 +411,7 @@ fn process_ts_file(
     })?;
     let mut stats = FileTriageStats::default();
     for issue in &summary.parse_issues {
-        record_issue(
-            &mut stats,
-            issue,
-            allowed_issue_codes,
-            example_limit,
-        );
+        record_issue(&mut stats, issue, allowed_issue_codes, example_limit);
     }
     Ok(stats)
 }
@@ -460,8 +458,9 @@ fn surface_kind_for_issue(code: ParseIssueCode) -> &'static str {
             "hh_show_line"
         }
         ParseIssueCode::PartialRevealSummaryShowSurface => "hh_summary_show_line",
-        ParseIssueCode::TsTailFinishPlaceMismatch
-        | ParseIssueCode::TsTailTotalReceivedMismatch => "ts_tail",
+        ParseIssueCode::TsTailFinishPlaceMismatch | ParseIssueCode::TsTailTotalReceivedMismatch => {
+            "ts_tail"
+        }
         ParseIssueCode::HeroCardsMissingSeat
         | ParseIssueCode::ShowdownPlayerMissingSeat
         | ParseIssueCode::SummarySeatOutcomeSeatMismatch
@@ -511,7 +510,11 @@ fn merge_family_maps(
         });
         target_family.hit_count += source_family.hit_count;
         for example in source_family.example_lines {
-            if target_family.example_lines.iter().any(|existing| existing == &example) {
+            if target_family
+                .example_lines
+                .iter()
+                .any(|existing| existing == &example)
+            {
                 continue;
             }
             target_family.example_lines.push(example);

@@ -2,8 +2,8 @@ use crate::{
     ParserError,
     models::{
         ActionType, AllInReason, CanonicalParsedHand, HandActionEvent, HandHeader, HandRecord,
-        ParseIssue, ParseIssueCode, ParsedHandSeat, Street, SummarySeatMarker,
-        SummarySeatOutcome, SummarySeatOutcomeKind,
+        ParseIssue, ParseIssueCode, ParsedHandSeat, Street, SummarySeatMarker, SummarySeatOutcome,
+        SummarySeatOutcomeKind,
     },
 };
 
@@ -202,10 +202,16 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
                     summary_seat_outcomes.push(outcome)
                 }
                 SummarySeatOutcomeParseResult::UnknownTail => {
-                    parse_issues.push(raw_line_warning(ParseIssueCode::UnparsedSummarySeatTail, line));
+                    parse_issues.push(raw_line_warning(
+                        ParseIssueCode::UnparsedSummarySeatTail,
+                        line,
+                    ));
                 }
                 SummarySeatOutcomeParseResult::InvalidHead => {
-                    parse_issues.push(raw_line_warning(ParseIssueCode::UnparsedSummarySeatLine, line));
+                    parse_issues.push(raw_line_warning(
+                        ParseIssueCode::UnparsedSummarySeatLine,
+                        line,
+                    ));
                 }
             }
             continue;
@@ -254,7 +260,10 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
         }
 
         if is_no_show_line(line) {
-            parse_issues.push(raw_line_warning(ParseIssueCode::UnsupportedNoShowLine, line));
+            parse_issues.push(raw_line_warning(
+                ParseIssueCode::UnsupportedNoShowLine,
+                line,
+            ));
             continue;
         }
 

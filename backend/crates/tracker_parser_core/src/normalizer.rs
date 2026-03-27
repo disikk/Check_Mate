@@ -4,10 +4,9 @@ use crate::{
     ParserError,
     betting_rules::evaluate_action_legality,
     models::{
-        ActionType, CanonicalParsedHand, CertaintyState, HandElimination,
-        HandEliminationKoShare, HandInvariants, HandOutcomeActual, HandReturn, InvariantIssue,
-        NormalizedHand, ParsedHandSeat, PlayerNodeState, PlayerStatus, PotSlice,
-        ResolutionNodeSnapshot, Street,
+        ActionType, CanonicalParsedHand, CertaintyState, HandElimination, HandEliminationKoShare,
+        HandInvariants, HandOutcomeActual, HandReturn, InvariantIssue, NormalizedHand,
+        ParsedHandSeat, PlayerNodeState, PlayerStatus, PotSlice, ResolutionNodeSnapshot, Street,
     },
     pot_resolution::{observed_payouts, resolve_hand_pots},
 };
@@ -98,12 +97,8 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
                 .get(&seat.player_name)
                 .copied()
                 .unwrap_or(0);
-            (seat.starting_stack > 0 && final_stack == 0).then(|| {
-                build_elimination(
-                    seat,
-                    &settlement,
-                )
-            })
+            (seat.starting_stack > 0 && final_stack == 0)
+                .then(|| build_elimination(seat, &settlement))
         })
         .collect::<Vec<_>>();
 
@@ -495,12 +490,8 @@ fn build_elimination(
     }
 
     let last_busting_pot_no = pots_causing_bust.last().copied();
-    let busting_pot = last_busting_pot_no.and_then(|pot_no| {
-        settlement
-            .pots
-            .iter()
-            .find(|pot| pot.pot_no == pot_no)
-    });
+    let busting_pot = last_busting_pot_no
+        .and_then(|pot_no| settlement.pots.iter().find(|pot| pot.pot_no == pot_no));
     let (ko_winner_set, ko_share_fraction_by_winner, ko_certainty_state) =
         if let Some(pot) = busting_pot {
             if let Some(allocation) = pot.selected_allocation.as_ref() {

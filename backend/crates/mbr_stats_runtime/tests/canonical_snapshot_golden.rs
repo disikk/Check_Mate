@@ -15,11 +15,11 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+use mbr_stats_runtime::CANONICAL_STAT_KEYS;
 use mbr_stats_runtime::models::{
     CanonicalStatNumericValue, CanonicalStatPoint, CanonicalStatState, SeedStatsFilters,
 };
 use mbr_stats_runtime::queries::query_canonical_stats;
-use mbr_stats_runtime::CANONICAL_STAT_KEYS;
 
 /// Serializable representation of a single stat point for golden comparison.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -147,8 +147,7 @@ fn golden_canonical_snapshot_matches_committed_pack() {
 
     // Load and compare
     let golden_json = fs::read_to_string(&golden_file).expect("read golden file");
-    let expected: GoldenSnapshot =
-        serde_json::from_str(&golden_json).expect("parse golden JSON");
+    let expected: GoldenSnapshot = serde_json::from_str(&golden_json).expect("parse golden JSON");
 
     if actual != expected {
         // Produce diff-friendly output

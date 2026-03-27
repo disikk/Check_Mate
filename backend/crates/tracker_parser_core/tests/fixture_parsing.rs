@@ -458,8 +458,7 @@ fn unknown_summary_tail_uses_tail_specific_warning_when_head_is_valid() {
     assert!(
         hand.parse_issues.iter().any(|issue| {
             issue.code == ParseIssueCode::UnparsedSummarySeatTail
-                && issue.raw_line.as_deref()
-                    == Some("Seat 1: Hero (button) celebrated the win")
+                && issue.raw_line.as_deref() == Some("Seat 1: Hero (button) celebrated the win")
         }),
         "expected tail-specific warning, got {:?}",
         hand.parse_issues
@@ -467,8 +466,7 @@ fn unknown_summary_tail_uses_tail_specific_warning_when_head_is_valid() {
     assert!(
         !hand.parse_issues.iter().any(|issue| {
             issue.code == ParseIssueCode::UnparsedSummarySeatLine
-                && issue.raw_line.as_deref()
-                    == Some("Seat 1: Hero (button) celebrated the win")
+                && issue.raw_line.as_deref() == Some("Seat 1: Hero (button) celebrated the win")
         }),
         "head-valid unknown tail must not downgrade to line-level warning: {:?}",
         hand.parse_issues
@@ -488,7 +486,10 @@ fn parses_showed_collected_summary_tail_as_showed_won_surface() {
         outcome.outcome_kind,
         tracker_parser_core::models::SummarySeatOutcomeKind::ShowedWon
     );
-    assert_eq!(outcome.shown_cards, Some(vec!["Ah".to_string(), "Ad".to_string()]));
+    assert_eq!(
+        outcome.shown_cards,
+        Some(vec!["Ah".to_string(), "Ad".to_string()])
+    );
     assert_eq!(outcome.won_amount, Some(300));
     assert!(hand.parse_issues.is_empty(), "got {:?}", hand.parse_issues);
 }
@@ -518,18 +519,14 @@ fn parses_post_dead_muck_and_sitting_out_surface() {
 fn marks_no_show_and_partial_reveal_surface_explicitly() {
     let hand = parse_canonical_hand(&cm04_show_surface_hand_text()).unwrap();
 
-    assert!(
-        hand.parse_issues.iter().any(|issue| {
-            issue.code == ParseIssueCode::PartialRevealShowLine
-                && issue.raw_line.as_deref() == Some("VillainPartial: shows [5d]")
-        })
-    );
-    assert!(
-        hand.parse_issues.iter().any(|issue| {
-            issue.code == ParseIssueCode::UnsupportedNoShowLine
-                && issue.raw_line.as_deref() == Some("VillainNoShow: doesn't show hand")
-        })
-    );
+    assert!(hand.parse_issues.iter().any(|issue| {
+        issue.code == ParseIssueCode::PartialRevealShowLine
+            && issue.raw_line.as_deref() == Some("VillainPartial: shows [5d]")
+    }));
+    assert!(hand.parse_issues.iter().any(|issue| {
+        issue.code == ParseIssueCode::UnsupportedNoShowLine
+            && issue.raw_line.as_deref() == Some("VillainNoShow: doesn't show hand")
+    }));
     assert!(!hand.parse_issues.iter().any(|issue| {
         issue.code == ParseIssueCode::UnparsedLine
             && matches!(

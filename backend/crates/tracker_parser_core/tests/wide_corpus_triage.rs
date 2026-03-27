@@ -9,8 +9,16 @@ fn committed_quarantine_sample_root_contains_expected_hh_and_ts_files() {
     let hh_dir = root.join("hh");
     let ts_dir = root.join("ts");
 
-    assert!(hh_dir.exists(), "missing hh quarantine sample dir at {}", hh_dir.display());
-    assert!(ts_dir.exists(), "missing ts quarantine sample dir at {}", ts_dir.display());
+    assert!(
+        hh_dir.exists(),
+        "missing hh quarantine sample dir at {}",
+        hh_dir.display()
+    );
+    assert!(
+        ts_dir.exists(),
+        "missing ts quarantine sample dir at {}",
+        ts_dir.display()
+    );
 
     let hh_files = std::fs::read_dir(&hh_dir)
         .unwrap()
@@ -49,7 +57,10 @@ fn wide_corpus_triage_counts_known_sample_metrics() {
     assert_eq!(report.unexpected_issue_count, 0);
     assert_eq!(report.hands_with_unexpected_parse_issues, 0);
     assert_eq!(
-        report.issue_counts_by_code.get("partial_reveal_show_line").copied(),
+        report
+            .issue_counts_by_code
+            .get("partial_reveal_show_line")
+            .copied(),
         Some(2)
     );
     assert_eq!(
@@ -60,7 +71,10 @@ fn wide_corpus_triage_counts_known_sample_metrics() {
         Some(2)
     );
     assert_eq!(
-        report.issue_counts_by_code.get("unsupported_no_show_line").copied(),
+        report
+            .issue_counts_by_code
+            .get("unsupported_no_show_line")
+            .copied(),
         Some(2)
     );
     assert_eq!(
@@ -115,6 +129,16 @@ fn syntax_families_aggregate_examples_by_pattern_family() {
     assert_eq!(family.surface_kind, "hh_show_line");
     assert_eq!(family.hit_count, 2);
     assert_eq!(family.example_lines.len(), 2);
-    assert!(family.example_lines.iter().any(|line| line.contains("PartialA")));
-    assert!(family.example_lines.iter().any(|line| line.contains("PartialB")));
+    assert!(
+        family
+            .example_lines
+            .iter()
+            .any(|line| line.contains("PartialA"))
+    );
+    assert!(
+        family
+            .example_lines
+            .iter()
+            .any(|line| line.contains("PartialB"))
+    );
 }

@@ -58,8 +58,8 @@ fn build_fixture_snapshot(fixture_path: &Path) -> GoldenFixtureSnapshot {
     let hands = hand_records
         .iter()
         .map(|record| {
-            let parsed =
-                parse_canonical_hand(&record.raw_text).expect("fixture hand must parse canonically");
+            let parsed = parse_canonical_hand(&record.raw_text)
+                .expect("fixture hand must parse canonically");
             let normalized = normalize_hand(&parsed).expect("fixture hand must normalize");
             let serialized =
                 serde_json::to_value(&normalized).expect("normalized hand must serialize");
@@ -200,8 +200,16 @@ fn fixture_diff_reports_missing_and_extra_hand_ids() {
 
     let diffs = describe_fixture_diffs(&actual, &expected);
 
-    assert!(diffs.iter().any(|diff| diff.contains("missing hand_ids: [\"H2\"]")));
-    assert!(diffs.iter().any(|diff| diff.contains("extra hand_ids: [\"H3\"]")));
+    assert!(
+        diffs
+            .iter()
+            .any(|diff| diff.contains("missing hand_ids: [\"H2\"]"))
+    );
+    assert!(
+        diffs
+            .iter()
+            .any(|diff| diff.contains("extra hand_ids: [\"H3\"]"))
+    );
 }
 
 #[test]
@@ -219,5 +227,9 @@ fn fixture_diff_reports_changed_hand_payload() {
 
     let diffs = describe_fixture_diffs(&actual, &expected);
 
-    assert!(diffs.iter().any(|diff| diff.contains("changed hand payloads: [\"H1\"]")));
+    assert!(
+        diffs
+            .iter()
+            .any(|diff| diff.contains("changed hand payloads: [\"H1\"]"))
+    );
 }

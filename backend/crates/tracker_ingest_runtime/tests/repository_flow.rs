@@ -26,9 +26,8 @@ fn apply_all_migrations(client: &mut Client) {
     paths.sort();
 
     for path in paths {
-        let sql = fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!("failed to read migration {}: {error}", path.display())
-        });
+        let sql = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read migration {}: {error}", path.display()));
         client
             .batch_execute(&sql)
             .unwrap_or_else(|error| panic!("failed to apply {}: {error}", path.display()));

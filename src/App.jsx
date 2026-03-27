@@ -2,46 +2,63 @@ import { useEffect, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import StudentDashboard from './components/StudentDashboard'
 import FtAnalyticsPage from './components/FtAnalyticsPage'
+import SettingsPage from './components/SettingsPage'
 import UploadHandsPage from './components/UploadHandsPage'
 import SectionPlaceholderPage from './components/SectionPlaceholderPage'
 import { sectionById } from './navigation/sections'
-
-const sectionComponents = {
-  dashboard: StudentDashboard,
-  ftAnalytics: FtAnalyticsPage,
-  upload: UploadHandsPage,
-  errors: () => (
-    <SectionPlaceholderPage
-      eyebrow="Errors"
-      title="Журнал ошибок"
-      description="Следующим шагом сюда можно вынести разбор проблемных рук и поиск по конкретным ситуациям."
-    />
-  ),
-  settings: () => (
-    <SectionPlaceholderPage
-      eyebrow="Settings"
-      title="Настройки"
-      description="Раздел оставлен под настройки профиля, импорта и будущих интеграций."
-    />
-  ),
-}
+import {
+  readMockUserTimezone,
+  writeMockUserTimezone,
+} from './services/mockUserTimezone'
 
 export default function App() {
   const [theme, setTheme] = useState(
     () => document.documentElement.getAttribute('data-theme') || 'dark',
   )
   const [activeSection, setActiveSection] = useState('dashboard')
+  const [mockTimezone, setMockTimezone] = useState(() => readMockUserTimezone())
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  const handleTimezoneSave = (timezoneName) => {
+    writeMockUserTimezone(timezoneName)
+    setMockTimezone(timezoneName)
+  }
 
   const toggleTheme = () => {
     setTheme((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'))
   }
 
   const activeSectionMeta = sectionById[activeSection] ?? sectionById.dashboard
-  const ActiveSectionComponent = sectionComponents[activeSection] ?? StudentDashboard
+  let activeSectionContent = <StudentDashboard />
+
+  if (activeSection === 'ftAnalytics') {
+    activeSectionContent = <FtAnalyticsPage />
+  } else if (activeSection === 'upload') {
+    activeSectionContent = (
+      <UploadHandsPage
+        timezoneName={mockTimezone}
+        onOpenSettings={() => setActiveSection('settings')}
+      />
+    )
+  } else if (activeSection === 'errors') {
+    activeSectionContent = (
+      <SectionPlaceholderPage
+        eyebrow="Errors"
+        title="Журнал ошибок"
+        description="Следующим шагом сюда можно вынести разбор проблемных рук и поиск по конкретным ситуациям."
+      />
+    )
+  } else if (activeSection === 'settings') {
+    activeSectionContent = (
+      <SettingsPage
+        timezoneName={mockTimezone}
+        onTimezoneSave={handleTimezoneSave}
+      />
+    )
+  }
 
   return (
     <div className="app-layout">
@@ -60,7 +77,7 @@ export default function App() {
       </div>
 
       <main className="main-content">
-        <ActiveSectionComponent />
+        {activeSectionContent}
       </main>
     </div>
   )

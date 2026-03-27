@@ -456,8 +456,13 @@ fn build_street_signals(
     let improving_outs =
         improving_next_card_outs(hole_cards, board, evaluated.best_hand_class, street);
     let flush_draw = improving_outs.has_flush_out();
-    let backdoor_flush_draw =
-        has_backdoor_flush_draw(hole_cards, board, evaluated.best_hand_class, street, flush_draw);
+    let backdoor_flush_draw = has_backdoor_flush_draw(
+        hole_cards,
+        board,
+        evaluated.best_hand_class,
+        street,
+        flush_draw,
+    );
     let completion_ranks = improving_outs.straight_completion_ranks();
     let open_ended = !is_straight_family(evaluated.best_hand_class)
         && completion_ranks.len() >= 2
@@ -684,7 +689,9 @@ fn is_nut_hand_on_board(
 
 fn is_nut_out_family(hole_cards: &[Card; 2], board: &[Card], out_cards: &[Card]) -> bool {
     !out_cards.is_empty()
-        && out_cards.iter().all(|out_card| out_results_in_nut_hand(hole_cards, board, *out_card))
+        && out_cards
+            .iter()
+            .all(|out_card| out_results_in_nut_hand(hole_cards, board, *out_card))
 }
 
 fn out_results_in_nut_hand(hole_cards: &[Card; 2], board: &[Card], out_card: Card) -> bool {

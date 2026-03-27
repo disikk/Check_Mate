@@ -3,9 +3,8 @@ use std::{fs, path::PathBuf};
 use serde_json::{Value, json};
 use tracker_parser_core::{
     models::{
-        CertaintyState, FinalPot, InvariantIssue, NormalizedHand, PlayerStatus,
-        PotContribution, PotEligibility, PotSettlementIssue, PotWinner,
-        SettlementAllocationSource, Street,
+        CertaintyState, FinalPot, InvariantIssue, NormalizedHand, PlayerStatus, PotContribution,
+        PotEligibility, PotSettlementIssue, PotWinner, SettlementAllocationSource, Street,
     },
     normalizer::normalize_hand,
     parsers::hand_history::{parse_canonical_hand, split_hand_history},
@@ -978,10 +977,7 @@ fn resolves_split_ko_from_last_busting_pot_with_proportional_shares() {
     assert_eq!(elimination["pots_participated_by_busted"], json!([1]));
     assert_eq!(elimination["pots_causing_bust"], json!([1]));
     assert_eq!(elimination["last_busting_pot_no"], json!(1));
-    assert_eq!(
-        elimination["ko_winner_set"],
-        json!(["Hero", "VillainB"])
-    );
+    assert_eq!(elimination["ko_winner_set"], json!(["Hero", "VillainB"]));
     assert_eq!(
         elimination["ko_share_fraction_by_winner"],
         json!([
@@ -1107,13 +1103,9 @@ fn keeps_full_pack_invariants_green_for_all_committed_hands() {
             if !normalized.invariants.chip_conservation_ok
                 || !normalized.invariants.pot_conservation_ok
                 || !normalized.invariants.issues.is_empty()
-                || normalized
-                    .eliminations
-                    .iter()
-                    .any(|elimination| {
-                        elimination_ko_certainty(elimination)
-                            == Some("inconsistent".to_string())
-                    })
+                || normalized.eliminations.iter().any(|elimination| {
+                    elimination_ko_certainty(elimination) == Some("inconsistent".to_string())
+                })
             {
                 issues.push(format!(
                     "{fixture} :: {} :: chip_ok={} pot_ok={} errors={:?} eliminations={:?}",
@@ -1243,7 +1235,10 @@ fn keeps_hidden_showdown_side_pot_ambiguity_uncertain_without_guessing_winners()
     let hand = parse_canonical_hand(HIDDEN_SHOWDOWN_AMBIGUITY_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.settlement.certainty_state, CertaintyState::Uncertain);
+    assert_eq!(
+        normalized.settlement.certainty_state,
+        CertaintyState::Uncertain
+    );
     assert!(normalized.settlement.issues.is_empty());
     assert_eq!(normalized.settlement.pots.len(), 2);
     assert!(
@@ -1394,7 +1389,10 @@ fn treats_conflicting_odd_chip_collect_and_summary_evidence_as_inconsistent() {
     let hand = parse_canonical_hand(ODD_CHIP_CONFLICTING_EVIDENCE_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.settlement.certainty_state, CertaintyState::Inconsistent);
+    assert_eq!(
+        normalized.settlement.certainty_state,
+        CertaintyState::Inconsistent
+    );
     assert_eq!(
         normalized.settlement.issues,
         vec![tracker_parser_core::models::SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts]
@@ -1407,7 +1405,10 @@ fn leaves_odd_chip_aggregate_ambiguity_unresolved_when_multiple_exact_allocation
     let hand = parse_canonical_hand(ODD_CHIP_AMBIGUOUS_AGGREGATE_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.settlement.certainty_state, CertaintyState::Uncertain);
+    assert_eq!(
+        normalized.settlement.certainty_state,
+        CertaintyState::Uncertain
+    );
     assert_eq!(
         normalized.settlement.issues,
         vec![tracker_parser_core::models::SettlementIssue::MultipleExactAllocations]
@@ -1621,7 +1622,8 @@ fn elimination_elimination_certainty(
         .and_then(Value::as_str)
         .map(str::to_string)
         .or_else(|| {
-            value.get("certainty_state")
+            value
+                .get("certainty_state")
                 .and_then(Value::as_str)
                 .map(str::to_string)
         })

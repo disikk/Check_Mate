@@ -28,9 +28,8 @@ fn apply_all_migrations(client: &mut Client) {
     paths.sort();
 
     for path in paths {
-        let sql = fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!("failed to read migration {}: {error}", path.display())
-        });
+        let sql = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read migration {}: {error}", path.display()));
         client
             .batch_execute(&sql)
             .unwrap_or_else(|error| panic!("failed to apply {}: {error}", path.display()));
@@ -100,9 +99,7 @@ impl JobExecutor for ScriptedExecutor {
         _client: &mut C,
         _job: &tracker_ingest_runtime::ClaimedJob,
     ) -> Result<(), JobExecutionError> {
-        self.file_results
-            .pop_front()
-            .unwrap_or(Ok(()))
+        self.file_results.pop_front().unwrap_or(Ok(()))
     }
 
     fn finalize_bundle<C: postgres::GenericClient>(
@@ -163,11 +160,17 @@ fn bundle_snapshot_exposes_ui_friendly_progress_and_archive_diagnostics() {
     assert_eq!(snapshot.completed_files, 0);
     assert_eq!(snapshot.files.len(), 1);
     assert_eq!(snapshot.files[0].member_path, "tables/one.hh".to_string());
-    assert_eq!(snapshot.files[0].stage_label, "Проверка структуры".to_string());
+    assert_eq!(
+        snapshot.files[0].stage_label,
+        "Проверка структуры".to_string()
+    );
     assert_eq!(snapshot.files[0].progress_percent, 40);
     assert!(snapshot.activity_log.iter().any(|event| {
         event.event_kind == "diagnostic_logged"
-            && event.payload.get("member_path").and_then(|value| value.as_str())
+            && event
+                .payload
+                .get("member_path")
+                .and_then(|value| value.as_str())
                 == Some("notes/readme.md")
     }));
 
@@ -228,15 +231,19 @@ fn load_bundle_events_since_returns_ordered_updates_with_single_terminal_event()
         finalize_calls: 0,
     };
 
-    assert!(run_next_job(&mut tx, "event-stream-test", 3, &mut executor)
-        .unwrap()
-        .is_some());
-    assert!(run_next_job(&mut tx, "event-stream-test", 3, &mut executor)
-        .unwrap()
-        .is_some());
+    assert!(
+        run_next_job(&mut tx, "event-stream-test", 3, &mut executor)
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        run_next_job(&mut tx, "event-stream-test", 3, &mut executor)
+            .unwrap()
+            .is_some()
+    );
 
-    let streamed_events = load_bundle_events_since(&mut tx, bundle.bundle_id, Some(initial_cursor))
-        .unwrap();
+    let streamed_events =
+        load_bundle_events_since(&mut tx, bundle.bundle_id, Some(initial_cursor)).unwrap();
     assert_eq!(
         streamed_events
             .iter()
@@ -258,7 +265,9 @@ fn load_bundle_events_since_returns_ordered_updates_with_single_terminal_event()
         1
     );
     assert_eq!(
-        streamed_events.last().map(|event| event.event_kind.as_str()),
+        streamed_events
+            .last()
+            .map(|event| event.event_kind.as_str()),
         Some("bundle_terminal")
     );
     assert_eq!(executor.finalize_calls, 1);

@@ -199,7 +199,7 @@ pub fn ft_stage_bucket(played_ft_hand: bool, ft_table_size: Option<i32>) -> FtSt
 #[cfg(test)]
 mod tests {
     use super::{
-        FEATURE_VERSION, GG_MBR_FT_MAX_PLAYERS, FeatureGrain, FeatureTableFamily, FtStageBucket,
+        FEATURE_VERSION, FeatureGrain, FeatureTableFamily, FtStageBucket, GG_MBR_FT_MAX_PLAYERS,
         feature_registry, ft_stage_bucket,
     };
 

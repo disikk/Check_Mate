@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { formatTimezonePreview } from '../services/mockUserTimezone'
 
 import {
   createBundleUpload,
@@ -50,7 +51,7 @@ const REAL_UPLOAD_EVENTS = [
   },
 ]
 
-export default function UploadHandsPage() {
+export default function UploadHandsPage({ timezoneName, onOpenSettings }) {
   const inputRef = useRef(null)
   const socketDisposeRef = useRef(null)
 
@@ -144,7 +145,7 @@ export default function UploadHandsPage() {
     void beginUpload(Array.from(event.dataTransfer.files ?? []))
   }
 
-  const isBusy = batchState.status === 'queued' || batchState.status === 'processing'
+  const timezonePreview = timezoneName ? formatTimezonePreview(timezoneName) : null
 
   return (
     <div className="page-shell">
@@ -171,8 +172,54 @@ export default function UploadHandsPage() {
             <span>Сессия</span>
             <strong>{sessionInfo?.player_screen_name ?? 'Stub session'}</strong>
           </div>
+          <div className="page-stat-pill">
+            <span>GG timezone</span>
+            <strong>{timezoneName ?? 'Не выбрано'}</strong>
+          </div>
         </div>
       </section>
+
+      {!timezoneName && (
+        <section className="bento-card upload-timezone-banner warning" role="status">
+          <div>
+            <div className="upload-timezone-banner-title">
+              Таймзона для GG импорта пока не выбрана
+            </div>
+            <p className="upload-timezone-banner-text">
+              Загрузка не блокируется, но без настройки профиля backend не сможет честно
+              посчитать canonical UTC и часовые агрегаты.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="action-btn action-btn-secondary"
+            onClick={onOpenSettings}
+          >
+            Открыть Settings
+          </button>
+        </section>
+      )}
+
+      {timezoneName && (
+        <section className="bento-card upload-timezone-banner success" role="status">
+          <div>
+            <div className="upload-timezone-banner-title">
+              UTC и часовые агрегаты будут доступны
+            </div>
+            <p className="upload-timezone-banner-text">
+              Текущая mock-настройка: <strong>{timezoneName}</strong>
+              {timezonePreview ? ` · ${timezonePreview}` : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="action-btn action-btn-secondary"
+            onClick={onOpenSettings}
+          >
+            Изменить таймзону
+          </button>
+        </section>
+      )}
 
       <div className="upload-top-grid">
         <section

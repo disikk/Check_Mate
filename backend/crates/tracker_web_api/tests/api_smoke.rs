@@ -42,9 +42,8 @@ fn apply_all_migrations(client: &mut PgClient) {
     paths.sort();
 
     for path in paths {
-        let sql = fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!("failed to read migration {}: {error}", path.display())
-        });
+        let sql = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read migration {}: {error}", path.display()));
         client
             .batch_execute(&sql)
             .unwrap_or_else(|error| panic!("failed to apply {}: {error}", path.display()));
@@ -157,25 +156,29 @@ async fn session_upload_and_snapshot_endpoints_work_on_real_backend_contract() {
     assert_eq!(session_response.status(), 200);
     let session_json: Value = session_response.json().await.unwrap();
     assert_eq!(
-        session_json.get("organization_name").and_then(Value::as_str),
+        session_json
+            .get("organization_name")
+            .and_then(Value::as_str),
         Some(config.session_seed.organization_name.as_str())
     );
     assert_eq!(
-        session_json.get("player_screen_name").and_then(Value::as_str),
+        session_json
+            .get("player_screen_name")
+            .and_then(Value::as_str),
         Some(config.session_seed.player_screen_name.as_str())
     );
 
-    let ts_path = fixture_path("fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt");
+    let ts_path = fixture_path(
+        "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+    );
     let ts_bytes = fs::read(&ts_path).unwrap();
     let ts_filename = ts_path.file_name().unwrap().to_string_lossy().to_string();
     let upload_response = http
         .post(format!("{base_url}/api/ingest/bundles"))
-        .multipart(
-            reqwest::multipart::Form::new().part(
-                "files",
-                reqwest::multipart::Part::bytes(ts_bytes).file_name(ts_filename.clone()),
-            ),
-        )
+        .multipart(reqwest::multipart::Form::new().part(
+            "files",
+            reqwest::multipart::Part::bytes(ts_bytes).file_name(ts_filename.clone()),
+        ))
         .send()
         .await
         .unwrap();
@@ -188,7 +191,10 @@ async fn session_upload_and_snapshot_endpoints_work_on_real_backend_contract() {
         .expect("bundle_id must exist")
         .to_string();
     let snapshot = upload_json.get("snapshot").expect("snapshot must exist");
-    assert_eq!(snapshot.get("status").and_then(Value::as_str), Some("queued"));
+    assert_eq!(
+        snapshot.get("status").and_then(Value::as_str),
+        Some("queued")
+    );
     assert_eq!(snapshot.get("total_files").and_then(Value::as_i64), Some(1));
     assert_eq!(
         snapshot
@@ -219,8 +225,14 @@ async fn session_upload_and_snapshot_endpoints_work_on_real_backend_contract() {
         .unwrap();
     assert_eq!(snapshot_response.status(), 200);
     let snapshot_json: Value = snapshot_response.json().await.unwrap();
-    assert_eq!(snapshot_json.get("bundle_id").and_then(Value::as_str), Some(bundle_id.as_str()));
-    assert_eq!(snapshot_json.get("total_files").and_then(Value::as_i64), Some(1));
+    assert_eq!(
+        snapshot_json.get("bundle_id").and_then(Value::as_str),
+        Some(bundle_id.as_str())
+    );
+    assert_eq!(
+        snapshot_json.get("total_files").and_then(Value::as_i64),
+        Some(1)
+    );
 
     handle.abort();
     let _ = fs::remove_dir_all(spool_dir);
@@ -244,7 +256,9 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
     let (base_url, handle) = spawn_test_server(config).await;
     let http = Client::new();
 
-    let ts_path = fixture_path("fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt");
+    let ts_path = fixture_path(
+        "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+    );
     let ts_bytes = fs::read(&ts_path).unwrap();
     let ts_name = ts_path.file_name().unwrap().to_string_lossy().to_string();
 
@@ -264,12 +278,10 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
 
     let upload_response = http
         .post(format!("{base_url}/api/ingest/bundles"))
-        .multipart(
-            reqwest::multipart::Form::new().part(
-                "files",
-                reqwest::multipart::Part::bytes(zip_bytes).file_name("bundle.zip"),
-            ),
-        )
+        .multipart(reqwest::multipart::Form::new().part(
+            "files",
+            reqwest::multipart::Part::bytes(zip_bytes).file_name("bundle.zip"),
+        ))
         .send()
         .await
         .unwrap();
@@ -287,8 +299,12 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
     );
     let (mut ws_stream, _) = connect_async(ws_url).await.unwrap();
     let initial_message = ws_stream.next().await.unwrap().unwrap();
-    let initial_json: Value = serde_json::from_str(initial_message.into_text().unwrap().as_str()).unwrap();
-    assert_eq!(initial_json.get("type").and_then(Value::as_str), Some("bundle_snapshot"));
+    let initial_json: Value =
+        serde_json::from_str(initial_message.into_text().unwrap().as_str()).unwrap();
+    assert_eq!(
+        initial_json.get("type").and_then(Value::as_str),
+        Some("bundle_snapshot")
+    );
     assert_eq!(
         initial_json
             .get("data")

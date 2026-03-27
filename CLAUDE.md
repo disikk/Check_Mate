@@ -123,18 +123,23 @@ Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уж
 - Current local smoke import guarantees:
   - TS -> deduped `import.source_files`, synthetic `import.source_file_members`, `import.import_jobs`, `import.job_attempts`, `import.file_fragments`, `core.tournaments`, `core.tournament_entries`;
   - HH -> deduped `import.source_files`, synthetic `import.source_file_members`, `import.import_jobs`, `import.job_attempts`, `import.file_fragments`, `core.hands`, `core.hand_seats`, `core.hand_hole_cards`, `core.hand_actions`, `core.hand_boards`, `core.hand_showdowns`, `core.hand_pots`, `core.hand_pot_eligibility`, `core.hand_pot_contributions`, `core.hand_pot_winners`, `core.hand_returns`, `core.parse_issues`, `derived.hand_state_resolutions`, `derived.hand_eliminations`, `derived.mbr_stage_resolution`, `derived.mbr_tournament_ft_helper`;
-  - post-import runtime refresh -> `analytics.player_hand_bool_features`, `analytics.player_hand_num_features`, `analytics.player_hand_enum_features` for the current dev player and runtime version.
+  - post-import runtime refresh -> `analytics.player_hand_bool_features`, `analytics.player_hand_num_features`, `analytics.player_hand_enum_features` for the imported `player_profile_id` and current runtime version.
 - `parser_worker import-local` is now a thin local shell over `tracker_ingest_runtime`: it enqueues a one-file local bundle, runs the local worker loop to terminal bundle status, executes exact TS/HH persistence inside file jobs, and runs one bundle-level materialization refresh in finalize stage.
 - Current persistence behavior:
   - `backend/migrations/0004_exact_core_schema_v2.sql` now hardens the exact-core schema with `core.player_aliases`, `import.source_file_members`, `import.job_attempts`, `analytics.feature_catalog`, `analytics.stat_catalog`, `analytics.stat_dependencies`, and `analytics.materialization_policies`;
   - `backend/migrations/0021_ingest_runtime_runner.sql` adds the ingest runtime contract: `import.ingest_bundles`, `import.ingest_bundle_files`, richer job/attempt statuses, `job_kind`, bundle/file links, claim metadata, and finalize/file-job uniqueness guards;
+  - `backend/migrations/0022_web_upload_member_ingest.sql` adds member-aware ingest bundle/file/event persistence for the real upload pipeline;
+  - `backend/migrations/0023_file_fragments_member_uniqueness.sql` switches fragment uniqueness to `(source_file_member_id, fragment_index)` for member-safe upserts;
+  - `backend/migrations/0024_user_timezone_and_gg_timestamp_contract.sql` adds `auth.users.timezone_name` and strict GG timestamp provenance values (`gg_user_timezone | gg_user_timezone_missing`);
   - `backend/seeds/0001_reference_data.sql` now seeds the minimal analytics catalog slice required by the current runtime materializer and seed stat query layer;
   - `core.hands` is upserted by `(player_profile_id, external_hand_id)`;
   - `import.source_files` is deduped by `(player_profile_id, room, file_kind, sha256)`, `import.file_fragments` by `(source_file_id, sha256)`, `import.source_file_members` by both `(source_file_id, member_index)` and `(source_file_id, sha256)`, and `import.job_attempts` by `(import_job_id, attempt_no)`;
   - flat local HH/TS imports now always materialize one synthetic `import.source_file_members` row so the member contract is exercised before ZIP/archive ingestion exists;
-  - dev bootstrap/import now ensures a primary `core.player_aliases` row for `Hero` and uses alias lookup when attaching the Hero seat to `core.hand_seats.player_profile_id`;
+  - `parser_worker import-local` now requires explicit `--player-profile-id <uuid>`; production import context is derived from `core.player_profiles` and no longer auto-creates `Hero` / `Check Mate Dev Org`;
+  - seat ownership is resolved only when the imported profile matches the GG seat by `screen_name` or one of its `core.player_aliases`; non-matching seats stay unowned instead of creating synthetic profiles;
   - `core.tournaments` and `core.hands` now persist `*_raw`, `*_local`, and `*_tz_provenance` alongside nullable canonical UTC timestamps;
-  - current GG MBR timestamp policy is conservative: HH/TS text timestamps are persisted as raw text plus parsed local naive timestamps with `tz_provenance = gg_text_without_timezone`, while canonical UTC fields remain `NULL` until an exact timezone source exists;
+  - for GG HH/TS imports, owner-user `auth.users.timezone_name` is the authoritative IANA timezone: canonical UTC is materialized with `tz_provenance = gg_user_timezone` when present, otherwise UTC stays `NULL` with `tz_provenance = gg_user_timezone_missing`;
+  - `parser_worker set-user-timezone --user-id <uuid> --timezone <iana>` and `clear-user-timezone --user-id <uuid>` recompute historical GG `core.tournaments.started_at` / `core.hands.hand_started_at` for all profiles owned by that user and refresh runtime materializations in the same backend flow;
   - child canonical rows are replaced for the current hand before re-insert, so repeated local imports stay idempotent at the hand layer.
 - Current normalized persistence behavior:
   - `normalize_hand` now runs through an internal replay ledger instead of relying on `collect` line order;
@@ -368,7 +373,7 @@ Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уж
   - migration `0017_tournament_hand_order.sql` adds the column, index, and backfills existing data;
   - `parser_worker import-local` now computes `tournament_hand_order` after persisting all hands for a tournament;
   - all stat-critical SQL in `queries.rs` now uses `tournament_hand_order` instead of raw `hand_started_at_local` string comparison;
-  - Rust-side import ordering (boundary candidates, FT helper) still uses string sort at import time, which is then captured as the integer order.
+  - importer-side FT helper ordering now also consumes persisted `tournament_hand_order`, so downstream FT chronology no longer depends on raw local timestamp strings.
 - Synthetic fixture suite (F3-T1):
   - 11 new unit tests added across `parser_worker`, `mbr_stats_runtime/registry`, and `mbr_stats_runtime/split_bounty`;
   - covers: no-FT tournament, single-candidate exact boundary, multi-seat-count stage predicates, incomplete FT start, deepest FT tracking, split bounty zero/full/half/ugly-cent edge cases, FT stage bucket exhaustive boundaries.
@@ -381,7 +386,7 @@ Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уж
   - `backend/scripts/generate_uncertainty_report.sh` queries committed corpus for parse issues, resolution states, boundary ambiguities, FT helper coverage, and hand order coverage;
   - generates `docs/runtime_uncertainty_report.md` with structured counts and known limitations.
 - Current intentional limitation:
-  - canonical UTC timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly, even though raw/local/provenance fields are now persisted;
+  - canonical UTC for GG is exact only when the owner user has an IANA timezone configured; without that setting, raw/local timestamps are still persisted but canonical UTC remains `NULL`;
   - date-range filters and session filters are still intentionally absent from the runtime query contract because timestamp normalization and session modeling are not exact yet;
   - street-strength exact descriptors are now materialized into runtime analytics rows, and the generic query runtime already supports filtering on `is_nut_hand` / `is_nut_draw`; HTTP/API transport over that runtime still remains a later phase;
   - the public `best | good | weak | trash` street buckets are heuristic runtime/UI helpers only and must not be treated as solver truth or persisted exact facts;
@@ -391,7 +396,7 @@ Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уж
   - boundary resolution, tournament-grain FT helper data, and formal hand-grain stage predicates are now persisted and fully consumed by the query-time canonical stat engine; stat values themselves are still never materialized into analytics tables;
   - `big_ko` is decoded in a pure runtime helper and surfaced only through query-time canonical stats; it is not materialized into analytics feature rows;
   - economics reference data currently covers the buy-ins listed on the official GG public payouts page; adding future buy-ins still requires explicit ref-table updates;
-  - timezone-normalized timestamps and the final stat-layer schema remain explicitly out of scope for the current phase.
+  - timezone-normalized timestamps for non-GG sources and the final stat-layer schema remain explicitly out of scope for the current phase.
 - Cross-machine continuation:
   - committed handoff lives in `docs/architecture/2026-03-23-mbr-handoff.md`;
   - `docs/plans` and `docs/progress` are tracked workflow artifacts in this repo;

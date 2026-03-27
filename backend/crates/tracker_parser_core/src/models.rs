@@ -352,7 +352,13 @@ impl ParseIssue {
         raw_line: Option<String>,
         payload: Option<ParseIssuePayload>,
     ) -> Self {
-        Self::new(ParseIssueSeverity::Warning, code, message, raw_line, payload)
+        Self::new(
+            ParseIssueSeverity::Warning,
+            code,
+            message,
+            raw_line,
+            payload,
+        )
     }
 
     pub fn error(

@@ -111,7 +111,10 @@ fn opponent_group_requires_one_known_opponent_to_satisfy_full_group() {
                 seat_no: 5,
                 street: "flop".to_string(),
                 is_hero: false,
-                enum_values: BTreeMap::from([("made_hand_category".to_string(), "none".to_string())]),
+                enum_values: BTreeMap::from([(
+                    "made_hand_category".to_string(),
+                    "none".to_string(),
+                )]),
                 ..StreetFilterRow::default()
             },
             StreetFilterRow {
@@ -182,13 +185,12 @@ fn rejects_unsupported_features_and_invalid_comparisons_hard() {
         ..HandFilterContext::default()
     };
 
-    let unsupported = request(
-        vec![hand_bool("imaginary_feature", true)],
-        vec![],
-    );
+    let unsupported = request(vec![hand_bool("imaginary_feature", true)], vec![]);
     assert_eq!(
         evaluate_hand_query_request(&context, &unsupported),
-        Err(FilterError::UnsupportedFeature("imaginary_feature".to_string()))
+        Err(FilterError::UnsupportedFeature(
+            "imaginary_feature".to_string()
+        ))
     );
 
     let invalid_comparison = request(
