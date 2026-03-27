@@ -375,12 +375,12 @@ fn load_tournament_ko_event_facts(
         "SELECT
             h.tournament_id,
             COUNT(*) FILTER (
-                WHERE he.hero_involved
-                  AND he.certainty_state = 'exact'
+                WHERE hero_winner.hand_id IS NOT NULL
+                  AND he.ko_certainty_state = 'exact'
             )::bigint AS total_exact_ko_event_count,
             COUNT(*) FILTER (
-                WHERE he.hero_involved
-                  AND he.certainty_state = 'exact'
+                WHERE hero_winner.hand_id IS NOT NULL
+                  AND he.ko_certainty_state = 'exact'
                   AND msr.is_stage_6_9
             )::bigint AS early_ft_exact_ko_event_count
          FROM core.hands h
@@ -389,6 +389,10 @@ fn load_tournament_ko_event_facts(
           AND msr.player_profile_id = h.player_profile_id
          LEFT JOIN derived.hand_eliminations he
            ON he.hand_id = h.id
+         LEFT JOIN core.hand_seats hero_winner
+           ON hero_winner.hand_id = he.hand_id
+          AND hero_winner.is_hero IS TRUE
+          AND hero_winner.player_name = ANY(he.ko_winner_set)
          WHERE h.organization_id = $1
            AND h.player_profile_id = $2
          GROUP BY h.tournament_id",
@@ -456,43 +460,43 @@ fn load_stage_event_facts(
         "SELECT
             h.tournament_id,
             COUNT(*) FILTER (
-                WHERE he.certainty_state = 'exact'
+                WHERE he.elimination_certainty_state = 'exact'
                   AND eliminated_seat.is_hero IS TRUE
                   AND msr.is_stage_6_9
             )::bigint AS early_ft_bust_count,
             COUNT(*) FILTER (
-                WHERE he.hero_involved IS TRUE
-                  AND he.certainty_state = 'exact'
+                WHERE hero_winner.hand_id IS NOT NULL
+                  AND he.ko_certainty_state = 'exact'
                   AND msr.ft_players_remaining_exact IN (2, 3)
             )::bigint AS ko_stage_2_3_event_count,
             COUNT(*) FILTER (
-                WHERE he.hero_involved IS TRUE
-                  AND he.certainty_state = 'exact'
+                WHERE hero_winner.hand_id IS NOT NULL
+                  AND he.ko_certainty_state = 'exact'
                   AND msr.is_stage_3_4
             )::bigint AS ko_stage_3_4_event_count,
             COUNT(*) FILTER (
-                WHERE he.hero_involved IS TRUE
-                  AND he.certainty_state = 'exact'
+                WHERE hero_winner.hand_id IS NOT NULL
+                  AND he.ko_certainty_state = 'exact'
                   AND msr.is_stage_4_5
             )::bigint AS ko_stage_4_5_event_count,
             COUNT(*) FILTER (
-                WHERE he.hero_involved IS TRUE
-                  AND he.certainty_state = 'exact'
+                WHERE hero_winner.hand_id IS NOT NULL
+                  AND he.ko_certainty_state = 'exact'
                   AND msr.is_stage_5_6
             )::bigint AS ko_stage_5_6_event_count,
             COUNT(*) FILTER (
-                WHERE he.hero_involved IS TRUE
-                  AND he.certainty_state = 'exact'
+                WHERE hero_winner.hand_id IS NOT NULL
+                  AND he.ko_certainty_state = 'exact'
                   AND msr.is_stage_6_9
             )::bigint AS ko_stage_6_9_event_count,
             COUNT(*) FILTER (
-                WHERE he.hero_involved IS TRUE
-                  AND he.certainty_state = 'exact'
+                WHERE hero_winner.hand_id IS NOT NULL
+                  AND he.ko_certainty_state = 'exact'
                   AND msr.ft_players_remaining_exact IN (7, 8, 9)
             )::bigint AS ko_stage_7_9_event_count,
             COUNT(*) FILTER (
-                WHERE he.hero_involved IS TRUE
-                  AND he.certainty_state = 'exact'
+                WHERE hero_winner.hand_id IS NOT NULL
+                  AND he.ko_certainty_state = 'exact'
                   AND helper.first_ft_hand_id IS NOT NULL
                   AND h.tournament_hand_order IS NOT NULL
                   AND COALESCE(msr.is_boundary_hand, FALSE) IS FALSE
@@ -511,6 +515,10 @@ fn load_stage_event_facts(
          LEFT JOIN core.hand_seats eliminated_seat
            ON eliminated_seat.hand_id = he.hand_id
           AND eliminated_seat.seat_no = he.eliminated_seat_no
+         LEFT JOIN core.hand_seats hero_winner
+           ON hero_winner.hand_id = he.hand_id
+          AND hero_winner.is_hero IS TRUE
+          AND hero_winner.player_name = ANY(he.ko_winner_set)
          LEFT JOIN derived.mbr_tournament_ft_helper helper
            ON helper.tournament_id = h.tournament_id
           AND helper.player_profile_id = h.player_profile_id
@@ -744,7 +752,7 @@ fn load_tournament_ko_money_event_facts(
     let rows = client.query(
         "SELECT
             h.tournament_id,
-            (COALESCE(he.hero_ko_share_total, he.hero_share_fraction) * 1000000)::bigint,
+            (hero_share.hero_share_fraction * 1000000)::bigint,
             COALESCE(msr.ft_players_remaining_exact IN (2, 3), FALSE),
             COALESCE(msr.is_stage_3_4, FALSE),
             COALESCE(msr.is_stage_4_5, FALSE),
@@ -754,15 +762,23 @@ fn load_tournament_ko_money_event_facts(
          FROM core.hands h
          INNER JOIN derived.hand_eliminations he
            ON he.hand_id = h.id
+         INNER JOIN core.hand_seats hero_seat
+           ON hero_seat.hand_id = h.id
+          AND hero_seat.is_hero IS TRUE
+         INNER JOIN LATERAL (
+            SELECT (share->>'share_fraction')::numeric AS hero_share_fraction
+            FROM jsonb_array_elements(he.ko_share_fraction_by_winner) share
+            WHERE (share->>'seat_no')::int = hero_seat.seat_no
+            LIMIT 1
+         ) hero_share
+           ON TRUE
          LEFT JOIN derived.mbr_stage_resolution msr
            ON msr.hand_id = h.id
           AND msr.player_profile_id = h.player_profile_id
          WHERE h.organization_id = $1
            AND h.player_profile_id = $2
-           AND he.hero_involved IS TRUE
-           AND he.certainty_state = 'exact'
-           AND COALESCE(he.hero_ko_share_total, he.hero_share_fraction) IS NOT NULL
-           AND COALESCE(he.hero_ko_share_total, he.hero_share_fraction) > 0",
+           AND he.ko_certainty_state = 'exact'
+           AND hero_share.hero_share_fraction > 0",
         &[&organization_id, &player_profile_id],
     )?;
 
@@ -826,9 +842,14 @@ fn load_pre_ft_chip_facts(
             INNER JOIN core.hand_seats hero
               ON hero.hand_id = h.id
              AND hero.is_hero IS TRUE
-            INNER JOIN derived.hand_state_resolutions resolution
-              ON resolution.hand_id = h.id
-             AND resolution.resolution_version = 'gg_mbr_v1'
+            INNER JOIN LATERAL (
+                SELECT resolution.final_stacks
+                FROM derived.hand_state_resolutions resolution
+                WHERE resolution.hand_id = h.id
+                ORDER BY resolution.created_at DESC
+                LIMIT 1
+            ) AS resolution
+              ON TRUE
             LEFT JOIN derived.mbr_stage_resolution msr
               ON msr.hand_id = h.id
              AND msr.player_profile_id = h.player_profile_id

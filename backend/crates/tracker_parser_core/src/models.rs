@@ -306,6 +306,146 @@ pub struct PotWinner {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettlementCollectEvent {
+    pub seq: usize,
+    pub street: Street,
+    pub seat_no: u8,
+    pub player_name: String,
+    pub amount: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettlementShowHand {
+    pub seq: usize,
+    pub street: Street,
+    pub seat_no: u8,
+    pub player_name: String,
+    pub cards: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettlementSummaryOutcome {
+    pub seat_no: u8,
+    pub player_name: String,
+    pub position_marker: Option<SummarySeatMarker>,
+    pub outcome_kind: SummarySeatOutcomeKind,
+    pub folded_at: Option<Street>,
+    pub shown_cards: Option<Vec<String>>,
+    pub won_amount: Option<i64>,
+    pub hand_class: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandSettlementEvidence {
+    pub collect_events_seen: Vec<SettlementCollectEvent>,
+    pub summary_outcomes_seen: Vec<SettlementSummaryOutcome>,
+    pub show_hands_seen: Vec<SettlementShowHand>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettlementAllocationSource {
+    SingleContender,
+    ShowdownRank,
+    SinglePotCollectedAmounts,
+    SingleCollectorFallback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettlementShare {
+    pub seat_no: u8,
+    pub player_name: String,
+    pub share_amount: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettlementAllocation {
+    pub source: SettlementAllocationSource,
+    pub shares: Vec<SettlementShare>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum PotSettlementIssue {
+    AmbiguousHiddenShowdown { eligible_players: Vec<String> },
+    AmbiguousPartialReveal { eligible_players: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum SettlementIssue {
+    CollectEventsWithoutPots,
+    MissingCollections,
+    MultipleExactAllocations,
+    CollectConflictNoExactSettlementMatchesCollectedAmounts,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettlementPot {
+    pub pot_no: u8,
+    pub amount: i64,
+    pub is_main: bool,
+    pub contributions: Vec<PotContribution>,
+    pub eligibilities: Vec<PotEligibility>,
+    pub contenders: Vec<String>,
+    pub candidate_allocations: Vec<SettlementAllocation>,
+    pub selected_allocation: Option<SettlementAllocation>,
+    pub issues: Vec<PotSettlementIssue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandSettlement {
+    pub certainty_state: CertaintyState,
+    pub issues: Vec<SettlementIssue>,
+    pub evidence: HandSettlementEvidence,
+    pub pots: Vec<SettlementPot>,
+}
+
+impl HandSettlement {
+    pub fn final_pots(&self) -> Vec<FinalPot> {
+        self.pots
+            .iter()
+            .map(|pot| FinalPot {
+                pot_no: pot.pot_no,
+                amount: pot.amount,
+                is_main: pot.is_main,
+            })
+            .collect()
+    }
+
+    pub fn pot_contributions(&self) -> Vec<PotContribution> {
+        self.pots
+            .iter()
+            .flat_map(|pot| pot.contributions.iter().cloned())
+            .collect()
+    }
+
+    pub fn pot_eligibilities(&self) -> Vec<PotEligibility> {
+        self.pots
+            .iter()
+            .flat_map(|pot| pot.eligibilities.iter().cloned())
+            .collect()
+    }
+
+    pub fn pot_winners(&self) -> Vec<PotWinner> {
+        self.pots
+            .iter()
+            .flat_map(|pot| {
+                pot.selected_allocation
+                    .iter()
+                    .flat_map(|allocation| allocation.shares.iter())
+                    .map(|share| PotWinner {
+                        pot_no: pot.pot_no,
+                        seat_no: share.seat_no,
+                        player_name: share.player_name.clone(),
+                        share_amount: share.share_amount,
+                    })
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HandReturn {
     pub seat_no: u8,
     pub player_name: String,
@@ -336,35 +476,130 @@ pub struct HandOutcomeActual {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct HandEliminationKoShare {
+    pub seat_no: u8,
+    pub player_name: String,
+    pub share_fraction: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HandElimination {
     pub eliminated_seat_no: u8,
     pub eliminated_player_name: String,
-    /// Все pot'ы, в которые busted player внёсся (диагностический след).
-    pub resolved_by_pot_nos: Vec<u8>,
-    /// Pot, по которому считается KO-credit: highest pot_no из resolved_by_pot_nos.
-    /// Правило GG: bounty делится между winners последнего side pot, содержащего chips busted player.
-    pub ko_credit_pot_no: Option<u8>,
-    /// Winners именно ko_credit_pot — основание для KO-credit attribution.
-    pub ko_involved_winners: Vec<String>,
-    pub hero_ko_share_total: Option<f64>,
-    pub joint_ko: bool,
-    /// Backward-compat: single-pot KO → pot_no; multi-pot → None.
-    pub resolved_by_pot_no: Option<u8>,
-    pub ko_involved_winner_count: u8,
-    pub hero_involved: bool,
-    pub hero_share_fraction: Option<f64>,
-    pub is_split_ko: bool,
-    pub split_n: Option<u8>,
-    pub is_sidepot_based: bool,
-    pub certainty_state: CertaintyState,
+    pub pots_participated_by_busted: Vec<u8>,
+    pub pots_causing_bust: Vec<u8>,
+    pub last_busting_pot_no: Option<u8>,
+    pub ko_winner_set: Vec<String>,
+    pub ko_share_fraction_by_winner: Vec<HandEliminationKoShare>,
+    pub elimination_certainty_state: CertaintyState,
+    pub ko_certainty_state: CertaintyState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct NormalizationInvariants {
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum InvariantIssue {
+    ChipConservationMismatch {
+        starting_sum: i64,
+        final_sum: i64,
+    },
+    PotConservationMismatch {
+        committed_total: i64,
+        collected_total: i64,
+        rake_amount: i64,
+    },
+    SummaryTotalPotMismatch {
+        summary_total_pot: i64,
+        collected_plus_rake: i64,
+    },
+    PrematureStreetClose {
+        street: Street,
+        pending_players: Vec<String>,
+    },
+    IllegalActorOrder {
+        street: Street,
+        seq: usize,
+        expected_actor: String,
+        actual_actor: String,
+    },
+    IllegalSmallBlindActor {
+        seq: usize,
+        expected_actor: String,
+        actual_actor: String,
+    },
+    IllegalBigBlindActor {
+        seq: usize,
+        expected_actor: String,
+        actual_actor: String,
+    },
+    UncalledReturnActorMismatch {
+        seq: usize,
+        player_name: String,
+    },
+    UncalledReturnAmountMismatch {
+        seq: usize,
+        player_name: String,
+        allowed_refund: i64,
+        actual_refund: i64,
+    },
+    IllegalCheck {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        required_call: i64,
+    },
+    IllegalCallAmount {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        expected_call: i64,
+        actual_amount: i64,
+    },
+    UndercallInconsistency {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        expected_call: i64,
+        actual_amount: i64,
+    },
+    OvercallInconsistency {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        expected_call: i64,
+        actual_amount: i64,
+    },
+    IllegalBetFacingOpenBet {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        required_call: i64,
+    },
+    ActionNotReopenedAfterShortAllIn {
+        street: Street,
+        seq: usize,
+        player_name: String,
+    },
+    IncompleteRaiseToCall {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        current_to_call: i64,
+        attempted_to: i64,
+    },
+    IncompleteRaiseSize {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        min_raise: i64,
+        actual_raise: i64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandInvariants {
     pub chip_conservation_ok: bool,
     pub pot_conservation_ok: bool,
-    pub invariant_errors: Vec<String>,
-    pub uncertain_reason_codes: Vec<String>,
+    pub issues: Vec<InvariantIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -372,13 +607,10 @@ pub struct NormalizedHand {
     pub hand_id: String,
     pub player_order: Vec<String>,
     pub snapshot: Option<ResolutionNodeSnapshot>,
-    pub final_pots: Vec<FinalPot>,
-    pub pot_contributions: Vec<PotContribution>,
-    pub pot_eligibilities: Vec<PotEligibility>,
-    pub pot_winners: Vec<PotWinner>,
+    pub settlement: HandSettlement,
     pub returns: Vec<HandReturn>,
     pub actual: HandOutcomeActual,
     pub eliminations: Vec<HandElimination>,
-    pub invariants: NormalizationInvariants,
+    pub invariants: HandInvariants,
     pub warnings: Vec<String>,
 }

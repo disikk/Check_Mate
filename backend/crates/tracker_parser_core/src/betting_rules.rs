@@ -2,11 +2,15 @@ use std::collections::BTreeMap;
 
 use crate::{
     ParserError,
-    models::{ActionType, CanonicalParsedHand, HandActionEvent, PlayerStatus, Street},
+    models::{
+        ActionType, CanonicalParsedHand, HandActionEvent, InvariantIssue, PlayerStatus, Street,
+    },
     positions::{PositionSeatInput, compute_position_facts},
 };
 
-pub fn evaluate_action_legality(hand: &CanonicalParsedHand) -> Result<Vec<String>, ParserError> {
+pub fn evaluate_action_legality(
+    hand: &CanonicalParsedHand,
+) -> Result<Vec<InvariantIssue>, ParserError> {
     let mut engine = LegalityEngine::new(hand)?;
     for event in &hand.actions {
         engine.apply_event(event)?;
@@ -34,7 +38,7 @@ struct LegalityEngine {
     action_reopened: bool,
     street_initialized: bool,
     raise_reopened_for: BTreeMap<String, bool>,
-    issues: Vec<String>,
+    issues: Vec<InvariantIssue>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,12 +193,10 @@ impl LegalityEngine {
             && !self.eligible_to_act.is_empty()
         {
             self.push_issue(
-                "premature_street_close",
-                format!(
-                    "street={} pending={}",
-                    street_code(self.current_street),
-                    self.eligible_to_act.join(",")
-                ),
+                InvariantIssue::PrematureStreetClose {
+                    street: self.current_street,
+                    pending_players: self.eligible_to_act.clone(),
+                },
             );
         }
 
@@ -242,15 +244,12 @@ impl LegalityEngine {
         };
         if expected_actor != player_name {
             self.push_issue(
-                "illegal_actor_order",
-                format!(
-                    "street={} seq={} expected={} actual={} raw_line={}",
-                    street_code(event.street),
-                    event.seq,
-                    expected_actor,
-                    player_name,
-                    event.raw_line
-                ),
+                InvariantIssue::IllegalActorOrder {
+                    street: event.street,
+                    seq: event.seq,
+                    expected_actor: expected_actor.clone(),
+                    actual_actor: player_name.to_string(),
+                },
             );
         }
     }
@@ -267,11 +266,11 @@ impl LegalityEngine {
                     && expected_actor != player_name
                 {
                     self.push_issue(
-                        "illegal_small_blind_actor",
-                        format!(
-                            "seq={} expected={} actual={} raw_line={}",
-                            event.seq, expected_actor, player_name, event.raw_line
-                        ),
+                        InvariantIssue::IllegalSmallBlindActor {
+                            seq: event.seq,
+                            expected_actor: expected_actor.to_string(),
+                            actual_actor: player_name.to_string(),
+                        },
                     );
                 }
             }
@@ -280,11 +279,11 @@ impl LegalityEngine {
                     && expected_actor != player_name
                 {
                     self.push_issue(
-                        "illegal_big_blind_actor",
-                        format!(
-                            "seq={} expected={} actual={} raw_line={}",
-                            event.seq, expected_actor, player_name, event.raw_line
-                        ),
+                        InvariantIssue::IllegalBigBlindActor {
+                            seq: event.seq,
+                            expected_actor: expected_actor.to_string(),
+                            actual_actor: player_name.to_string(),
+                        },
                     );
                 }
             }
@@ -301,19 +300,19 @@ impl LegalityEngine {
 
                 if overage == 0 {
                     self.push_issue(
-                        "uncalled_return_actor_mismatch",
-                        format!(
-                            "seq={} player={} raw_line={}",
-                            event.seq, player_name, event.raw_line
-                        ),
+                        InvariantIssue::UncalledReturnActorMismatch {
+                            seq: event.seq,
+                            player_name: player_name.to_string(),
+                        },
                     );
                 } else if refund > overage {
                     self.push_issue(
-                        "uncalled_return_amount_mismatch",
-                        format!(
-                            "seq={} player={} allowed_refund={} actual_refund={} raw_line={}",
-                            event.seq, player_name, overage, refund, event.raw_line
-                        ),
+                        InvariantIssue::UncalledReturnAmountMismatch {
+                            seq: event.seq,
+                            player_name: player_name.to_string(),
+                            allowed_refund: overage,
+                            actual_refund: refund,
+                        },
                     );
                 }
             }
@@ -344,15 +343,12 @@ impl LegalityEngine {
             ActionType::Check => {
                 if required_call != 0 {
                     self.push_issue(
-                        "illegal_check",
-                        format!(
-                            "street={} seq={} player={} required_call={} raw_line={}",
-                            street_code(event.street),
-                            event.seq,
-                            player_name,
+                        InvariantIssue::IllegalCheck {
+                            street: event.street,
+                            seq: event.seq,
+                            player_name: player_name.to_string(),
                             required_call,
-                            event.raw_line
-                        ),
+                        },
                     );
                 }
                 Ok(AggressionKind::None)
@@ -362,41 +358,33 @@ impl LegalityEngine {
                 let expected_call = required_call.min(before_stack);
                 if required_call == 0 {
                     self.push_issue(
-                        "illegal_call_amount",
-                        format!(
-                            "street={} seq={} player={} expected_call=0 actual={} raw_line={}",
-                            street_code(event.street),
-                            event.seq,
-                            player_name,
-                            amount,
-                            event.raw_line
-                        ),
+                        InvariantIssue::IllegalCallAmount {
+                            street: event.street,
+                            seq: event.seq,
+                            player_name: player_name.to_string(),
+                            expected_call: 0,
+                            actual_amount: amount,
+                        },
                     );
                 } else if amount < expected_call {
                     self.push_issue(
-                        "undercall_inconsistency",
-                        format!(
-                            "street={} seq={} player={} expected_call={} actual={} raw_line={}",
-                            street_code(event.street),
-                            event.seq,
-                            player_name,
+                        InvariantIssue::UndercallInconsistency {
+                            street: event.street,
+                            seq: event.seq,
+                            player_name: player_name.to_string(),
                             expected_call,
-                            amount,
-                            event.raw_line
-                        ),
+                            actual_amount: amount,
+                        },
                     );
                 } else if amount > expected_call {
                     self.push_issue(
-                        "overcall_inconsistency",
-                        format!(
-                            "street={} seq={} player={} expected_call={} actual={} raw_line={}",
-                            street_code(event.street),
-                            event.seq,
-                            player_name,
+                        InvariantIssue::OvercallInconsistency {
+                            street: event.street,
+                            seq: event.seq,
+                            player_name: player_name.to_string(),
                             expected_call,
-                            amount,
-                            event.raw_line
-                        ),
+                            actual_amount: amount,
+                        },
                     );
                 }
                 Ok(AggressionKind::None)
@@ -404,15 +392,12 @@ impl LegalityEngine {
             ActionType::Bet => {
                 if required_call != 0 {
                     self.push_issue(
-                        "illegal_bet_facing_open_bet",
-                        format!(
-                            "street={} seq={} player={} required_call={} raw_line={}",
-                            street_code(event.street),
-                            event.seq,
-                            player_name,
+                        InvariantIssue::IllegalBetFacingOpenBet {
+                            street: event.street,
+                            seq: event.seq,
+                            player_name: player_name.to_string(),
                             required_call,
-                            event.raw_line
-                        ),
+                        },
                     );
                 }
 
@@ -466,29 +451,23 @@ impl LegalityEngine {
                 .unwrap_or(true)
         {
             self.push_issue(
-                "action_not_reopened_after_short_all_in",
-                format!(
-                    "street={} seq={} player={} raw_line={}",
-                    street_code(event.street),
-                    event.seq,
-                    player_name,
-                    event.raw_line
-                ),
+                InvariantIssue::ActionNotReopenedAfterShortAllIn {
+                    street: event.street,
+                    seq: event.seq,
+                    player_name: player_name.to_string(),
+                },
             );
         }
 
         if new_to_call <= self.current_to_call {
             self.push_issue(
-                "incomplete_raise",
-                format!(
-                    "street={} seq={} player={} current_to_call={} attempted_to={} raw_line={}",
-                    street_code(event.street),
-                    event.seq,
-                    player_name,
-                    self.current_to_call,
-                    new_to_call,
-                    event.raw_line
-                ),
+                InvariantIssue::IncompleteRaiseToCall {
+                    street: event.street,
+                    seq: event.seq,
+                    player_name: player_name.to_string(),
+                    current_to_call: self.current_to_call,
+                    attempted_to: new_to_call,
+                },
             );
             return Ok(AggressionKind::None);
         }
@@ -499,16 +478,13 @@ impl LegalityEngine {
             }
 
             self.push_issue(
-                "incomplete_raise",
-                format!(
-                    "street={} seq={} player={} min_raise={} actual_raise={} raw_line={}",
-                    street_code(event.street),
-                    event.seq,
-                    player_name,
-                    self.last_full_raise_size,
-                    raise_size,
-                    event.raw_line
-                ),
+                InvariantIssue::IncompleteRaiseSize {
+                    street: event.street,
+                    seq: event.seq,
+                    player_name: player_name.to_string(),
+                    min_raise: self.last_full_raise_size,
+                    actual_raise: raise_size,
+                },
             );
             return Ok(AggressionKind::ShortAllInRaise { new_to_call });
         }
@@ -697,8 +673,8 @@ impl LegalityEngine {
             .collect()
     }
 
-    fn push_issue(&mut self, code: &str, detail: String) {
-        self.issues.push(format!("{code}: {detail}"));
+    fn push_issue(&mut self, issue: InvariantIssue) {
+        self.issues.push(issue);
     }
 
     fn contesting_player_count(&self) -> usize {
@@ -772,17 +748,6 @@ fn is_voluntary_action(action_type: ActionType) -> bool {
             | ActionType::Bet
             | ActionType::RaiseTo
     )
-}
-
-fn street_code(street: Street) -> &'static str {
-    match street {
-        Street::Preflop => "preflop",
-        Street::Flop => "flop",
-        Street::Turn => "turn",
-        Street::River => "river",
-        Street::Showdown => "showdown",
-        Street::Summary => "summary",
-    }
 }
 
 fn rotate_left(order: &[String], rotation: usize) -> Vec<String> {

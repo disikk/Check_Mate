@@ -1,0 +1,136 @@
+{
+  "cases": {
+    "false_positive_flush_turn": {
+      "hero_cards": [
+        "8h",
+        "7d"
+      ],
+      "board": [
+        "Jh",
+        "Th",
+        "2h",
+        "3h",
+        "As"
+      ],
+      "rows": [
+        {
+          "street": "flop",
+          "draw_category": "combo_draw",
+          "missed_flush_draw": false,
+          "missed_straight_draw": false
+        },
+        {
+          "street": "turn",
+          "draw_category": "none",
+          "missed_flush_draw": false,
+          "missed_straight_draw": false
+        },
+        {
+          "street": "river",
+          "draw_category": "none",
+          "missed_flush_draw": false,
+          "missed_straight_draw": true
+        }
+      ]
+    },
+    "missed_flush_persists_through_two_pair": {
+      "hero_cards": [
+        "Ah",
+        "9h"
+      ],
+      "board": [
+        "Kd",
+        "7h",
+        "2h",
+        "9c",
+        "Kc"
+      ],
+      "rows": [
+        {
+          "street": "flop",
+          "draw_category": "flush_draw",
+          "missed_flush_draw": false,
+          "missed_straight_draw": false
+        },
+        {
+          "street": "turn",
+          "draw_category": "flush_draw",
+          "missed_flush_draw": false,
+          "missed_straight_draw": false
+        },
+        {
+          "street": "river",
+          "draw_category": "none",
+          "missed_flush_draw": true,
+          "missed_straight_draw": false
+        }
+      ]
+    },
+    "ordinary_combo_draw": {
+      "hero_cards": [
+        "Jh",
+        "Th"
+      ],
+      "board": [
+        "Qh",
+        "9h",
+        "2c",
+        "4d",
+        "3s"
+      ],
+      "rows": [
+        {
+          "street": "flop",
+          "draw_category": "combo_draw",
+          "missed_flush_draw": false,
+          "missed_straight_draw": false
+        },
+        {
+          "street": "turn",
+          "draw_category": "combo_draw",
+          "missed_flush_draw": false,
+          "missed_straight_draw": false
+        },
+        {
+          "street": "river",
+          "draw_category": "none",
+          "missed_flush_draw": true,
+          "missed_straight_draw": true
+        }
+      ]
+    },
+    "runner_runner_backdoor": {
+      "hero_cards": [
+        "Ac",
+        "Kc"
+      ],
+      "board": [
+        "Qc",
+        "7h",
+        "2d",
+        "4s",
+        "3h"
+      ],
+      "rows": [
+        {
+          "street": "flop",
+          "draw_category": "backdoor_flush_only",
+          "missed_flush_draw": false,
+          "missed_straight_draw": false
+        },
+        {
+          "street": "turn",
+          "draw_category": "none",
+          "missed_flush_draw": false,
+          "missed_straight_draw": false
+        },
+        {
+          "street": "river",
+          "draw_category": "none",
+          "missed_flush_draw": false,
+          "missed_straight_draw": false
+        }
+      ]
+    }
+  }
+}

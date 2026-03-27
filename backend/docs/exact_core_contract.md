@@ -2,7 +2,7 @@
 
 ## Статус
 
-Этот документ freeze-ит текущий exact-core контракт `tracker_parser_core` по состоянию на 2026-03-25. Он описывает уже существующее поведение parser/normalizer/pot-resolution слоя и не считается redesign-документом для будущих фаз.
+Этот документ freeze-ит текущий exact-core контракт `tracker_parser_core` по состоянию на 2026-03-26. Он описывает уже существующее поведение parser/normalizer/pot-resolution слоя и не считается redesign-документом для будущих фаз.
 
 ## Проблема
 
@@ -33,7 +33,7 @@
 - actor-order / legality;
 - forced all-in и return-uncalled;
 - terminal snapshot surface;
-- текущую `KO semantics v1`;
+- текущую `KO semantics v2`;
 - uncertainty / inconsistent contract.
 
 Не входят в этот freeze:
@@ -61,14 +61,21 @@
 
 `NormalizedHand` является exact-core replay result. Ключевые поля:
 - `snapshot`
-- `final_pots`
-- `pot_contributions`
-- `pot_eligibilities`
-- `pot_winners`
+- `settlement`
 - `returns`
 - `actual`
 - `eliminations`
 - `invariants`
+
+`settlement` является новым canonical surface для pot-resolution:
+- `certainty_state`
+- `issues`
+- `evidence`
+- `pots[*].contributions`
+- `pots[*].eligibilities`
+- `pots[*].candidate_allocations`
+- `pots[*].selected_allocation`
+- `pots[*].issues`
 
 ## Инварианты
 
@@ -77,7 +84,7 @@
 Правило:
 - сумма стартовых стеков должна совпадать с суммой финальных стеков `stacks_after_actual`;
 - при нарушении `chip_conservation_ok = false`;
-- причина добавляется в `invariant_errors` как `chip_conservation_mismatch:*`.
+- причина materialize-ится в `invariants.issues` с code `chip_conservation_mismatch`.
 
 Защищающие тесты:
 - `captures_terminal_all_in_snapshot_with_exact_pot_and_stacks`
@@ -88,8 +95,9 @@
 
 Правило:
 - `sum(committed_total_by_player) == sum(winner_collections) + rake_amount`;
-- mismatch не маскируется и уходит в `pot_conservation_mismatch:*`;
-- отдельный mismatch `summary_total_pot` против `collected + rake` уходит в `summary_total_pot_mismatch:*`.
+- `winner_collections` materialize-ятся из best-effort observed payouts: сначала `collect`, а если их нет — из summary `won/collected` amounts;
+- mismatch не маскируется и уходит в `invariants.issues` с code `pot_conservation_mismatch`;
+- отдельный mismatch `summary_total_pot` против `collected + rake` уходит в `invariants.issues` с code `summary_total_pot_mismatch`.
 
 Защищающие тесты:
 - `captures_terminal_all_in_snapshot_with_exact_pot_and_stacks`
@@ -103,7 +111,7 @@
 - банки строятся по лестнице distinct positive commitment levels;
 - каждый новый pot равен `increment * number_of_contributors_at_level`;
 - первый bank всегда `is_main = true`, остальные side pots;
-- `pot_contributions` хранят вклад по срезу, а не только общий вклад игрока.
+- `settlement.pots[*].contributions` хранят вклад по срезу, а не только общий вклад игрока.
 
 Защищающие тесты:
 - `resolves_sidepot_ko_without_marking_hero_involved`
@@ -115,7 +123,7 @@
 
 Правило:
 - eligible player обязан быть contributor соответствующего pot slice;
-- folded player не может быть `pot_eligibility`, но его ранее вложенные фишки остаются в `pot_contributions`;
+- folded player не может быть `settlement.pots[*].eligibilities`, но его ранее вложенные фишки остаются в `settlement.pots[*].contributions`;
 - sit-out / eliminated seats не участвуют в active-order и не становятся live-eligibility участниками.
 
 Защищающие тесты:
@@ -159,6 +167,7 @@
 Правило:
 - `ReturnUncalled` уменьшает `committed_total` и round contribution того же игрока;
 - возврат возвращает фишки в стек и materialize-ится как `HandReturn { reason = "uncalled" }`;
+- если contested terminal all-in node уже был зафиксирован до refund, последующий `ReturnUncalled` не отменяет этот snapshot;
 - uncalled return не должен создавать terminal all-in snapshot "задним числом".
 
 Защищающие тесты:
@@ -169,21 +178,31 @@
 
 Правило:
 - `snapshot` materialize-ится только для terminal all-in node;
+- terminal node определяется state-based после применения текущего action, а не по типу самого action;
+- snapshot возможен только если после action в contest остается минимум два игрока со статусами `Live | AllIn`;
+- среди contestants должен быть хотя бы один `AllIn`, и на текущей улице не должно оставаться pending `Live` actor'ов;
+- это покрывает both `final fold closes all-in contest` и `all contestants become all-in on closure action`;
 - snapshot хранит известную доску на момент capture, число будущих board cards и per-player node state;
+- обычный uncontested `bet -> fold -> return uncalled` snapshot не получает;
 - отсутствие snapshot на non-terminal hand является нормальным exact поведением;
-- текущий критерий snapshot freeze-ится как current behavior, но `docs/par_nor.md` уже фиксирует follow-up задачу `P1-01` на его state-based hardening.
 
 Защищающие тесты:
 - `captures_terminal_all_in_snapshot_with_exact_pot_and_stacks`
+- `fold_close_all_in_contest_captures_snapshot`
+- `all_in_only_closure_captures_snapshot`
 - `handles_uncalled_return_without_creating_fake_snapshot`
+- `simple_bet_fold_does_not_create_snapshot`
 
 ### 9. Winner resolution, uncertainty и inconsistency
 
 Правило:
 - exact winners materialize-ятся только если settlement можно доказать по текущему evidence surface;
-- ambiguous hidden-showdown cases не угадываются и уходят в `uncertain_reason_codes`;
-- contradictory collect distributions не угадываются и уходят в `invariant_errors`;
-- `pot_winners` не materialize-ятся ни для `uncertain`, ни для `inconsistent` случаев.
+- observed payout evidence берется из aggregate `collect` totals или, если `collect` отсутствуют, из summary `won/collected` amounts;
+- если `collect` и summary payout totals одновременно присутствуют, они обязаны совпадать; конфликт таких observed payouts считается `inconsistent`;
+- ambiguous hidden-showdown cases не угадываются и уходят в `settlement.pots[*].issues`;
+- contradictory observed payout distributions не угадываются и уходят в `settlement.issues`;
+- odd-chip не опирается на room-level GG rule: observed odd-chip payout делает settlement `exact`, а недоказуемый odd-chip recipient оставляет settlement `uncertain`;
+- exact winners materialize-ятся только через `settlement.pots[*].selected_allocation`; для `uncertain` и `inconsistent` случаев `selected_allocation = null`.
 
 Семантика состояний:
 - `Exact`: settlement доказан текущим surface.
@@ -197,41 +216,35 @@
 - `surfaces_collect_distribution_conflict_with_showdown_as_inconsistent`
 - `surfaces_unsatisfied_collect_mapping_as_invariant_error_without_guessing_winners`
 - `resolves_odd_chip_split_from_collect_totals_without_guessing_bonus_chip`
+- `resolves_odd_chip_split_from_summary_amounts_when_collect_lines_are_absent`
+- `treats_conflicting_odd_chip_collect_and_summary_evidence_as_inconsistent`
+- `leaves_odd_chip_aggregate_ambiguity_unresolved_when_multiple_exact_allocations_fit`
 
-### 10. KO semantics v1
+### 10. KO semantics v2
 
-Текущий `HandElimination` контракт является exact-core `v1`, а не финальной product KO semantics.
+`HandElimination` теперь является действующим canonical KO/elimination contract.
 
 Что фиксируется сейчас:
 - elimination создается для seat с положительным стартовым стеком и финальным стеком `0`;
-- `resolved_by_pot_nos` хранит все pot-ы, релевантные bust outcome по текущему resolved settlement;
-- `ko_involved_winners` хранит winners этих bust-relevant pots;
-- `hero_ko_share_total` / `hero_share_fraction` отражают долю Hero в bust-relevant settled pots по текущему v1 contract;
-- `joint_ko`, `is_split_ko`, `split_n`, `is_sidepot_based` являются exact-core descriptors текущей pot-based attribution модели.
+- `pots_participated_by_busted` хранит все pot-ы, куда busted seat внес chips;
+- `pots_causing_bust` хранит только те eligible lost pot-ы, после которых busted seat фактически приходит к стеку `0`;
+- `last_busting_pot_no` — последний pot из `pots_causing_bust` и единственный источник KO-credit attribution;
+- `ko_winner_set` хранит winners именно `last_busting_pot_no`;
+- `ko_share_fraction_by_winner` хранит per-winner fractions относительно полного amount busting pot;
+- `elimination_certainty_state` и `ko_certainty_state` разведены: elimination может быть exact даже когда KO exact не доказан.
 
-Что этот контракт сознательно не обещает:
-- что `ko_involved_winners` уже равны финальному `ko_winner_set` будущей v2 semantics;
-- что pot share автоматически равен KO money share;
-- что multi-pot bust attribution уже является окончательной доменной моделью bounty/KO economics.
+Что этот контракт сознательно обещает:
+- участие в pot и KO-credit не смешиваются;
+- split KO делится пропорционально фактическим `share_amount`, а не по неявной эвристике;
+- ambiguous/inconsistent settlement не стирает elimination, но и не заставляет угадывать `ko_winner_set`.
 
 Защищающие тесты:
 - `captures_terminal_all_in_snapshot_with_exact_pot_and_stacks`
-- `resolves_split_ko_with_exact_hero_share_fraction`
-- `resolves_sidepot_ko_without_marking_hero_involved`
-- `resolves_joint_ko_across_main_and_side_pots_with_different_winners`
-
-## KO semantics v2 target
-
-Следующая версия контракта должна явно развести:
-- `pots_participated_by_busted`
-- `pots_causing_bust`
-- `ko_winner_set`
-- `ko_share_fraction`
-- money-share semantics
-
-До реализации `P1-03` и связанных задач:
-- v2 считается целевым, но не действующим контрактом;
-- downstream не должен трактовать v1 fields как финальную KO-money truth.
+- `resolves_split_ko_from_last_busting_pot_with_proportional_shares`
+- `separates_participation_pots_from_bust_causing_pots_for_sidepot_ko`
+- `uses_only_last_busting_pot_for_multi_pot_ko_credit`
+- `keeps_hidden_showdown_side_pot_ambiguity_uncertain_without_guessing_winners`
+- `surfaces_collect_distribution_conflict_with_showdown_as_inconsistent`
 
 ## Позиционный контракт: текущий surface
 
@@ -253,7 +266,7 @@ Current exact-core policy:
 
 Практические следствия:
 - `warnings` не равны invariant failure;
-- `uncertain_reason_codes` не равны arithmetic inconsistency;
+- `settlement.issues` / `settlement.pots[*].issues` не равны arithmetic inconsistency;
 - downstream обязан учитывать difference между `Exact`, `Uncertain` и `Inconsistent`.
 
 ## Правило изменения контракта

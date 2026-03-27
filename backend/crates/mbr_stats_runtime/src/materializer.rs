@@ -107,26 +107,26 @@ fn load_hand_feature_facts(
             COALESCE(msr.is_boundary_hand, FALSE) AS is_boundary_hand,
             COALESCE(SUM(
                 CASE
-                    WHEN he.hero_involved IS TRUE
-                     AND he.certainty_state = 'exact'
+                    WHEN hero_winner.hand_id IS NOT NULL
+                     AND he.ko_certainty_state = 'exact'
                     THEN 1
                     ELSE 0
                 END
             ), 0)::bigint AS exact_ko_count,
             COALESCE(SUM(
                 CASE
-                    WHEN he.hero_involved IS TRUE
-                     AND he.certainty_state = 'exact'
-                     AND he.is_split_ko IS TRUE
+                    WHEN hero_winner.hand_id IS NOT NULL
+                     AND he.ko_certainty_state = 'exact'
+                     AND COALESCE(array_length(he.ko_winner_set, 1), 0) > 1
                     THEN 1
                     ELSE 0
                 END
             ), 0)::bigint AS split_ko_count,
             COALESCE(SUM(
                 CASE
-                    WHEN he.hero_involved IS TRUE
-                     AND he.certainty_state = 'exact'
-                     AND he.is_sidepot_based IS TRUE
+                    WHEN hero_winner.hand_id IS NOT NULL
+                     AND he.ko_certainty_state = 'exact'
+                     AND COALESCE(he.last_busting_pot_no, 0) > 1
                     THEN 1
                     ELSE 0
                 END
@@ -137,6 +137,10 @@ fn load_hand_feature_facts(
           AND msr.player_profile_id = h.player_profile_id
          LEFT JOIN derived.hand_eliminations he
            ON he.hand_id = h.id
+         LEFT JOIN core.hand_seats hero_winner
+           ON hero_winner.hand_id = he.hand_id
+          AND hero_winner.is_hero IS TRUE
+          AND hero_winner.player_name = ANY(he.ko_winner_set)
          WHERE h.organization_id = $1
            AND h.player_profile_id = $2
          GROUP BY

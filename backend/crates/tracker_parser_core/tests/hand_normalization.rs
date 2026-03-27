@@ -1,7 +1,12 @@
 use std::{fs, path::PathBuf};
 
+use serde_json::{Value, json};
 use tracker_parser_core::{
-    models::{CertaintyState, PlayerStatus, Street},
+    models::{
+        CertaintyState, FinalPot, InvariantIssue, NormalizedHand, PlayerStatus,
+        PotContribution, PotEligibility, PotSettlementIssue, PotWinner,
+        SettlementAllocationSource, Street,
+    },
     normalizer::normalize_hand,
     parsers::hand_history::{parse_canonical_hand, split_hand_history},
 };
@@ -277,6 +282,97 @@ Board [2c 3d 4h 5s 6c]
 Seat 1: Hero (button) showed [Ah Kd] and collected (201)
 Seat 2: Villain showed [As Qd] and collected (200)
 Seat 3: DeadMoney lost"#;
+const ODD_CHIP_SUMMARY_ONLY_HAND: &str = r#"Poker Hand #BRCM0504: Tournament #999053, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(1)) - 2026/03/16 13:55:00
+Table '18' 3-max Seat #1 is the button
+Seat 1: Hero (200 in chips)
+Seat 2: Villain (200 in chips)
+Seat 3: DeadMoney (1 in chips)
+Hero: posts the ante 1
+Villain: posts the ante 1
+DeadMoney: posts the ante 1
+*** HOLE CARDS ***
+Dealt to Hero [Ah Kd]
+Dealt to Villain
+Dealt to DeadMoney
+Villain: bets 199 and is all-in
+Hero: calls 199 and is all-in
+*** FLOP *** [2c 3d 4h]
+*** TURN *** [2c 3d 4h] [5s]
+*** RIVER *** [2c 3d 4h 5s] [6c]
+*** SHOWDOWN ***
+Hero: shows [Ah Kd]
+Villain: shows [As Qd]
+*** SUMMARY ***
+Total pot 401 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 3d 4h 5s 6c]
+Seat 1: Hero (button) showed [Ah Kd] and collected (201)
+Seat 2: Villain showed [As Qd] and collected (200)
+Seat 3: DeadMoney lost"#;
+const ODD_CHIP_CONFLICTING_EVIDENCE_HAND: &str = r#"Poker Hand #BRCM0505: Tournament #999054, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(1)) - 2026/03/16 14:00:00
+Table '19' 3-max Seat #1 is the button
+Seat 1: Hero (200 in chips)
+Seat 2: Villain (200 in chips)
+Seat 3: DeadMoney (1 in chips)
+Hero: posts the ante 1
+Villain: posts the ante 1
+DeadMoney: posts the ante 1
+*** HOLE CARDS ***
+Dealt to Hero [Ah Kd]
+Dealt to Villain
+Dealt to DeadMoney
+Villain: bets 199 and is all-in
+Hero: calls 199 and is all-in
+*** FLOP *** [2c 3d 4h]
+*** TURN *** [2c 3d 4h] [5s]
+*** RIVER *** [2c 3d 4h 5s] [6c]
+*** SHOWDOWN ***
+Hero: shows [Ah Kd]
+Villain: shows [As Qd]
+Hero collected 201 from pot
+Villain collected 200 from pot
+*** SUMMARY ***
+Total pot 401 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 3d 4h 5s 6c]
+Seat 1: Hero (button) showed [Ah Kd] and collected (200)
+Seat 2: Villain showed [As Qd] and collected (201)
+Seat 3: DeadMoney lost"#;
+const ODD_CHIP_AMBIGUOUS_AGGREGATE_HAND: &str = r#"Poker Hand #BRCM0506: Tournament #999055, Mystery Battle Royale $25 Hold'em No Limit - Level1(0/0(1)) - 2026/03/16 14:05:00
+Table '20' 5-max Seat #1 is the button
+Seat 1: Hero (200 in chips)
+Seat 2: Villain (200 in chips)
+Seat 3: DeadA (2 in chips)
+Seat 4: DeadB (1 in chips)
+Seat 5: DeadC (1 in chips)
+Hero: posts the ante 1
+Villain: posts the ante 1
+DeadA: posts the ante 1
+DeadB: posts the ante 1 and is all-in
+DeadC: posts the ante 1 and is all-in
+*** HOLE CARDS ***
+Dealt to Hero [Ah Kd]
+Dealt to Villain
+Dealt to DeadA
+Dealt to DeadB
+Dealt to DeadC
+Villain: bets 1
+DeadA: calls 1 and is all-in
+Hero: calls 1
+*** FLOP *** [2c 3d 4h]
+*** TURN *** [2c 3d 4h] [5s]
+*** RIVER *** [2c 3d 4h 5s] [6c]
+*** SHOWDOWN ***
+Hero: shows [Ah Kd]
+Villain: shows [As Qd]
+Hero collected 4 from pot
+Villain collected 4 from pot
+*** SUMMARY ***
+Total pot 8 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 3d 4h 5s 6c]
+Seat 1: Hero (button) showed [Ah Kd] and collected (4)
+Seat 2: Villain showed [As Qd] and collected (4)
+Seat 3: DeadA lost
+Seat 4: DeadB lost
+Seat 5: DeadC lost"#;
 const HEADS_UP_PREFLOP_ILLEGAL_ORDER_HAND: &str = r#"Poker Hand #BRLEGAL2: Tournament #999006, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:25:00
 Table '5' 2-max Seat #1 is the button
 Seat 1: Hero (1,000 in chips)
@@ -486,6 +582,33 @@ Board [2c 7d 9h Qs 3c]
 Seat 1: Hero (button) showed [Ah Ad] and won (700)
 Seat 2: VillainA (small blind) showed [Kd Kh] and lost
 Seat 3: VillainB (big blind) folded before Flop"#;
+const FOLD_CLOSES_ALL_IN_CONTEST_HAND: &str = r#"Poker Hand #BRSNAPFOLD1: Tournament #999013, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 13:00:00
+Table '12' 3-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: VillainA (1,000 in chips)
+Seat 3: VillainB (1,000 in chips)
+VillainA: posts small blind 50
+VillainB: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealt to VillainA
+Dealt to VillainB
+Hero: raises 900 to 1,000 and is all-in
+VillainA: calls 950
+VillainB: folds
+*** FLOP *** [2c 7d 9h]
+*** TURN *** [2c 7d 9h] [Qs]
+*** RIVER *** [2c 7d 9h Qs] [3c]
+*** SHOWDOWN ***
+Hero: shows [Ah Ad]
+VillainA: shows [Kd Kh]
+Hero collected 2,100 from pot
+*** SUMMARY ***
+Total pot 2,100 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and won (2,100)
+Seat 2: VillainA (small blind) showed [Kd Kh] and lost
+Seat 3: VillainB (big blind) folded before Flop"#;
 const BLIND_EXHAUSTED_ALL_IN_HAND: &str = r#"Poker Hand #BRCM0405: Tournament #999205, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 13:20:00
 Table '12' 2-max Seat #1 is the button
 Seat 1: ShortBlind (50 in chips)
@@ -638,44 +761,102 @@ fn captures_terminal_all_in_snapshot_with_exact_pot_and_stacks() {
         Some(&1_992)
     );
     assert_eq!(normalized.actual.rake_amount, 0);
-    assert_eq!(normalized.final_pots.len(), 1);
-    assert_eq!(normalized.final_pots[0].pot_no, 1);
-    assert!(normalized.final_pots[0].is_main);
-    assert_eq!(normalized.final_pots[0].amount, 3_984);
+    let final_pots = final_pots(&normalized);
+    let pot_winners = pot_winners(&normalized);
+    let pot_contributions = pot_contributions(&normalized);
+    assert_eq!(final_pots.len(), 1);
+    assert_eq!(final_pots[0].pot_no, 1);
+    assert!(final_pots[0].is_main);
+    assert_eq!(final_pots[0].amount, 3_984);
     assert!(normalized.returns.is_empty());
-    assert_eq!(normalized.pot_contributions.len(), 2);
-    assert_eq!(normalized.pot_winners.len(), 1);
-    assert_eq!(normalized.pot_winners[0].pot_no, 1);
-    assert_eq!(normalized.pot_winners[0].seat_no, 7);
-    assert_eq!(normalized.pot_winners[0].player_name, "Hero");
-    assert_eq!(normalized.pot_winners[0].share_amount, 3_984);
+    assert_eq!(pot_contributions.len(), 2);
+    assert_eq!(pot_winners.len(), 1);
+    assert_eq!(pot_winners[0].pot_no, 1);
+    assert_eq!(pot_winners[0].seat_no, 7);
+    assert_eq!(pot_winners[0].player_name, "Hero");
+    assert_eq!(pot_winners[0].share_amount, 3_984);
     assert_eq!(normalized.eliminations.len(), 1);
     assert_eq!(normalized.eliminations[0].eliminated_seat_no, 3);
     assert_eq!(
         normalized.eliminations[0].eliminated_player_name,
         "f02e54a6"
     );
-    assert_eq!(normalized.eliminations[0].resolved_by_pot_nos, vec![1]);
+    let elimination = elimination_json_by_player(&normalized, "f02e54a6");
+    assert_eq!(elimination["pots_participated_by_busted"], json!([1]));
+    assert_eq!(elimination["pots_causing_bust"], json!([1]));
+    assert_eq!(elimination["last_busting_pot_no"], json!(1));
+    assert_eq!(elimination["ko_winner_set"], json!(["Hero"]));
     assert_eq!(
-        normalized.eliminations[0].ko_involved_winners,
-        vec!["Hero".to_string()]
+        elimination["ko_share_fraction_by_winner"],
+        json!([{
+            "seat_no": 7,
+            "player_name": "Hero",
+            "share_fraction": 1.0
+        }])
     );
-    assert_eq!(normalized.eliminations[0].hero_ko_share_total, Some(1.0));
-    assert!(!normalized.eliminations[0].joint_ko);
-    assert_eq!(normalized.eliminations[0].resolved_by_pot_no, Some(1));
-    assert_eq!(normalized.eliminations[0].ko_involved_winner_count, 1);
-    assert!(normalized.eliminations[0].hero_involved);
-    assert_eq!(normalized.eliminations[0].hero_share_fraction, Some(1.0));
-    assert!(!normalized.eliminations[0].is_split_ko);
-    assert_eq!(normalized.eliminations[0].split_n, Some(1));
-    assert!(!normalized.eliminations[0].is_sidepot_based);
-    assert_eq!(
-        normalized.eliminations[0].certainty_state,
-        CertaintyState::Exact
-    );
+    assert_eq!(elimination["elimination_certainty_state"], json!("exact"));
+    assert_eq!(elimination["ko_certainty_state"], json!("exact"));
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
+}
+
+#[test]
+fn materializes_unified_settlement_with_selected_allocation_for_exact_hand() {
+    let first_hand = HH_FT.split("\n\n").next().unwrap();
+    let hand = parse_canonical_hand(first_hand).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    let settlement = &normalized.settlement;
+    assert_eq!(settlement.certainty_state, CertaintyState::Exact);
+    assert!(settlement.issues.is_empty());
+    assert_eq!(settlement.evidence.collect_events_seen.len(), 1);
+    assert_eq!(
+        settlement.evidence.collect_events_seen[0].player_name,
+        "Hero"
+    );
+    assert_eq!(settlement.evidence.collect_events_seen[0].amount, 3_984);
+    assert_eq!(settlement.pots.len(), 1);
+
+    let pot = &settlement.pots[0];
+    assert_eq!(pot.pot_no, 1);
+    assert_eq!(pot.amount, 3_984);
+    assert!(pot.is_main);
+    assert_eq!(pot.issues, Vec::<PotSettlementIssue>::new());
+    assert_eq!(pot.contenders, vec!["Hero".to_string()]);
+    assert_eq!(pot.candidate_allocations.len(), 1);
+    assert_eq!(
+        pot.candidate_allocations[0].source,
+        SettlementAllocationSource::ShowdownRank
+    );
+    assert_eq!(
+        pot.contributions
+            .iter()
+            .map(|contribution| (
+                contribution.pot_no,
+                contribution.player_name.as_str(),
+                contribution.amount
+            ))
+            .collect::<Vec<_>>(),
+        vec![(1, "f02e54a6", 1_992), (1, "Hero", 1_992)]
+    );
+    assert_eq!(
+        pot.eligibilities
+            .iter()
+            .map(|eligibility| (eligibility.pot_no, eligibility.player_name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(1, "f02e54a6"), (1, "Hero")]
+    );
+    assert_eq!(
+        pot.selected_allocation
+            .as_ref()
+            .expect("exact hand must have selected allocation")
+            .shares
+            .iter()
+            .map(|share| (share.player_name.as_str(), share.share_amount))
+            .collect::<Vec<_>>(),
+        vec![("Hero", 3_984)]
+    );
 }
 
 #[test]
@@ -703,63 +884,133 @@ fn handles_uncalled_return_without_creating_fake_snapshot() {
         Some(&480)
     );
     assert_eq!(normalized.actual.rake_amount, 0);
-    assert_eq!(normalized.final_pots.len(), 1);
-    assert_eq!(normalized.final_pots[0].amount, 960);
+    let final_pots = final_pots(&normalized);
+    let pot_winners = pot_winners(&normalized);
+    assert_eq!(final_pots.len(), 1);
+    assert_eq!(final_pots[0].amount, 960);
     assert_eq!(normalized.returns.len(), 1);
     assert_eq!(normalized.returns[0].seat_no, 7);
     assert_eq!(normalized.returns[0].player_name, "Hero");
     assert_eq!(normalized.returns[0].amount, 15_048);
     assert_eq!(normalized.returns[0].reason, "uncalled");
-    assert_eq!(normalized.pot_winners.len(), 1);
-    assert_eq!(normalized.pot_winners[0].player_name, "Hero");
-    assert_eq!(normalized.pot_winners[0].share_amount, 960);
+    assert_eq!(pot_winners.len(), 1);
+    assert_eq!(pot_winners[0].player_name, "Hero");
+    assert_eq!(pot_winners[0].share_amount, 960);
     assert!(normalized.eliminations.is_empty());
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
 }
 
 #[test]
-fn resolves_split_ko_with_exact_hero_share_fraction() {
+fn fold_close_all_in_contest_captures_snapshot() {
+    let hand = parse_canonical_hand(FOLD_CLOSES_ALL_IN_CONTEST_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    let snapshot = normalized.snapshot.as_ref().expect("snapshot must exist");
+    assert_eq!(snapshot.snapshot_street, Street::Preflop);
+    assert_eq!(snapshot.snapshot_event_seq, 4);
+    assert_eq!(snapshot.future_board_cards_count, 5);
+
+    let hero = snapshot
+        .players
+        .iter()
+        .find(|player| player.player_name == "Hero")
+        .unwrap();
+    let villain_a = snapshot
+        .players
+        .iter()
+        .find(|player| player.player_name == "VillainA")
+        .unwrap();
+    let villain_b = snapshot
+        .players
+        .iter()
+        .find(|player| player.player_name == "VillainB")
+        .unwrap();
+
+    assert_eq!(hero.status, PlayerStatus::AllIn);
+    assert_eq!(villain_a.status, PlayerStatus::AllIn);
+    assert_eq!(villain_b.status, PlayerStatus::Folded);
+}
+
+#[test]
+fn all_in_only_closure_captures_snapshot() {
     let hand = parse_canonical_hand(SPLIT_KO_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.final_pots.len(), 1);
-    assert_eq!(normalized.final_pots[0].amount, 3_000);
-    assert_eq!(normalized.pot_winners.len(), 2);
+    let snapshot = normalized.snapshot.as_ref().expect("snapshot must exist");
+    assert_eq!(snapshot.snapshot_street, Street::Flop);
+    assert_eq!(snapshot.snapshot_event_seq, 7);
+    assert_eq!(snapshot.future_board_cards_count, 2);
+    assert!(
+        snapshot
+            .players
+            .iter()
+            .all(|player| matches!(player.status, PlayerStatus::AllIn)),
+        "all contestants should be all-in at the snapshot"
+    );
+}
+
+#[test]
+fn simple_bet_fold_does_not_create_snapshot() {
+    let hand = parse_canonical_hand(HEADS_UP_POSTFLOP_ILLEGAL_ORDER_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    assert!(normalized.snapshot.is_none());
+}
+
+#[test]
+fn resolves_split_ko_from_last_busting_pot_with_proportional_shares() {
+    let hand = parse_canonical_hand(SPLIT_KO_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    let final_pots = final_pots(&normalized);
+    let pot_winners = pot_winners(&normalized);
+    assert_eq!(final_pots.len(), 1);
+    assert_eq!(final_pots[0].amount, 3_000);
+    assert_eq!(pot_winners.len(), 2);
     assert_eq!(normalized.eliminations.len(), 1);
     assert_eq!(
         normalized.eliminations[0].eliminated_player_name,
         "VillainA"
     );
-    assert_eq!(normalized.eliminations[0].resolved_by_pot_nos, vec![1]);
+    let elimination = elimination_json_by_player(&normalized, "VillainA");
+    assert_eq!(elimination["pots_participated_by_busted"], json!([1]));
+    assert_eq!(elimination["pots_causing_bust"], json!([1]));
+    assert_eq!(elimination["last_busting_pot_no"], json!(1));
     assert_eq!(
-        normalized.eliminations[0].ko_involved_winners,
-        vec!["Hero".to_string(), "VillainB".to_string()]
+        elimination["ko_winner_set"],
+        json!(["Hero", "VillainB"])
     );
-    assert_eq!(normalized.eliminations[0].hero_ko_share_total, Some(0.5));
-    assert!(normalized.eliminations[0].joint_ko);
-    assert_eq!(normalized.eliminations[0].resolved_by_pot_no, Some(1));
-    assert!(normalized.eliminations[0].hero_involved);
-    assert_eq!(normalized.eliminations[0].hero_share_fraction, Some(0.5));
-    assert!(normalized.eliminations[0].is_split_ko);
-    assert_eq!(normalized.eliminations[0].split_n, Some(2));
-    assert!(!normalized.eliminations[0].is_sidepot_based);
     assert_eq!(
-        normalized.eliminations[0].certainty_state,
-        CertaintyState::Exact
+        elimination["ko_share_fraction_by_winner"],
+        json!([
+            {
+                "seat_no": 2,
+                "player_name": "Hero",
+                "share_fraction": 0.5
+            },
+            {
+                "seat_no": 3,
+                "player_name": "VillainB",
+                "share_fraction": 0.5
+            }
+        ])
     );
+    assert_eq!(elimination["elimination_certainty_state"], json!("exact"));
+    assert_eq!(elimination["ko_certainty_state"], json!("exact"));
 }
 
 #[test]
-fn resolves_sidepot_ko_without_marking_hero_involved() {
+fn separates_participation_pots_from_bust_causing_pots_for_sidepot_ko() {
     let hand = parse_canonical_hand(SIDEPOT_KO_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.final_pots.len(), 3);
-    assert_eq!(normalized.final_pots[0].amount, 400);
-    assert_eq!(normalized.final_pots[1].amount, 1_200);
-    assert_eq!(normalized.final_pots[2].amount, 1_000);
+    let final_pots = final_pots(&normalized);
+    assert_eq!(final_pots.len(), 3);
+    assert_eq!(final_pots[0].amount, 400);
+    assert_eq!(final_pots[1].amount, 1_200);
+    assert_eq!(final_pots[2].amount, 1_000);
     assert_eq!(normalized.returns.len(), 0);
 
     let medium = normalized
@@ -767,17 +1018,21 @@ fn resolves_sidepot_ko_without_marking_hero_involved() {
         .iter()
         .find(|elimination| elimination.eliminated_player_name == "Medium")
         .unwrap();
-    assert_eq!(medium.resolved_by_pot_nos, vec![1, 2, 3]);
-    assert_eq!(medium.ko_involved_winners, vec!["BigStack".to_string()]);
-    assert_eq!(medium.hero_ko_share_total, Some(0.0));
-    assert!(!medium.joint_ko);
-    assert_eq!(medium.resolved_by_pot_no, None);
-    assert!(!medium.hero_involved);
-    assert_eq!(medium.hero_share_fraction, Some(0.0));
-    assert!(!medium.is_split_ko);
-    assert_eq!(medium.split_n, Some(1));
-    assert!(medium.is_sidepot_based);
-    assert_eq!(medium.certainty_state, CertaintyState::Exact);
+    let medium = serde_json::to_value(medium).unwrap();
+    assert_eq!(medium["pots_participated_by_busted"], json!([1, 2, 3]));
+    assert_eq!(medium["pots_causing_bust"], json!([3]));
+    assert_eq!(medium["last_busting_pot_no"], json!(3));
+    assert_eq!(medium["ko_winner_set"], json!(["BigStack"]));
+    assert_eq!(
+        medium["ko_share_fraction_by_winner"],
+        json!([{
+            "seat_no": 4,
+            "player_name": "BigStack",
+            "share_fraction": 1.0
+        }])
+    );
+    assert_eq!(medium["elimination_certainty_state"], json!("exact"));
+    assert_eq!(medium["ko_certainty_state"], json!("exact"));
 }
 
 #[test]
@@ -786,8 +1041,7 @@ fn keeps_folded_contributor_in_pot_contributions_but_out_of_eligibility() {
     let normalized = normalize_hand(&hand).unwrap();
 
     assert_eq!(
-        normalized
-            .pot_contributions
+        pot_contributions(&normalized)
             .iter()
             .map(|contribution| {
                 (
@@ -810,8 +1064,7 @@ fn keeps_folded_contributor_in_pot_contributions_but_out_of_eligibility() {
         ]
     );
     assert_eq!(
-        normalized
-            .pot_eligibilities
+        pot_eligibilities(&normalized)
             .iter()
             .map(|eligibility| (eligibility.pot_no, eligibility.player_name.as_str()))
             .collect::<Vec<_>>(),
@@ -853,25 +1106,28 @@ fn keeps_full_pack_invariants_green_for_all_committed_hands() {
 
             if !normalized.invariants.chip_conservation_ok
                 || !normalized.invariants.pot_conservation_ok
-                || !normalized.invariants.invariant_errors.is_empty()
+                || !normalized.invariants.issues.is_empty()
                 || normalized
                     .eliminations
                     .iter()
-                    .any(|elimination| elimination.certainty_state == CertaintyState::Inconsistent)
+                    .any(|elimination| {
+                        elimination_ko_certainty(elimination)
+                            == Some("inconsistent".to_string())
+                    })
             {
                 issues.push(format!(
                     "{fixture} :: {} :: chip_ok={} pot_ok={} errors={:?} eliminations={:?}",
                     parsed.header.hand_id,
                     normalized.invariants.chip_conservation_ok,
                     normalized.invariants.pot_conservation_ok,
-                    normalized.invariants.invariant_errors,
+                    normalized.invariants.issues,
                     normalized
                         .eliminations
                         .iter()
                         .map(|elimination| (
                             elimination.eliminated_player_name.clone(),
-                            elimination.certainty_state,
-                            elimination.resolved_by_pot_no
+                            elimination_elimination_certainty(elimination),
+                            elimination_last_busting_pot_no(elimination)
                         ))
                         .collect::<Vec<_>>()
                 ));
@@ -891,11 +1147,12 @@ fn resolves_pot_winners_even_when_collect_lines_are_not_grouped_by_pot() {
     let hand = parse_canonical_hand(REORDERED_COLLECT_SIDE_POT_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.final_pots.len(), 3);
-    assert_eq!(normalized.pot_winners.len(), 3);
+    let final_pots = final_pots(&normalized);
+    let pot_winners = pot_winners(&normalized);
+    assert_eq!(final_pots.len(), 3);
+    assert_eq!(pot_winners.len(), 3);
     assert_eq!(
-        normalized
-            .pot_winners
+        pot_winners
             .iter()
             .map(|winner| (winner.pot_no, winner.share_amount))
             .collect::<Vec<_>>(),
@@ -907,9 +1164,11 @@ fn resolves_pot_winners_even_when_collect_lines_are_not_grouped_by_pot() {
         .iter()
         .find(|elimination| elimination.eliminated_player_name == "Medium")
         .unwrap();
-    assert_eq!(medium.resolved_by_pot_nos, vec![1, 2, 3]);
-    assert_eq!(medium.resolved_by_pot_no, None);
-    assert_eq!(medium.certainty_state, CertaintyState::Exact);
+    let medium = serde_json::to_value(medium).unwrap();
+    assert_eq!(medium["pots_participated_by_busted"], json!([1, 2, 3]));
+    assert_eq!(medium["pots_causing_bust"], json!([3]));
+    assert_eq!(medium["last_busting_pot_no"], json!(3));
+    assert_eq!(medium["ko_certainty_state"], json!("exact"));
 }
 
 #[test]
@@ -917,13 +1176,15 @@ fn resolves_split_main_and_single_winner_side_from_showdown_ranks() {
     let hand = parse_canonical_hand(SPLIT_MAIN_SINGLE_SIDE_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.final_pots.len(), 2);
-    assert_eq!(normalized.final_pots[0].amount, 900);
-    assert_eq!(normalized.final_pots[1].amount, 400);
-    assert_eq!(normalized.pot_eligibilities.len(), 5);
+    let final_pots = final_pots(&normalized);
+    let pot_eligibilities = pot_eligibilities(&normalized);
+    let pot_winners = pot_winners(&normalized);
+    assert_eq!(final_pots.len(), 2);
+    assert_eq!(final_pots[0].amount, 900);
+    assert_eq!(final_pots[1].amount, 400);
+    assert_eq!(pot_eligibilities.len(), 5);
     assert_eq!(
-        normalized
-            .pot_eligibilities
+        pot_eligibilities
             .iter()
             .map(|eligibility| (eligibility.pot_no, eligibility.player_name.as_str()))
             .collect::<Vec<_>>(),
@@ -936,8 +1197,7 @@ fn resolves_split_main_and_single_winner_side_from_showdown_ranks() {
         ]
     );
     assert_eq!(
-        normalized
-            .pot_winners
+        pot_winners
             .iter()
             .map(|winner| (
                 winner.pot_no,
@@ -947,11 +1207,11 @@ fn resolves_split_main_and_single_winner_side_from_showdown_ranks() {
             .collect::<Vec<_>>(),
         vec![(1, "Hero", 450), (1, "Shorty", 450), (2, "Hero", 400),]
     );
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
 }
 
 #[test]
-fn resolves_joint_ko_across_main_and_side_pots_with_different_winners() {
+fn uses_only_last_busting_pot_for_multi_pot_ko_credit() {
     let hand = parse_canonical_hand(JOINT_KO_MULTI_POT_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
@@ -961,26 +1221,21 @@ fn resolves_joint_ko_across_main_and_side_pots_with_different_winners() {
         .find(|elimination| elimination.eliminated_player_name == "Medium")
         .unwrap();
 
-    // Диагностический след: Medium внёсся в оба pot'а.
-    assert_eq!(medium.resolved_by_pot_nos, vec![1, 2]);
-    // GG rule: KO-credit pot = highest pot_no (pot 2 — side pot).
-    assert_eq!(medium.ko_credit_pot_no, Some(2));
-    // Winners только credit pot'а (pot 2): Hero единственный winner.
+    let medium = serde_json::to_value(medium).unwrap();
+    assert_eq!(medium["pots_participated_by_busted"], json!([1, 2]));
+    assert_eq!(medium["pots_causing_bust"], json!([2]));
+    assert_eq!(medium["last_busting_pot_no"], json!(2));
+    assert_eq!(medium["ko_winner_set"], json!(["Hero"]));
     assert_eq!(
-        medium.ko_involved_winners,
-        vec!["Hero".to_string()]
+        medium["ko_share_fraction_by_winner"],
+        json!([{
+            "seat_no": 1,
+            "player_name": "Hero",
+            "share_fraction": 1.0
+        }])
     );
-    // Hero получает 100% credit pot'а (1000/1000).
-    assert_eq!(medium.hero_ko_share_total, Some(1.0));
-    assert!(medium.hero_involved);
-    // 1 winner → не joint KO.
-    assert!(!medium.joint_ko);
-    assert_eq!(medium.resolved_by_pot_no, None);
-    assert_eq!(medium.ko_involved_winner_count, 1);
-    assert_eq!(medium.hero_share_fraction, Some(1.0));
-    assert_eq!(medium.split_n, Some(1));
-    assert!(medium.is_sidepot_based);
-    assert_eq!(medium.certainty_state, CertaintyState::Exact);
+    assert_eq!(medium["elimination_certainty_state"], json!("exact"));
+    assert_eq!(medium["ko_certainty_state"], json!("exact"));
 }
 
 #[test]
@@ -988,19 +1243,27 @@ fn keeps_hidden_showdown_side_pot_ambiguity_uncertain_without_guessing_winners()
     let hand = parse_canonical_hand(HIDDEN_SHOWDOWN_AMBIGUITY_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.final_pots.len(), 2);
-    assert_eq!(normalized.final_pots[0].amount, 400);
-    assert_eq!(normalized.final_pots[1].amount, 400);
-    assert_eq!(normalized.pot_eligibilities.len(), 6);
-    assert!(normalized.pot_winners.is_empty());
+    assert_eq!(normalized.settlement.certainty_state, CertaintyState::Uncertain);
+    assert!(normalized.settlement.issues.is_empty());
+    assert_eq!(normalized.settlement.pots.len(), 2);
     assert!(
         normalized
-            .invariants
-            .uncertain_reason_codes
+            .settlement
+            .pots
             .iter()
-            .any(|issue| issue.starts_with("pot_settlement_ambiguous_hidden_showdown:")),
-        "expected hidden-showdown ambiguity, got {:?}",
-        normalized.invariants.uncertain_reason_codes
+            .all(|pot| pot.selected_allocation.is_none())
+    );
+    assert_eq!(
+        normalized.settlement.pots[0].issues,
+        vec![PotSettlementIssue::AmbiguousHiddenShowdown {
+            eligible_players: vec!["Hero".to_string(), "Villain".to_string()],
+        }]
+    );
+    assert_eq!(
+        normalized.settlement.pots[1].issues,
+        vec![PotSettlementIssue::AmbiguousHiddenShowdown {
+            eligible_players: vec!["Hero".to_string(), "Villain".to_string()],
+        }]
     );
 
     let shorty_a = normalized
@@ -1008,7 +1271,14 @@ fn keeps_hidden_showdown_side_pot_ambiguity_uncertain_without_guessing_winners()
         .iter()
         .find(|elimination| elimination.eliminated_player_name == "ShortyA")
         .unwrap();
-    assert_eq!(shorty_a.certainty_state, CertaintyState::Uncertain);
+    let shorty_a = serde_json::to_value(shorty_a).unwrap();
+    assert_eq!(shorty_a["pots_participated_by_busted"], json!([1]));
+    assert_eq!(shorty_a["pots_causing_bust"], json!([1]));
+    assert_eq!(shorty_a["last_busting_pot_no"], json!(1));
+    assert_eq!(shorty_a["ko_winner_set"], json!([]));
+    assert_eq!(shorty_a["ko_share_fraction_by_winner"], json!([]));
+    assert_eq!(shorty_a["elimination_certainty_state"], json!("exact"));
+    assert_eq!(shorty_a["ko_certainty_state"], json!("uncertain"));
 }
 
 #[test]
@@ -1016,20 +1286,17 @@ fn surfaces_collect_distribution_conflict_with_showdown_as_inconsistent() {
     let hand = parse_canonical_hand(AMBIGUOUS_COLLECT_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.final_pots.len(), 2);
-    assert_eq!(normalized.final_pots[0].amount, 400);
-    assert_eq!(normalized.final_pots[1].amount, 400);
-    assert!(normalized.pot_winners.is_empty());
+    let final_pots = final_pots(&normalized);
+    let pot_winners = pot_winners(&normalized);
+    assert_eq!(final_pots.len(), 2);
+    assert_eq!(final_pots[0].amount, 400);
+    assert_eq!(final_pots[1].amount, 400);
+    assert!(pot_winners.is_empty());
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
-    assert!(
-        normalized
-            .invariants
-            .invariant_errors
-            .iter()
-            .any(|issue| issue.starts_with("pot_settlement_collect_conflict:")),
-        "expected collect conflict, got {:?}",
-        normalized.invariants.invariant_errors
+    assert_eq!(
+        normalized.settlement.issues,
+        vec![tracker_parser_core::models::SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts]
     );
 
     let shorty_a = normalized
@@ -1037,25 +1304,28 @@ fn surfaces_collect_distribution_conflict_with_showdown_as_inconsistent() {
         .iter()
         .find(|elimination| elimination.eliminated_player_name == "ShortyA")
         .unwrap();
-    assert_eq!(shorty_a.resolved_by_pot_no, Some(1));
-    assert_eq!(shorty_a.ko_involved_winner_count, 0);
-    assert!(!shorty_a.hero_involved);
-    assert_eq!(shorty_a.hero_share_fraction, None);
-    assert!(!shorty_a.is_split_ko);
-    assert_eq!(shorty_a.split_n, None);
-    assert!(!shorty_a.is_sidepot_based);
-    assert_eq!(shorty_a.certainty_state, CertaintyState::Inconsistent);
+    let shorty_a = serde_json::to_value(shorty_a).unwrap();
+    assert_eq!(shorty_a["pots_participated_by_busted"], json!([1]));
+    assert_eq!(shorty_a["pots_causing_bust"], json!([1]));
+    assert_eq!(shorty_a["last_busting_pot_no"], json!(1));
+    assert_eq!(shorty_a["ko_winner_set"], json!([]));
+    assert_eq!(shorty_a["ko_share_fraction_by_winner"], json!([]));
+    assert_eq!(shorty_a["elimination_certainty_state"], json!("exact"));
+    assert_eq!(shorty_a["ko_certainty_state"], json!("inconsistent"));
 
     let shorty_b = normalized
         .eliminations
         .iter()
         .find(|elimination| elimination.eliminated_player_name == "ShortyB")
         .unwrap();
-    assert_eq!(shorty_b.resolved_by_pot_no, Some(1));
-    assert_eq!(shorty_b.ko_involved_winner_count, 0);
-    assert!(!shorty_b.hero_involved);
-    assert_eq!(shorty_b.hero_share_fraction, None);
-    assert_eq!(shorty_b.certainty_state, CertaintyState::Inconsistent);
+    let shorty_b = serde_json::to_value(shorty_b).unwrap();
+    assert_eq!(shorty_b["pots_participated_by_busted"], json!([1]));
+    assert_eq!(shorty_b["pots_causing_bust"], json!([1]));
+    assert_eq!(shorty_b["last_busting_pot_no"], json!(1));
+    assert_eq!(shorty_b["ko_winner_set"], json!([]));
+    assert_eq!(shorty_b["ko_share_fraction_by_winner"], json!([]));
+    assert_eq!(shorty_b["elimination_certainty_state"], json!("exact"));
+    assert_eq!(shorty_b["ko_certainty_state"], json!("inconsistent"));
 }
 
 #[test]
@@ -1063,12 +1333,13 @@ fn resolves_odd_chip_split_from_collect_totals_without_guessing_bonus_chip() {
     let hand = parse_canonical_hand(ODD_CHIP_SPLIT_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.final_pots.len(), 2);
-    assert_eq!(normalized.final_pots[0].amount, 3);
-    assert_eq!(normalized.final_pots[1].amount, 398);
+    let final_pots = final_pots(&normalized);
+    let pot_winners = pot_winners(&normalized);
+    assert_eq!(final_pots.len(), 2);
+    assert_eq!(final_pots[0].amount, 3);
+    assert_eq!(final_pots[1].amount, 398);
     assert_eq!(
-        normalized
-            .pot_winners
+        pot_winners
             .iter()
             .map(|winner| (
                 winner.pot_no,
@@ -1083,7 +1354,81 @@ fn resolves_odd_chip_split_from_collect_totals_without_guessing_bonus_chip() {
             (2, "Villain", 199),
         ]
     );
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
+}
+
+#[test]
+fn resolves_odd_chip_split_from_summary_amounts_when_collect_lines_are_absent() {
+    let hand = parse_canonical_hand(ODD_CHIP_SUMMARY_ONLY_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    let final_pots = final_pots(&normalized);
+    let pot_winners = pot_winners(&normalized);
+    assert_eq!(normalized.settlement.certainty_state, CertaintyState::Exact);
+    assert!(normalized.settlement.issues.is_empty());
+    assert_eq!(normalized.settlement.evidence.collect_events_seen.len(), 0);
+    assert_eq!(final_pots.len(), 2);
+    assert_eq!(final_pots[0].amount, 3);
+    assert_eq!(final_pots[1].amount, 398);
+    assert_eq!(
+        pot_winners
+            .iter()
+            .map(|winner| (
+                winner.pot_no,
+                winner.player_name.as_str(),
+                winner.share_amount
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (1, "Hero", 2),
+            (1, "Villain", 1),
+            (2, "Hero", 199),
+            (2, "Villain", 199),
+        ]
+    );
+    assert!(normalized.invariants.issues.is_empty());
+}
+
+#[test]
+fn treats_conflicting_odd_chip_collect_and_summary_evidence_as_inconsistent() {
+    let hand = parse_canonical_hand(ODD_CHIP_CONFLICTING_EVIDENCE_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    assert_eq!(normalized.settlement.certainty_state, CertaintyState::Inconsistent);
+    assert_eq!(
+        normalized.settlement.issues,
+        vec![tracker_parser_core::models::SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts]
+    );
+    assert!(pot_winners(&normalized).is_empty());
+}
+
+#[test]
+fn leaves_odd_chip_aggregate_ambiguity_unresolved_when_multiple_exact_allocations_fit() {
+    let hand = parse_canonical_hand(ODD_CHIP_AMBIGUOUS_AGGREGATE_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    assert_eq!(normalized.settlement.certainty_state, CertaintyState::Uncertain);
+    assert_eq!(
+        normalized.settlement.issues,
+        vec![tracker_parser_core::models::SettlementIssue::MultipleExactAllocations]
+    );
+    assert!(pot_winners(&normalized).is_empty());
+    assert!(
+        normalized
+            .settlement
+            .pots
+            .iter()
+            .all(|pot| pot.selected_allocation.is_none())
+    );
+    assert_eq!(
+        normalized
+            .settlement
+            .pots
+            .iter()
+            .map(|pot| pot.candidate_allocations.len())
+            .collect::<Vec<_>>(),
+        vec![2, 2]
+    );
 }
 
 #[test]
@@ -1091,17 +1436,16 @@ fn surfaces_unsatisfied_collect_mapping_as_invariant_error_without_guessing_winn
     let hand = parse_canonical_hand(UNSATISFIED_COLLECT_HAND).unwrap();
     let normalized = normalize_hand(&hand).unwrap();
 
-    assert_eq!(normalized.final_pots.len(), 1);
-    assert_eq!(normalized.final_pots[0].amount, 200);
-    assert!(normalized.pot_winners.is_empty());
+    let final_pots = final_pots(&normalized);
+    let pot_winners = pot_winners(&normalized);
+    assert_eq!(final_pots.len(), 1);
+    assert_eq!(final_pots[0].amount, 200);
+    assert!(pot_winners.is_empty());
     assert!(!normalized.invariants.chip_conservation_ok);
     assert!(!normalized.invariants.pot_conservation_ok);
-    assert!(
-        normalized
-            .invariants
-            .invariant_errors
-            .iter()
-            .any(|issue| issue.starts_with("pot_settlement_collect_conflict:"))
+    assert_eq!(
+        normalized.settlement.issues,
+        vec![tracker_parser_core::models::SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts]
     );
 
     let villain = normalized
@@ -1109,11 +1453,14 @@ fn surfaces_unsatisfied_collect_mapping_as_invariant_error_without_guessing_winn
         .iter()
         .find(|elimination| elimination.eliminated_player_name == "Villain")
         .unwrap();
-    assert_eq!(villain.resolved_by_pot_no, Some(1));
-    assert_eq!(villain.ko_involved_winner_count, 0);
-    assert!(!villain.hero_involved);
-    assert_eq!(villain.hero_share_fraction, None);
-    assert_eq!(villain.certainty_state, CertaintyState::Inconsistent);
+    let villain = serde_json::to_value(villain).unwrap();
+    assert_eq!(villain["pots_participated_by_busted"], json!([1]));
+    assert_eq!(villain["pots_causing_bust"], json!([1]));
+    assert_eq!(villain["last_busting_pot_no"], json!(1));
+    assert_eq!(villain["ko_winner_set"], json!([]));
+    assert_eq!(villain["ko_share_fraction_by_winner"], json!([]));
+    assert_eq!(villain["elimination_certainty_state"], json!("exact"));
+    assert_eq!(villain["ko_certainty_state"], json!("inconsistent"));
 }
 
 #[test]
@@ -1124,11 +1471,11 @@ fn surfaces_illegal_heads_up_preflop_actor_order() {
     assert!(
         normalized
             .invariants
-            .invariant_errors
+            .issues
             .iter()
-            .any(|issue| issue.starts_with("illegal_actor_order:")),
+            .any(|issue| matches!(issue, InvariantIssue::IllegalActorOrder { .. })),
         "expected illegal_actor_order, got {:?}",
-        normalized.invariants.invariant_errors
+        normalized.invariants.issues
     );
 }
 
@@ -1138,13 +1485,11 @@ fn surfaces_illegal_heads_up_postflop_actor_order() {
     let normalized = normalize_hand(&hand).unwrap();
 
     assert!(
-        normalized
-            .invariants
-            .invariant_errors
+        invariant_issue_codes(&normalized)
             .iter()
-            .any(|issue| issue.starts_with("illegal_actor_order:")),
+            .any(|issue| *issue == "illegal_actor_order"),
         "expected illegal_actor_order, got {:?}",
-        normalized.invariants.invariant_errors
+        normalized.invariants.issues
     );
 }
 
@@ -1154,13 +1499,11 @@ fn surfaces_non_reopening_short_all_in_reraise() {
     let normalized = normalize_hand(&hand).unwrap();
 
     assert!(
-        normalized
-            .invariants
-            .invariant_errors
+        invariant_issue_codes(&normalized)
             .iter()
-            .any(|issue| issue.starts_with("action_not_reopened_after_short_all_in:")),
+            .any(|issue| *issue == "action_not_reopened_after_short_all_in"),
         "expected short-all-in non-reopen error, got {:?}",
-        normalized.invariants.invariant_errors
+        normalized.invariants.issues
     );
 }
 
@@ -1171,7 +1514,7 @@ fn allows_reraise_after_full_raise_reopens_action() {
 
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
 }
 
 #[test]
@@ -1180,13 +1523,11 @@ fn surfaces_premature_street_close_when_pending_actor_is_skipped() {
     let normalized = normalize_hand(&hand).unwrap();
 
     assert!(
-        normalized
-            .invariants
-            .invariant_errors
+        invariant_issue_codes(&normalized)
             .iter()
-            .any(|issue| issue.starts_with("premature_street_close:")),
+            .any(|issue| *issue == "premature_street_close"),
         "expected premature_street_close, got {:?}",
-        normalized.invariants.invariant_errors
+        normalized.invariants.issues
     );
 }
 
@@ -1197,7 +1538,7 @@ fn accepts_limp_raise_call_chain_without_legality_errors() {
 
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
 }
 
 #[test]
@@ -1207,7 +1548,7 @@ fn accepts_uncalled_return_after_failed_call_chain_without_legality_errors() {
 
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
 }
 
 #[test]
@@ -1217,7 +1558,7 @@ fn handles_blind_exhausted_all_in_without_legality_errors() {
 
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
 }
 
 #[test]
@@ -1227,7 +1568,7 @@ fn handles_ante_exhausted_all_in_without_legality_errors() {
 
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
 }
 
 #[test]
@@ -1237,7 +1578,7 @@ fn excludes_sitting_out_seats_from_active_order() {
 
     assert!(normalized.invariants.chip_conservation_ok);
     assert!(normalized.invariants.pot_conservation_ok);
-    assert!(normalized.invariants.invariant_errors.is_empty());
+    assert!(normalized.invariants.issues.is_empty());
 }
 
 fn read_hh_fixture(filename: &str) -> String {
@@ -1245,4 +1586,96 @@ fn read_hh_fixture(filename: &str) -> String {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../fixtures/mbr/hh/{filename}")),
     )
     .unwrap()
+}
+
+fn final_pots(hand: &NormalizedHand) -> Vec<FinalPot> {
+    hand.settlement.final_pots()
+}
+
+fn pot_contributions(hand: &NormalizedHand) -> Vec<PotContribution> {
+    hand.settlement.pot_contributions()
+}
+
+fn pot_eligibilities(hand: &NormalizedHand) -> Vec<PotEligibility> {
+    hand.settlement.pot_eligibilities()
+}
+
+fn pot_winners(hand: &NormalizedHand) -> Vec<PotWinner> {
+    hand.settlement.pot_winners()
+}
+
+fn elimination_json_by_player(hand: &NormalizedHand, player_name: &str) -> Value {
+    hand.eliminations
+        .iter()
+        .find(|elimination| elimination.eliminated_player_name == player_name)
+        .map(|elimination| serde_json::to_value(elimination).unwrap())
+        .unwrap_or_else(|| panic!("missing elimination for `{player_name}`"))
+}
+
+fn elimination_elimination_certainty(
+    elimination: &tracker_parser_core::models::HandElimination,
+) -> Option<String> {
+    let value = serde_json::to_value(elimination).unwrap();
+    value
+        .get("elimination_certainty_state")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            value.get("certainty_state")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+}
+
+fn elimination_ko_certainty(
+    elimination: &tracker_parser_core::models::HandElimination,
+) -> Option<String> {
+    let value = serde_json::to_value(elimination).unwrap();
+    value
+        .get("ko_certainty_state")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("certainty_state").and_then(Value::as_str))
+        .map(str::to_string)
+}
+
+fn elimination_last_busting_pot_no(
+    elimination: &tracker_parser_core::models::HandElimination,
+) -> Option<u64> {
+    let value = serde_json::to_value(elimination).unwrap();
+    value
+        .get("last_busting_pot_no")
+        .and_then(Value::as_u64)
+        .or_else(|| value.get("resolved_by_pot_no").and_then(Value::as_u64))
+}
+
+fn invariant_issue_codes(hand: &NormalizedHand) -> Vec<&'static str> {
+    hand.invariants
+        .issues
+        .iter()
+        .map(invariant_issue_code)
+        .collect()
+}
+
+fn invariant_issue_code(issue: &InvariantIssue) -> &'static str {
+    match issue {
+        InvariantIssue::ChipConservationMismatch { .. } => "chip_conservation_mismatch",
+        InvariantIssue::PotConservationMismatch { .. } => "pot_conservation_mismatch",
+        InvariantIssue::SummaryTotalPotMismatch { .. } => "summary_total_pot_mismatch",
+        InvariantIssue::PrematureStreetClose { .. } => "premature_street_close",
+        InvariantIssue::IllegalActorOrder { .. } => "illegal_actor_order",
+        InvariantIssue::IllegalSmallBlindActor { .. } => "illegal_small_blind_actor",
+        InvariantIssue::IllegalBigBlindActor { .. } => "illegal_big_blind_actor",
+        InvariantIssue::UncalledReturnActorMismatch { .. } => "uncalled_return_actor_mismatch",
+        InvariantIssue::UncalledReturnAmountMismatch { .. } => "uncalled_return_amount_mismatch",
+        InvariantIssue::IllegalCheck { .. } => "illegal_check",
+        InvariantIssue::IllegalCallAmount { .. } => "illegal_call_amount",
+        InvariantIssue::UndercallInconsistency { .. } => "undercall_inconsistency",
+        InvariantIssue::OvercallInconsistency { .. } => "overcall_inconsistency",
+        InvariantIssue::IllegalBetFacingOpenBet { .. } => "illegal_bet_facing_open_bet",
+        InvariantIssue::ActionNotReopenedAfterShortAllIn { .. } => {
+            "action_not_reopened_after_short_all_in"
+        }
+        InvariantIssue::IncompleteRaiseToCall { .. } => "incomplete_raise",
+        InvariantIssue::IncompleteRaiseSize { .. } => "incomplete_raise",
+    }
 }

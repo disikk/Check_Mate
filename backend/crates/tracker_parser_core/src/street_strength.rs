@@ -5,7 +5,7 @@ use crate::{
     models::{CanonicalParsedHand, CertaintyState, Street},
 };
 
-pub const STREET_HAND_STRENGTH_NUT_POLICY: &str = "deferred";
+pub const STREET_HAND_STRENGTH_NUT_POLICY: &str = "hand_and_draw";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BestHandClass {
@@ -162,8 +162,28 @@ struct StreetSignals {
     draw_category: DrawCategory,
     overcards_count: u8,
     has_air: bool,
+    is_nut_draw: bool,
     has_frontdoor_flush_draw: bool,
     has_player_specific_straight_draw: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct ImprovingNextCardOuts {
+    straight_out_cards: Vec<Card>,
+    flush_out_cards: Vec<Card>,
+}
+
+impl ImprovingNextCardOuts {
+    fn straight_completion_ranks(&self) -> BTreeSet<u8> {
+        self.straight_out_cards
+            .iter()
+            .map(|card| card.rank)
+            .collect::<BTreeSet<_>>()
+    }
+
+    fn has_flush_out(&self) -> bool {
+        !self.flush_out_cards.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -217,10 +237,8 @@ pub fn evaluate_street_hand_strength(
                 has_air: street_signals.has_air,
                 missed_flush_draw: false,
                 missed_straight_draw: false,
-                // Nut fields remain explicitly unavailable until a dedicated
-                // board-state policy is specified for this descriptor layer.
-                is_nut_hand: None,
-                is_nut_draw: None,
+                is_nut_hand: Some(is_nut_hand_on_board(&seat.cards, &street_board, &evaluated)),
+                is_nut_draw: Some(street_signals.is_nut_draw),
                 certainty_state: CertaintyState::Exact,
             });
         }
@@ -234,11 +252,9 @@ pub fn evaluate_street_hand_strength(
                 river_row.best_hand_class,
                 BestHandClass::Straight | BestHandClass::StraightFlush
             );
-            let suppress_missed_draw = should_suppress_missed_draw(river_row.best_hand_class);
-            river_row.missed_flush_draw =
-                !suppress_missed_draw && had_frontdoor_flush_draw && !flush_completed;
+            river_row.missed_flush_draw = had_frontdoor_flush_draw && !flush_completed;
             river_row.missed_straight_draw =
-                !suppress_missed_draw && had_player_specific_straight_draw && !straight_completed;
+                had_player_specific_straight_draw && !straight_completed;
         }
 
         rows.extend(seat_rows);
@@ -437,10 +453,12 @@ fn build_street_signals(
     evaluated: &EvaluatedHand,
     street: Street,
 ) -> StreetSignals {
-    let flush_draw = has_flush_draw(hole_cards, board, evaluated.best_hand_class, street);
+    let improving_outs =
+        improving_next_card_outs(hole_cards, board, evaluated.best_hand_class, street);
+    let flush_draw = improving_outs.has_flush_out();
     let backdoor_flush_draw =
-        has_backdoor_flush_draw(hole_cards, board, evaluated.best_hand_class, street);
-    let completion_ranks = straight_completion_ranks(hole_cards, board);
+        has_backdoor_flush_draw(hole_cards, board, evaluated.best_hand_class, street, flush_draw);
+    let completion_ranks = improving_outs.straight_completion_ranks();
     let open_ended = !is_straight_family(evaluated.best_hand_class)
         && completion_ranks.len() >= 2
         && has_player_specific_four_consecutive_run(hole_cards, board);
@@ -464,6 +482,17 @@ fn build_street_signals(
     } else {
         DrawCategory::None
     };
+    let nut_flush_family = is_nut_out_family(hole_cards, board, &improving_outs.flush_out_cards);
+    let nut_straight_family =
+        is_nut_out_family(hole_cards, board, &improving_outs.straight_out_cards);
+    let is_nut_draw = match draw_category {
+        DrawCategory::FlushDraw => nut_flush_family,
+        DrawCategory::Gutshot | DrawCategory::OpenEnded | DrawCategory::DoubleGutshot => {
+            nut_straight_family
+        }
+        DrawCategory::ComboDraw => nut_flush_family || nut_straight_family,
+        DrawCategory::None | DrawCategory::BackdoorFlushOnly => false,
+    };
     let max_board_rank = board
         .iter()
         .map(|board_card| board_card.rank)
@@ -486,24 +515,62 @@ fn build_street_signals(
         draw_category,
         overcards_count,
         has_air,
+        is_nut_draw,
         has_frontdoor_flush_draw: flush_draw,
         has_player_specific_straight_draw,
     }
 }
 
-fn has_flush_draw(
+fn improving_next_card_outs(
     hole_cards: &[Card; 2],
     board: &[Card],
     best_hand_class: BestHandClass,
     street: Street,
-) -> bool {
-    if matches!(street, Street::River) || is_flush_family(best_hand_class) {
-        return false;
+) -> ImprovingNextCardOuts {
+    if matches!(street, Street::River) {
+        return ImprovingNextCardOuts::default();
     }
 
-    suited_hole_counts(hole_cards, board)
-        .into_iter()
-        .any(|(_, (hole_count, total_count))| hole_count > 0 && total_count == 4)
+    let current_cards = all_cards(hole_cards, board);
+    let mut straight_out_cards = Vec::new();
+    let mut flush_out_cards = Vec::new();
+
+    for next_card in legal_unseen_next_cards(&current_cards) {
+        let mut next_state_cards = current_cards.clone();
+        next_state_cards.push(next_card);
+        let next_evaluated = evaluate_best_hand(&next_state_cards);
+
+        if next_evaluated.best_hand_class.rank_code() <= best_hand_class.rank_code() {
+            continue;
+        }
+
+        if next_evaluated.best_hand_class == BestHandClass::Straight
+            && best_combo_uses_hole_card(
+                &next_state_cards,
+                hole_cards,
+                BestHandClass::Straight,
+                next_evaluated.best_hand_rank_value,
+            )
+        {
+            straight_out_cards.push(next_card);
+        }
+
+        if next_evaluated.best_hand_class == BestHandClass::Flush
+            && best_combo_uses_hole_card(
+                &next_state_cards,
+                hole_cards,
+                BestHandClass::Flush,
+                next_evaluated.best_hand_rank_value,
+            )
+        {
+            flush_out_cards.push(next_card);
+        }
+    }
+
+    ImprovingNextCardOuts {
+        straight_out_cards,
+        flush_out_cards,
+    }
 }
 
 fn has_backdoor_flush_draw(
@@ -511,20 +578,56 @@ fn has_backdoor_flush_draw(
     board: &[Card],
     best_hand_class: BestHandClass,
     street: Street,
+    has_frontdoor_flush_draw: bool,
 ) -> bool {
-    if !matches!(street, Street::Flop) || is_flush_family(best_hand_class) {
+    if !matches!(street, Street::Flop)
+        || is_flush_family(best_hand_class)
+        || has_frontdoor_flush_draw
+    {
         return false;
     }
 
-    let suited_counts = suited_hole_counts(hole_cards, board);
-    let has_live_flush_draw = suited_counts
-        .values()
-        .any(|(hole_count, total_count)| *hole_count > 0 && *total_count == 4);
+    let current_cards = all_cards(hole_cards, board);
+    let suited_counts = suited_hole_counts(hole_cards, board)
+        .into_iter()
+        .filter_map(|(suit, (hole_count, total_count))| {
+            (hole_count > 0 && total_count == 3).then_some(suit)
+        })
+        .collect::<Vec<_>>();
 
-    !has_live_flush_draw
-        && suited_counts
-            .values()
-            .any(|(hole_count, total_count)| *hole_count > 0 && *total_count == 3)
+    suited_counts.into_iter().any(|target_suit| {
+        let suited_unseen_cards = legal_unseen_next_cards(&current_cards)
+            .into_iter()
+            .filter(|card| card.suit == target_suit)
+            .collect::<Vec<_>>();
+
+        for turn_index in 0..suited_unseen_cards.len() {
+            for river_index in turn_index + 1..suited_unseen_cards.len() {
+                let mut river_state_cards = current_cards.clone();
+                river_state_cards.push(suited_unseen_cards[turn_index]);
+                river_state_cards.push(suited_unseen_cards[river_index]);
+
+                let river_evaluated = evaluate_best_hand(&river_state_cards);
+                if river_evaluated.best_hand_class.rank_code() <= best_hand_class.rank_code() {
+                    continue;
+                }
+
+                if matches!(
+                    river_evaluated.best_hand_class,
+                    BestHandClass::Flush | BestHandClass::StraightFlush
+                ) && best_combo_uses_hole_card(
+                    &river_state_cards,
+                    hole_cards,
+                    river_evaluated.best_hand_class,
+                    river_evaluated.best_hand_rank_value,
+                ) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    })
 }
 
 fn suited_hole_counts(hole_cards: &[Card; 2], board: &[Card]) -> BTreeMap<Suit, (usize, usize)> {
@@ -537,45 +640,83 @@ fn suited_hole_counts(hole_cards: &[Card; 2], board: &[Card]) -> BTreeMap<Suit, 
     counts
 }
 
-fn straight_completion_ranks(hole_cards: &[Card; 2], board: &[Card]) -> BTreeSet<u8> {
-    let current_ranks = all_cards(hole_cards, board)
-        .iter()
-        .map(|card| card.rank)
-        .collect::<Vec<_>>();
-    if highest_straight_high(&current_ranks).is_some() {
-        return BTreeSet::new();
-    }
-
-    (2_u8..=14_u8)
-        .filter(|candidate_rank| {
-            completion_creates_player_specific_straight(hole_cards, board, *candidate_rank)
-        })
+fn legal_unseen_next_cards(current_cards: &[Card]) -> Vec<Card> {
+    full_deck()
+        .into_iter()
+        .filter(|candidate| !current_cards.contains(candidate))
         .collect()
 }
 
-fn completion_creates_player_specific_straight(
+fn legal_opponent_hole_card_combinations(board: &[Card], hole_cards: &[Card; 2]) -> Vec<[Card; 2]> {
+    let mut dead_cards = board.to_vec();
+    dead_cards.extend(hole_cards.iter().copied());
+    let available_cards = full_deck()
+        .into_iter()
+        .filter(|candidate| !dead_cards.contains(candidate))
+        .collect::<Vec<_>>();
+    let mut combinations = Vec::new();
+
+    for first_index in 0..available_cards.len().saturating_sub(1) {
+        for second_index in first_index + 1..available_cards.len() {
+            combinations.push([available_cards[first_index], available_cards[second_index]]);
+        }
+    }
+
+    combinations
+}
+
+fn is_nut_hand_on_board(
     hole_cards: &[Card; 2],
     board: &[Card],
-    candidate_rank: u8,
+    our_evaluated: &EvaluatedHand,
 ) -> bool {
-    let mut ranks = all_cards(hole_cards, board)
-        .iter()
-        .map(|card| card.rank)
-        .collect::<Vec<_>>();
-    ranks.push(candidate_rank);
+    for opponent_hole_cards in legal_opponent_hole_card_combinations(board, hole_cards) {
+        let opponent_cards = all_cards(&opponent_hole_cards, board);
+        let opponent_evaluated = evaluate_best_hand(&opponent_cards);
 
-    let combined_rank_set = mirrored_rank_set(&ranks);
-    let hole_rank_set =
-        mirrored_rank_set(&hole_cards.iter().map(|card| card.rank).collect::<Vec<_>>());
-    let candidate_rank_set = mirrored_rank_set(&[candidate_rank]);
+        if opponent_evaluated.best_hand_rank_value > our_evaluated.best_hand_rank_value {
+            return false;
+        }
+    }
 
-    (1_u8..=10_u8).any(|start| {
-        let mut window = start..=start + 4;
-        window.clone().all(|rank| combined_rank_set.contains(&rank))
-            && window
-                .clone()
-                .any(|rank| candidate_rank_set.contains(&rank))
-            && window.any(|rank| hole_rank_set.contains(&rank))
+    true
+}
+
+fn is_nut_out_family(hole_cards: &[Card; 2], board: &[Card], out_cards: &[Card]) -> bool {
+    !out_cards.is_empty()
+        && out_cards.iter().all(|out_card| out_results_in_nut_hand(hole_cards, board, *out_card))
+}
+
+fn out_results_in_nut_hand(hole_cards: &[Card; 2], board: &[Card], out_card: Card) -> bool {
+    let mut resulting_board = board.to_vec();
+    resulting_board.push(out_card);
+    let resulting_cards = all_cards(hole_cards, &resulting_board);
+    let resulting_evaluated = evaluate_best_hand(&resulting_cards);
+
+    is_nut_hand_on_board(hole_cards, &resulting_board, &resulting_evaluated)
+}
+
+fn full_deck() -> Vec<Card> {
+    let mut deck = Vec::with_capacity(52);
+    for suit in [Suit::Clubs, Suit::Diamonds, Suit::Hearts, Suit::Spades] {
+        for rank in 2_u8..=14_u8 {
+            deck.push(Card { rank, suit });
+        }
+    }
+    deck
+}
+
+fn best_combo_uses_hole_card(
+    cards: &[Card],
+    hole_cards: &[Card; 2],
+    expected_class: BestHandClass,
+    expected_rank_value: i64,
+) -> bool {
+    five_card_combinations(cards).into_iter().any(|combo| {
+        let evaluated = evaluate_five_card_hand(&combo);
+        evaluated.best_hand_class == expected_class
+            && evaluated.best_hand_rank_value == expected_rank_value
+            && combo.iter().any(|card| hole_cards.contains(card))
     })
 }
 
@@ -767,17 +908,5 @@ fn is_flush_family(best_hand_class: BestHandClass) -> bool {
     matches!(
         best_hand_class,
         BestHandClass::Flush | BestHandClass::StraightFlush
-    )
-}
-
-fn should_suppress_missed_draw(best_hand_class: BestHandClass) -> bool {
-    matches!(
-        best_hand_class,
-        BestHandClass::TwoPair
-            | BestHandClass::Straight
-            | BestHandClass::Flush
-            | BestHandClass::FullHouse
-            | BestHandClass::Quads
-            | BestHandClass::StraightFlush
     )
 }

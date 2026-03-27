@@ -443,6 +443,423 @@ fn excludes_board_only_draws_from_canonical_draw_category() {
 }
 
 #[test]
+fn excludes_non_improving_straight_patterns_from_turn_draw_category_but_keeps_river_miss_history()
+{
+    let made_flush_with_rank_completion = parse_canonical_hand(
+        &showdown_hand(
+            "BRSTR043",
+            ["Jh", "Th", "2h"],
+            Some("3h"),
+            Some("As"),
+            "Hero",
+            "[8h 7d]",
+            "Villain",
+            "[Ac Ad]",
+            "Hero collected 200 from pot",
+            "Seat 1: Villain (small blind) showed [Ac Ad] and lost with a pair of Aces\nSeat 2: Hero (big blind) showed [8h 7d] and collected (200) with a flush, Jack high",
+        ),
+    )
+    .unwrap();
+    let made_flush_with_open_ended_pattern = parse_canonical_hand(
+        &showdown_hand(
+            "BRSTR044",
+            ["9h", "Th", "2h"],
+            Some("3h"),
+            Some("As"),
+            "Hero",
+            "[8h 7d]",
+            "Villain",
+            "[Ac Ad]",
+            "Hero collected 200 from pot",
+            "Seat 1: Villain (small blind) showed [Ac Ad] and lost with a pair of Aces\nSeat 2: Hero (big blind) showed [8h 7d] and collected (200) with a flush, Ten high",
+        ),
+    )
+    .unwrap();
+
+    let flush_rows = evaluate_street_hand_strength(&made_flush_with_rank_completion).unwrap();
+    let open_ended_flush_rows =
+        evaluate_street_hand_strength(&made_flush_with_open_ended_pattern).unwrap();
+
+    assert_eq!(
+        row(&flush_rows, 2, Street::Turn).unwrap().draw_category,
+        DrawCategory::None
+    );
+    assert!(row(&flush_rows, 2, Street::River).unwrap().missed_straight_draw);
+    assert_eq!(
+        row(&open_ended_flush_rows, 2, Street::Turn)
+            .unwrap()
+            .draw_category,
+        DrawCategory::None
+    );
+    assert!(
+        row(&open_ended_flush_rows, 2, Street::River)
+            .unwrap()
+            .missed_straight_draw
+    );
+}
+
+#[test]
+fn classifies_backdoor_flush_only_from_runner_runner_flush_family_potential() {
+    let two_suited_hole_cards = parse_canonical_hand(
+        &showdown_hand(
+            "BRSTR045",
+            ["Qc", "7h", "2d"],
+            Some("4s"),
+            Some("3h"),
+            "Hero",
+            "[Ac Kc]",
+            "Villain",
+            "[9c 9d]",
+            "Villain collected 200 from pot",
+            "Seat 1: Villain (small blind) showed [9c 9d] and collected (200) with a pair of Nines\nSeat 2: Hero (big blind) showed [Ac Kc] and lost with Ace high",
+        ),
+    )
+    .unwrap();
+    let straight_flush_family_backdoor = parse_canonical_hand(
+        &showdown_hand(
+            "BRSTR046",
+            ["Qh", "3c", "2d"],
+            Some("4s"),
+            Some("5d"),
+            "Hero",
+            "[Jh Th]",
+            "Villain",
+            "[9c 9d]",
+            "Villain collected 200 from pot",
+            "Seat 1: Villain (small blind) showed [9c 9d] and collected (200) with a pair of Nines\nSeat 2: Hero (big blind) showed [Jh Th] and lost with Queen high",
+        ),
+    )
+    .unwrap();
+
+    let two_suited_rows = evaluate_street_hand_strength(&two_suited_hole_cards).unwrap();
+    let straight_flush_family_rows =
+        evaluate_street_hand_strength(&straight_flush_family_backdoor).unwrap();
+
+    assert_eq!(
+        row(&two_suited_rows, 2, Street::Flop)
+            .unwrap()
+            .draw_category,
+        DrawCategory::BackdoorFlushOnly
+    );
+    assert_eq!(
+        row(&straight_flush_family_rows, 2, Street::Flop)
+            .unwrap()
+            .draw_category,
+        DrawCategory::BackdoorFlushOnly
+    );
+    assert_eq!(
+        row(&straight_flush_family_rows, 2, Street::Turn)
+            .unwrap()
+            .draw_category,
+        DrawCategory::None
+    );
+}
+
+#[test]
+fn classifies_is_nut_hand_relative_to_board() {
+    let cases: Vec<(&str, String, Street, bool)> = vec![
+        (
+            "turn_shared_broadway",
+            showdown_hand(
+                "BRSTR048",
+                ["Tc", "Jd", "Qh"],
+                Some("Ks"),
+                Some("2c"),
+                "Hero",
+                "[Ac 2d]",
+                "Villain",
+                "[9c 9d]",
+                "Hero collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and lost with a pair of Nines\nSeat 2: Hero (big blind) showed [Ac 2d] and collected (200) with a straight, Ace high",
+            ),
+            Street::Turn,
+            true,
+        ),
+        (
+            "flop_straight_below_possible_flush",
+            showdown_hand(
+                "BRSTR049",
+                ["Ah", "Kh", "Qh"],
+                Some("2c"),
+                Some("3d"),
+                "Hero",
+                "[Jc Td]",
+                "Villain",
+                "[9c 9d]",
+                "Hero collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and lost with a pair of Nines\nSeat 2: Hero (big blind) showed [Jc Td] and collected (200) with a straight, Ace high",
+            ),
+            Street::Flop,
+            false,
+        ),
+        (
+            "flop_nut_flush_on_monotone_board",
+            showdown_hand(
+                "BRSTR050",
+                ["Kh", "8h", "4h"],
+                Some("Qd"),
+                Some("3s"),
+                "Hero",
+                "[Ah Qh]",
+                "Villain",
+                "[9c 9d]",
+                "Hero collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and lost with a pair of Nines\nSeat 2: Hero (big blind) showed [Ah Qh] and collected (200) with a flush, Ace high",
+            ),
+            Street::Flop,
+            true,
+        ),
+        (
+            "flop_lower_flush_on_monotone_board",
+            showdown_hand(
+                "BRSTR051",
+                ["Kh", "8h", "4h"],
+                Some("Qd"),
+                Some("3s"),
+                "Hero",
+                "[Qh Jh]",
+                "Villain",
+                "[9c 9d]",
+                "Hero collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and lost with a pair of Nines\nSeat 2: Hero (big blind) showed [Qh Jh] and collected (200) with a flush, King high",
+            ),
+            Street::Flop,
+            false,
+        ),
+        (
+            "river_top_full_house_on_double_paired_board",
+            showdown_hand(
+                "BRSTR052",
+                ["Ah", "Ad", "Kc"],
+                Some("Ks"),
+                Some("Qh"),
+                "Hero",
+                "[As Kd]",
+                "Villain",
+                "[9c 9d]",
+                "Hero collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and lost with two pair, Aces and Kings\nSeat 2: Hero (big blind) showed [As Kd] and collected (200) with a full house, Aces full of Kings",
+            ),
+            Street::River,
+            true,
+        ),
+        (
+            "river_lower_full_house_on_double_paired_board",
+            showdown_hand(
+                "BRSTR053",
+                ["Ah", "Ad", "Kc"],
+                Some("Ks"),
+                Some("Qh"),
+                "Hero",
+                "[Kd 2c]",
+                "Villain",
+                "[9c 9d]",
+                "Hero collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and lost with two pair, Aces and Kings\nSeat 2: Hero (big blind) showed [Kd 2c] and collected (200) with a full house, Kings full of Aces",
+            ),
+            Street::River,
+            false,
+        ),
+        (
+            "turn_quads_ceiling",
+            showdown_hand(
+                "BRSTR054",
+                ["Ah", "Ad", "Ac"],
+                Some("Ks"),
+                Some("2d"),
+                "Hero",
+                "[As 3c]",
+                "Villain",
+                "[9c 9d]",
+                "Hero collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and lost with three of a kind, Aces\nSeat 2: Hero (big blind) showed [As 3c] and collected (200) with four of a kind, Aces",
+            ),
+            Street::Turn,
+            true,
+        ),
+        (
+            "river_straight_flush_ceiling",
+            showdown_hand(
+                "BRSTR055",
+                ["Qh", "Jh", "Th"],
+                Some("2c"),
+                Some("3d"),
+                "Hero",
+                "[Ah Kh]",
+                "Villain",
+                "[9c 9d]",
+                "Hero collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and lost with a pair of Nines\nSeat 2: Hero (big blind) showed [Ah Kh] and collected (200) with a straight flush, Ace high",
+            ),
+            Street::River,
+            true,
+        ),
+    ];
+
+    for (case_id, raw_hand, street, expected_is_nut_hand) in cases {
+        let hand = parse_canonical_hand(&raw_hand).unwrap();
+        let rows = evaluate_street_hand_strength(&hand).unwrap();
+        let descriptor = row(&rows, 2, street).unwrap();
+
+        assert_eq!(
+            descriptor.is_nut_hand,
+            Some(expected_is_nut_hand),
+            "case_id={case_id}"
+        );
+        assert_eq!(descriptor.is_nut_draw, Some(false), "case_id={case_id}");
+    }
+}
+
+#[test]
+fn classifies_is_nut_draw_relative_to_ordinary_draw_families() {
+    let cases: Vec<(&str, String, Street, DrawCategory, bool)> = vec![
+        (
+            "flop_nut_flush_draw",
+            showdown_hand(
+                "BRSTR056",
+                ["Ah", "7h", "Kd"],
+                Some("4c"),
+                Some("2s"),
+                "Hero",
+                "[Kh Qh]",
+                "Villain",
+                "[9c 9d]",
+                "Hero collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and lost with a pair of Nines\nSeat 2: Hero (big blind) showed [Kh Qh] and collected (200) with a pair of Kings",
+            ),
+            Street::Flop,
+            DrawCategory::FlushDraw,
+            true,
+        ),
+        (
+            "flop_dominated_flush_draw",
+            showdown_hand(
+                "BRSTR057",
+                ["Ah", "7h", "Kd"],
+                Some("4c"),
+                Some("2s"),
+                "Hero",
+                "[Jh 2h]",
+                "Villain",
+                "[9c 9d]",
+                "Villain collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and collected (200) with a pair of Nines\nSeat 2: Hero (big blind) showed [Jh 2h] and lost with a pair of Twos",
+            ),
+            Street::Flop,
+            DrawCategory::FlushDraw,
+            false,
+        ),
+        (
+            "flop_nut_straight_draw",
+            showdown_hand(
+                "BRSTR058",
+                ["Qd", "Js", "2h"],
+                Some("4c"),
+                Some("3d"),
+                "Hero",
+                "[Ah Kc]",
+                "Villain",
+                "[9c 9d]",
+                "Villain collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and collected (200) with a pair of Nines\nSeat 2: Hero (big blind) showed [Ah Kc] and lost with Ace high",
+            ),
+            Street::Flop,
+            DrawCategory::Gutshot,
+            true,
+        ),
+        (
+            "flop_dominated_straight_draw",
+            showdown_hand(
+                "BRSTR059",
+                ["9c", "Tc", "2s"],
+                Some("4d"),
+                Some("Ah"),
+                "Hero",
+                "[8h 7d]",
+                "Villain",
+                "[Ac Ad]",
+                "Villain collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [Ac Ad] and collected (200) with a pair of Aces\nSeat 2: Hero (big blind) showed [8h 7d] and lost with Ten high",
+            ),
+            Street::Flop,
+            DrawCategory::OpenEnded,
+            false,
+        ),
+        (
+            "flop_combo_draw_one_nut_family",
+            showdown_hand(
+                "BRSTR060",
+                ["Ah", "Kh", "Qh"],
+                Some("Jd"),
+                Some("3c"),
+                "Hero",
+                "[Jh Ac]",
+                "Villain",
+                "[Js Jc]",
+                "Villain collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [Js Jc] and collected (200) with three of a kind, Jacks\nSeat 2: Hero (big blind) showed [Jh Ac] and lost with a pair of Aces",
+            ),
+            Street::Turn,
+            DrawCategory::ComboDraw,
+            true,
+        ),
+        (
+            "flop_combo_draw_without_nut_family",
+            showdown_hand(
+                "BRSTR061",
+                ["Qh", "Jh", "2h"],
+                Some("4c"),
+                Some("3d"),
+                "Hero",
+                "[Th 9c]",
+                "Villain",
+                "[Ac Ad]",
+                "Villain collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [Ac Ad] and collected (200) with a pair of Aces\nSeat 2: Hero (big blind) showed [Th 9c] and lost with Queen high",
+            ),
+            Street::Flop,
+            DrawCategory::ComboDraw,
+            false,
+        ),
+        (
+            "flop_backdoor_only_never_nut_draw",
+            showdown_hand(
+                "BRSTR062",
+                ["Qh", "7h", "2c"],
+                Some("4d"),
+                Some("3s"),
+                "Hero",
+                "[Ah Kc]",
+                "Villain",
+                "[9c 9d]",
+                "Villain collected 200 from pot",
+                "Seat 1: Villain (small blind) showed [9c 9d] and collected (200) with a pair of Nines\nSeat 2: Hero (big blind) showed [Ah Kc] and lost with Ace high",
+            ),
+            Street::Flop,
+            DrawCategory::BackdoorFlushOnly,
+            false,
+        ),
+    ];
+
+    for (case_id, raw_hand, street, expected_draw_category, expected_is_nut_draw) in cases {
+        let hand = parse_canonical_hand(&raw_hand).unwrap();
+        let rows = evaluate_street_hand_strength(&hand).unwrap();
+        let descriptor = row(&rows, 2, street).unwrap();
+
+        assert_eq!(
+            descriptor.draw_category,
+            expected_draw_category,
+            "case_id={case_id}"
+        );
+        assert_eq!(
+            descriptor.is_nut_draw,
+            Some(expected_is_nut_draw),
+            "case_id={case_id}"
+        );
+    }
+}
+
+#[test]
 fn classifies_overcards_count_and_air() {
     let two_overcards_hand = parse_canonical_hand(
         &showdown_hand(
@@ -555,14 +972,52 @@ fn materializes_split_missed_draw_flags() {
         ),
     )
     .unwrap();
+    let full_house_after_frontdoor_flush_miss = parse_canonical_hand(
+        &showdown_hand(
+            "BRSTR048",
+            ["Kd", "7h", "2h"],
+            Some("Kc"),
+            Some("7c"),
+            "Hero",
+            "[Ah Kh]",
+            "Villain",
+            "[Qc Qd]",
+            "Hero collected 200 from pot",
+            "Seat 1: Villain (small blind) showed [Qc Qd] and lost with two pair, Kings and Queens\nSeat 2: Hero (big blind) showed [Ah Kh] and collected (200) with a full house, Kings full of Sevens",
+        ),
+    )
+    .unwrap();
+    let two_pair_after_busted_straight_draw = parse_canonical_hand(
+        &showdown_hand(
+            "BRSTR049",
+            ["Kc", "Qs", "2h"],
+            Some("2d"),
+            Some("As"),
+            "Hero",
+            "[Ah Td]",
+            "Villain",
+            "[9c 9d]",
+            "Hero collected 200 from pot",
+            "Seat 1: Villain (small blind) showed [9c 9d] and lost with two pair, Nines and Twos\nSeat 2: Hero (big blind) showed [Ah Td] and collected (200) with two pair, Aces and Twos",
+        ),
+    )
+    .unwrap();
 
     let busted_flush_rows = evaluate_street_hand_strength(&busted_flush_draw).unwrap();
     let busted_straight_rows = evaluate_street_hand_strength(&busted_straight_draw).unwrap();
     let full_house_rows = evaluate_street_hand_strength(&full_house_after_backdoor).unwrap();
+    let full_house_after_frontdoor_rows =
+        evaluate_street_hand_strength(&full_house_after_frontdoor_flush_miss).unwrap();
+    let two_pair_after_busted_straight_rows =
+        evaluate_street_hand_strength(&two_pair_after_busted_straight_draw).unwrap();
 
     let busted_flush_river = row(&busted_flush_rows, 2, Street::River).unwrap();
     let busted_straight_river = row(&busted_straight_rows, 2, Street::River).unwrap();
     let full_house_river = row(&full_house_rows, 2, Street::River).unwrap();
+    let full_house_after_frontdoor_river =
+        row(&full_house_after_frontdoor_rows, 2, Street::River).unwrap();
+    let two_pair_after_busted_straight_river =
+        row(&two_pair_after_busted_straight_rows, 2, Street::River).unwrap();
 
     assert!(busted_flush_river.missed_flush_draw);
     assert!(!busted_flush_river.missed_straight_draw);
@@ -572,6 +1027,85 @@ fn materializes_split_missed_draw_flags() {
 
     assert!(!full_house_river.missed_flush_draw);
     assert!(!full_house_river.missed_straight_draw);
+
+    assert!(full_house_after_frontdoor_river.missed_flush_draw);
+    assert!(!full_house_after_frontdoor_river.missed_straight_draw);
+
+    assert!(!two_pair_after_busted_straight_river.missed_flush_draw);
+    assert!(two_pair_after_busted_straight_river.missed_straight_draw);
+}
+
+#[test]
+fn keeps_missed_flush_draw_when_river_finishes_as_two_pair() {
+    let two_pair_after_frontdoor_miss = parse_canonical_hand(
+        &showdown_hand(
+            "BRSTR047",
+            ["Kd", "7h", "2h"],
+            Some("9c"),
+            Some("Kc"),
+            "Hero",
+            "[Ah 9h]",
+            "Villain",
+            "[Qc Qd]",
+            "Hero collected 200 from pot",
+            "Seat 1: Villain (small blind) showed [Qc Qd] and lost with two pair, Kings and Queens\nSeat 2: Hero (big blind) showed [Ah 9h] and collected (200) with two pair, Kings and Nines",
+        ),
+    )
+    .unwrap();
+
+    let rows = evaluate_street_hand_strength(&two_pair_after_frontdoor_miss).unwrap();
+    let river = row(&rows, 2, Street::River).unwrap();
+
+    assert_eq!(river.best_hand_class, BestHandClass::TwoPair);
+    assert!(river.missed_flush_draw);
+    assert!(!river.missed_straight_draw);
+}
+
+#[test]
+fn backdoor_only_requires_ordinary_turn_promotion_before_missed_flush_materializes() {
+    let backdoor_only_never_promotes = parse_canonical_hand(
+        &showdown_hand(
+            "BRSTR050",
+            ["Kd", "8s", "2h"],
+            Some("8d"),
+            Some("As"),
+            "Hero",
+            "[Ah 6h]",
+            "Villain",
+            "[9c 9d]",
+            "Hero collected 200 from pot",
+            "Seat 1: Villain (small blind) showed [9c 9d] and lost with two pair, Nines and Eights\nSeat 2: Hero (big blind) showed [Ah 6h] and collected (200) with two pair, Aces and Eights",
+        ),
+    )
+    .unwrap();
+    let backdoor_promotes_to_turn_flush_draw_then_misses = parse_canonical_hand(
+        &showdown_hand(
+            "BRSTR051",
+            ["Kd", "8s", "2h"],
+            Some("Qh"),
+            Some("As"),
+            "Hero",
+            "[Ah 3h]",
+            "Villain",
+            "[9c 9d]",
+            "Hero collected 200 from pot",
+            "Seat 1: Villain (small blind) showed [9c 9d] and lost with a pair of Nines\nSeat 2: Hero (big blind) showed [Ah 3h] and collected (200) with a pair of Aces",
+        ),
+    )
+    .unwrap();
+
+    let backdoor_only_rows = evaluate_street_hand_strength(&backdoor_only_never_promotes).unwrap();
+    let promoted_rows =
+        evaluate_street_hand_strength(&backdoor_promotes_to_turn_flush_draw_then_misses).unwrap();
+
+    let backdoor_only_river = row(&backdoor_only_rows, 2, Street::River).unwrap();
+    let promoted_river = row(&promoted_rows, 2, Street::River).unwrap();
+
+    assert!(!backdoor_only_river.missed_flush_draw);
+    assert!(!backdoor_only_river.missed_straight_draw);
+
+    assert!(promoted_river.missed_flush_draw);
+    assert!(!promoted_river.missed_straight_draw);
 }
 
 #[test]

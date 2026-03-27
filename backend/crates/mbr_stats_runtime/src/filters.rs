@@ -173,24 +173,33 @@ fn load_filter_contexts(
     }
 
     for row in client.query(
-        "SELECT latest.hand_id, jsonb_array_elements_text(latest.uncertain_reason_codes)
+        "SELECT latest.hand_id, issue_codes.code, issue_codes.is_pot_issue
          FROM (
              SELECT DISTINCT ON (hsr.hand_id)
                  hsr.hand_id,
-                 hsr.uncertain_reason_codes
+                 hsr.settlement
              FROM derived.hand_state_resolutions hsr
              INNER JOIN core.hands h
                ON h.id = hsr.hand_id
              WHERE h.organization_id = $1
                AND h.player_profile_id = $2
              ORDER BY hsr.hand_id, hsr.created_at DESC
-         ) AS latest",
+         ) AS latest
+         CROSS JOIN LATERAL (
+             SELECT issue->>'code' AS code, FALSE AS is_pot_issue
+             FROM jsonb_array_elements(COALESCE(latest.settlement->'issues', '[]'::jsonb)) issue
+             UNION ALL
+             SELECT pot_issue->>'code' AS code, TRUE AS is_pot_issue
+             FROM jsonb_array_elements(COALESCE(latest.settlement->'pots', '[]'::jsonb)) pot,
+                  jsonb_array_elements(COALESCE(pot->'issues', '[]'::jsonb)) pot_issue
+         ) AS issue_codes",
         &[&organization_id, &player_profile_id],
     )? {
         let hand_id: Uuid = row.get(0);
         if let Some(context) = contexts.get_mut(&hand_id) {
-            let reason: String = row.get(1);
-            let reason_code = extract_reason_code(&reason);
+            let raw_code: String = row.get(1);
+            let is_pot_issue: bool = row.get(2);
+            let reason_code = canonical_settlement_issue_code(&raw_code, is_pot_issue);
             context
                 .hand_bool_values
                 .insert(format!("has_uncertain_reason_code:{reason_code}"), true);
@@ -198,28 +207,29 @@ fn load_filter_contexts(
     }
 
     for row in client.query(
-        "SELECT latest.hand_id, jsonb_array_elements_text(latest.invariant_errors)
+        "SELECT latest.hand_id, issue->>'code'
          FROM (
              SELECT DISTINCT ON (hsr.hand_id)
                  hsr.hand_id,
-                 hsr.invariant_errors
+                 hsr.invariant_issues
              FROM derived.hand_state_resolutions hsr
              INNER JOIN core.hands h
                ON h.id = hsr.hand_id
              WHERE h.organization_id = $1
                AND h.player_profile_id = $2
              ORDER BY hsr.hand_id, hsr.created_at DESC
-         ) AS latest",
+         ) AS latest
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(latest.invariant_issues, '[]'::jsonb)) issue",
         &[&organization_id, &player_profile_id],
     )? {
         let hand_id: Uuid = row.get(0);
         if let Some(context) = contexts.get_mut(&hand_id) {
-            let issue: String = row.get(1);
-            let issue_code = extract_reason_code(&issue);
+            let raw_code: String = row.get(1);
+            let issue_code = canonical_invariant_issue_code(&raw_code);
             context
                 .hand_bool_values
                 .insert(format!("has_invariant_error_code:{issue_code}"), true);
-            if is_action_legality_issue_code(issue_code) {
+            if is_action_legality_issue_code(&issue_code) {
                 context
                     .hand_bool_values
                     .insert(format!("has_action_legality_issue:{issue_code}"), true);
@@ -387,12 +397,12 @@ fn load_filter_contexts(
          FROM derived.hand_eliminations he
          INNER JOIN core.hand_seats hs
            ON hs.hand_id = he.hand_id
-          AND hs.player_name = ANY(he.ko_involved_winners)
+          AND hs.player_name = ANY(he.ko_winner_set)
          INNER JOIN core.hands h
            ON h.id = he.hand_id
          WHERE h.organization_id = $1
            AND h.player_profile_id = $2
-           AND he.certainty_state = 'exact'",
+           AND he.ko_certainty_state = 'exact'",
         &[
             &organization_id,
             &player_profile_id,
@@ -422,7 +432,7 @@ fn load_filter_contexts(
            ON h.id = he.hand_id
          WHERE h.organization_id = $1
            AND h.player_profile_id = $2
-           AND he.certainty_state = 'exact'",
+           AND he.elimination_certainty_state = 'exact'",
         &[
             &organization_id,
             &player_profile_id,
@@ -723,14 +733,6 @@ fn compare_enum(
     Ok(actual == expected)
 }
 
-fn extract_reason_code(reason: &str) -> &str {
-    reason
-        .split_once(':')
-        .map(|(code, _)| code)
-        .unwrap_or(reason)
-        .trim()
-}
-
 fn is_action_legality_issue_code(code: &str) -> bool {
     matches!(
         code,
@@ -756,11 +758,39 @@ fn is_sparse_exact_core_hand_feature(feature_key: &str) -> bool {
         || feature_key.starts_with("has_action_legality_issue:")
 }
 
+fn canonical_settlement_issue_code(raw_code: &str, is_pot_issue: bool) -> String {
+    match (is_pot_issue, raw_code) {
+        (true, "ambiguous_hidden_showdown") => {
+            "pot_settlement_ambiguous_hidden_showdown".to_string()
+        }
+        (true, "ambiguous_partial_reveal") => {
+            "pot_settlement_ambiguous_partial_reveal".to_string()
+        }
+        (false, "collect_events_without_pots") => "collect_events_without_pots".to_string(),
+        (false, "missing_collections") => "pot_winners_missing_collections".to_string(),
+        (false, "multiple_exact_allocations") => {
+            "pot_settlement_multiple_exact_allocations".to_string()
+        }
+        (false, "collect_conflict_no_exact_settlement_matches_collected_amounts") => {
+            "pot_settlement_collect_conflict".to_string()
+        }
+        _ => raw_code.to_string(),
+    }
+}
+
+fn canonical_invariant_issue_code(raw_code: &str) -> String {
+    match raw_code {
+        "incomplete_raise_to_call" | "incomplete_raise_size" => "incomplete_raise".to_string(),
+        _ => raw_code.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         FeatureRef, FilterCondition, FilterError, FilterOperator, FilterValue, HandFilterContext,
-        RuntimeFilterSet, StreetFilterRow, collect_matching_hand_ids, evaluate_runtime_filter_set,
+        RuntimeFilterSet, StreetFilterRow, canonical_invariant_issue_code,
+        canonical_settlement_issue_code, collect_matching_hand_ids, evaluate_runtime_filter_set,
     };
     use std::collections::BTreeMap;
     use uuid::Uuid;
@@ -825,6 +855,33 @@ mod tests {
         };
 
         assert_eq!(evaluate_runtime_filter_set(&context, &filters), Ok(true));
+    }
+
+    #[test]
+    fn canonicalizes_typed_settlement_issue_codes_for_sparse_features() {
+        assert_eq!(
+            canonical_settlement_issue_code("ambiguous_hidden_showdown", true),
+            "pot_settlement_ambiguous_hidden_showdown"
+        );
+        assert_eq!(
+            canonical_settlement_issue_code(
+                "collect_conflict_no_exact_settlement_matches_collected_amounts",
+                false
+            ),
+            "pot_settlement_collect_conflict"
+        );
+    }
+
+    #[test]
+    fn canonicalizes_typed_invariant_issue_codes_for_sparse_features() {
+        assert_eq!(
+            canonical_invariant_issue_code("incomplete_raise_to_call"),
+            "incomplete_raise"
+        );
+        assert_eq!(
+            canonical_invariant_issue_code("illegal_actor_order"),
+            "illegal_actor_order"
+        );
     }
 
     #[test]

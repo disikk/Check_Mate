@@ -1,8 +1,10 @@
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
+use serde_json::{Value, json};
 use tracker_parser_core::{
     models::{
-        ActionType, AllInReason, CanonicalParsedHand, CertaintyState, NormalizedHand, Street,
+        ActionType, AllInReason, CanonicalParsedHand, CertaintyState, InvariantIssue,
+        NormalizedHand, PotSettlementIssue, SettlementIssue, Street,
     },
     normalizer::normalize_hand,
     parsers::hand_history::{parse_canonical_hand, split_hand_history},
@@ -87,76 +89,59 @@ fn normalizes_phase0_exact_core_edge_matrix_with_reason_coded_contracts() {
     let normalized = normalized_edge_matrix();
 
     let ante_exhausted = normalized.get("BRCM0403").unwrap();
-    assert!(ante_exhausted.invariants.invariant_errors.is_empty());
-    assert!(ante_exhausted.invariants.uncertain_reason_codes.is_empty());
+    assert!(ante_exhausted.invariants.issues.is_empty());
+    assert!(settlement_issue_codes(ante_exhausted).is_empty());
 
     let blind_exhausted = normalized.get("BRCM0404").unwrap();
-    assert!(blind_exhausted.invariants.invariant_errors.is_empty());
-    assert!(blind_exhausted.invariants.uncertain_reason_codes.is_empty());
-    assert_eq!(blind_exhausted.final_pots.len(), 1);
-    assert_eq!(blind_exhausted.final_pots[0].amount, 120);
+    assert!(blind_exhausted.invariants.issues.is_empty());
+    assert!(settlement_issue_codes(blind_exhausted).is_empty());
+    assert_eq!(final_pots_contract(blind_exhausted).len(), 1);
+    assert_eq!(final_pots_contract(blind_exhausted)[0].1, 120);
     assert_eq!(
-        blind_exhausted
-            .pot_contributions
+        pot_contributions_contract(blind_exhausted)
             .iter()
-            .map(|contribution| (
-                contribution.pot_no,
-                contribution.player_name.as_str(),
-                contribution.amount,
-            ))
+            .map(|(pot_no, player_name, amount)| (*pot_no, player_name.as_str(), *amount))
             .collect::<Vec<_>>(),
         vec![(1, "Hero", 60), (1, "ShortBb", 60)]
     );
     assert_eq!(
-        blind_exhausted
-            .pot_eligibilities
+        pot_eligibilities_contract(blind_exhausted)
             .iter()
-            .map(|eligibility| (eligibility.pot_no, eligibility.player_name.as_str()))
+            .map(|(pot_no, player_name)| (*pot_no, player_name.as_str()))
             .collect::<Vec<_>>(),
         vec![(1, "Hero"), (1, "ShortBb")]
     );
 
     let dead_blind_with_ante = normalized.get("BRCM0405").unwrap();
-    assert!(dead_blind_with_ante.invariants.invariant_errors.is_empty());
-    assert!(dead_blind_with_ante.invariants.uncertain_reason_codes.is_empty());
+    assert!(dead_blind_with_ante.invariants.issues.is_empty());
+    assert!(settlement_issue_codes(dead_blind_with_ante).is_empty());
 
     let hu_preflop_illegal = normalized.get("BRLEGAL2").unwrap();
     assert!(
-        hu_preflop_illegal
-            .invariants
-            .invariant_errors
+        invariant_issue_codes(hu_preflop_illegal)
             .iter()
-            .any(|issue| issue.starts_with("illegal_actor_order:"))
+            .any(|issue| *issue == "illegal_actor_order")
     );
 
     let hu_postflop_illegal = normalized.get("BRLEGAL3").unwrap();
     assert!(
-        hu_postflop_illegal
-            .invariants
-            .invariant_errors
+        invariant_issue_codes(hu_postflop_illegal)
             .iter()
-            .any(|issue| issue.starts_with("illegal_actor_order:"))
+            .any(|issue| *issue == "illegal_actor_order")
     );
 
     let short_all_in_non_reopen = normalized.get("BRLEGAL4").unwrap();
     assert!(
-        short_all_in_non_reopen
-            .invariants
-            .invariant_errors
+        invariant_issue_codes(short_all_in_non_reopen)
             .iter()
-            .any(|issue| issue.starts_with("action_not_reopened_after_short_all_in:"))
+            .any(|issue| *issue == "action_not_reopened_after_short_all_in")
     );
 
     let sidepot_ko = normalized.get("BRSIDE1").unwrap();
     assert_eq!(
-        sidepot_ko
-            .pot_contributions
+        pot_contributions_contract(sidepot_ko)
             .iter()
-            .map(|contribution| (
-                contribution.pot_no,
-                contribution.player_name.as_str(),
-                contribution.amount,
-            ))
+            .map(|(pot_no, player_name, amount)| (*pot_no, player_name.as_str(), *amount))
             .collect::<Vec<_>>(),
         vec![
             (1, "Shorty", 100),
@@ -171,10 +156,9 @@ fn normalizes_phase0_exact_core_edge_matrix_with_reason_coded_contracts() {
         ]
     );
     assert_eq!(
-        sidepot_ko
-            .pot_eligibilities
+        pot_eligibilities_contract(sidepot_ko)
             .iter()
-            .map(|eligibility| (eligibility.pot_no, eligibility.player_name.as_str()))
+            .map(|(pot_no, player_name)| (*pot_no, player_name.as_str()))
             .collect::<Vec<_>>(),
         vec![
             (1, "Shorty"),
@@ -192,28 +176,32 @@ fn normalizes_phase0_exact_core_edge_matrix_with_reason_coded_contracts() {
         .iter()
         .find(|elimination| elimination.eliminated_player_name == "Medium")
         .unwrap();
-    assert_eq!(medium.resolved_by_pot_nos, vec![1, 2, 3]);
-    assert_eq!(medium.certainty_state, CertaintyState::Exact);
-    assert!(medium.is_sidepot_based);
+    let medium = elimination_json(medium);
+    assert_eq!(medium["pots_participated_by_busted"], json!([1, 2, 3]));
+    assert_eq!(medium["pots_causing_bust"], json!([3]));
+    assert_eq!(medium["last_busting_pot_no"], json!(3));
+    assert_eq!(medium["ko_winner_set"], json!(["BigStack"]));
+    assert_eq!(medium["elimination_certainty_state"], json!("exact"));
+    assert_eq!(medium["ko_certainty_state"], json!("exact"));
 
     let hidden_showdown = normalized.get("BRCM0502").unwrap();
-    assert!(hidden_showdown.pot_winners.is_empty());
+    assert!(pot_winners_contract(hidden_showdown).is_empty());
     assert!(
-        hidden_showdown
-            .invariants
-            .uncertain_reason_codes
+        settlement_issue_codes(hidden_showdown)
             .iter()
-            .any(|issue| issue.starts_with("pot_settlement_ambiguous_hidden_showdown:"))
+            .any(|issue| issue.starts_with("pot_settlement_ambiguous_hidden_showdown"))
     );
 
     let odd_chip = normalized.get("BRCM0503").unwrap();
-    assert!(odd_chip.invariants.invariant_errors.is_empty());
-    assert_eq!(odd_chip.pot_winners.len(), 4);
+    assert_eq!(odd_chip.settlement.certainty_state, CertaintyState::Exact);
+    assert!(odd_chip.invariants.issues.is_empty());
+    assert!(settlement_issue_codes(odd_chip).is_empty());
+    let pot_winners = pot_winners_contract(odd_chip);
+    assert_eq!(pot_winners.len(), 4);
     assert_eq!(
-        odd_chip
-            .pot_winners
+        pot_winners
             .iter()
-            .map(|winner| winner.share_amount)
+            .map(|(_, _, share_amount)| *share_amount)
             .sum::<i64>(),
         401
     );
@@ -224,17 +212,21 @@ fn normalizes_phase0_exact_core_edge_matrix_with_reason_coded_contracts() {
         .iter()
         .find(|elimination| elimination.eliminated_player_name == "Medium")
         .unwrap();
-    assert_eq!(medium.resolved_by_pot_nos, vec![1, 2]);
-    // GG rule: KO-credit по последнему side pot (pot 2), Hero единственный winner.
-    assert_eq!(medium.ko_credit_pot_no, Some(2));
+    let medium = elimination_json(medium);
+    assert_eq!(medium["pots_participated_by_busted"], json!([1, 2]));
+    assert_eq!(medium["pots_causing_bust"], json!([2]));
+    assert_eq!(medium["last_busting_pot_no"], json!(2));
+    assert_eq!(medium["ko_winner_set"], json!(["Hero"]));
     assert_eq!(
-        medium.ko_involved_winners,
-        vec!["Hero".to_string()]
+        medium["ko_share_fraction_by_winner"],
+        json!([{
+            "seat_no": 1,
+            "player_name": "Hero",
+            "share_fraction": 1.0
+        }])
     );
-    assert_eq!(medium.hero_share_fraction, Some(1.0));
-    assert_eq!(medium.hero_ko_share_total, Some(1.0));
-    assert!(!medium.joint_ko);
-    assert_eq!(medium.certainty_state, CertaintyState::Exact);
+    assert_eq!(medium["elimination_certainty_state"], json!("exact"));
+    assert_eq!(medium["ko_certainty_state"], json!("exact"));
 }
 
 #[test]
@@ -267,12 +259,16 @@ fn parses_phase0_exact_core_edge_matrix_with_explicit_manifest_contracts() {
 
 #[test]
 fn normalizes_phase0_exact_core_edge_matrix_with_explicit_manifest_contracts() {
+    let parsed = parsed_edge_matrix();
     let normalized = normalized_edge_matrix();
     let expected = expected_normalization_contracts();
 
     assert_eq!(normalized.len(), expected.len());
 
     for (hand_id, contract) in expected {
+        let parsed_hand = parsed
+            .get(hand_id)
+            .unwrap_or_else(|| panic!("missing parsed edge hand `{hand_id}`"));
         let hand = normalized
             .get(hand_id)
             .unwrap_or_else(|| panic!("missing normalized edge hand `{hand_id}`"));
@@ -303,21 +299,13 @@ fn normalizes_phase0_exact_core_edge_matrix_with_explicit_manifest_contracts() {
             "pot-eligibility contract mismatch for `{hand_id}`"
         );
         assert_eq!(
-            hand.invariants
-                .invariant_errors
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            contract.invariant_errors,
+            invariant_issue_manifest(hand, parsed_hand),
+            materialize_str_contract(&contract.invariant_errors),
             "invariant-error contract mismatch for `{hand_id}`"
         );
         assert_eq!(
-            hand.invariants
-                .uncertain_reason_codes
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            contract.uncertain_reason_codes,
+            settlement_issue_manifest(hand),
+            materialize_str_contract(&contract.uncertain_reason_codes),
             "uncertainty contract mismatch for `{hand_id}`"
         );
     }
@@ -2153,14 +2141,16 @@ fn returns_contract(hand: &NormalizedHand) -> Vec<(String, i64, String)> {
 }
 
 fn final_pots_contract(hand: &NormalizedHand) -> Vec<FinalPotContract> {
-    hand.final_pots
+    hand.settlement
+        .final_pots()
         .iter()
         .map(|pot| (pot.pot_no, pot.amount, pot.is_main))
         .collect()
 }
 
 fn pot_contributions_contract(hand: &NormalizedHand) -> Vec<(u8, String, i64)> {
-    hand.pot_contributions
+    hand.settlement
+        .pot_contributions()
         .iter()
         .map(|contribution| {
             (
@@ -2173,10 +2163,349 @@ fn pot_contributions_contract(hand: &NormalizedHand) -> Vec<(u8, String, i64)> {
 }
 
 fn pot_eligibilities_contract(hand: &NormalizedHand) -> Vec<(u8, String)> {
-    hand.pot_eligibilities
+    hand.settlement
+        .pot_eligibilities()
         .iter()
         .map(|eligibility| (eligibility.pot_no, eligibility.player_name.clone()))
         .collect()
+}
+
+fn pot_winners_contract(hand: &NormalizedHand) -> Vec<(u8, String, i64)> {
+    hand.settlement
+        .pot_winners()
+        .iter()
+        .map(|winner| {
+            (
+                winner.pot_no,
+                winner.player_name.clone(),
+                winner.share_amount,
+            )
+        })
+        .collect()
+}
+
+fn elimination_json(elimination: &tracker_parser_core::models::HandElimination) -> Value {
+    serde_json::to_value(elimination).unwrap()
+}
+
+fn invariant_issue_manifest(hand: &NormalizedHand, parsed_hand: &CanonicalParsedHand) -> Vec<String> {
+    hand.invariants
+        .issues
+        .iter()
+        .map(|issue| format_invariant_issue(issue, parsed_hand))
+        .collect()
+}
+
+fn invariant_issue_codes(hand: &NormalizedHand) -> Vec<&'static str> {
+    hand.invariants
+        .issues
+        .iter()
+        .map(invariant_issue_code)
+        .collect()
+}
+
+fn format_invariant_issue(issue: &InvariantIssue, parsed_hand: &CanonicalParsedHand) -> String {
+    match issue {
+        InvariantIssue::ChipConservationMismatch {
+            starting_sum,
+            final_sum,
+        } => {
+            format!("chip_conservation_mismatch: starting_sum={starting_sum} final_sum={final_sum}")
+        }
+        InvariantIssue::PotConservationMismatch {
+            committed_total,
+            collected_total,
+            rake_amount,
+        } => format!(
+            "pot_conservation_mismatch: committed_total={committed_total} collected_total={collected_total} rake_amount={rake_amount}"
+        ),
+        InvariantIssue::SummaryTotalPotMismatch {
+            summary_total_pot,
+            collected_plus_rake,
+        } => format!(
+            "summary_total_pot_mismatch: summary_total_pot={summary_total_pot} collected_plus_rake={collected_plus_rake}"
+        ),
+        InvariantIssue::PrematureStreetClose {
+            street,
+            pending_players,
+        } => format!(
+            "premature_street_close: street={} pending={}",
+            street_name(*street),
+            pending_players.join(",")
+        ),
+        InvariantIssue::IllegalActorOrder {
+            street,
+            seq,
+            expected_actor,
+            actual_actor,
+        } => format!(
+            "illegal_actor_order: street={} seq={} expected={} actual={} raw_line={}",
+            street_name(*street),
+            seq,
+            expected_actor,
+            actual_actor,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::IllegalSmallBlindActor {
+            seq,
+            expected_actor,
+            actual_actor,
+        } => format!(
+            "illegal_small_blind_actor: seq={} expected={} actual={} raw_line={}",
+            seq,
+            expected_actor,
+            actual_actor,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::IllegalBigBlindActor {
+            seq,
+            expected_actor,
+            actual_actor,
+        } => format!(
+            "illegal_big_blind_actor: seq={} expected={} actual={} raw_line={}",
+            seq,
+            expected_actor,
+            actual_actor,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::UncalledReturnActorMismatch { seq, player_name } => format!(
+            "uncalled_return_actor_mismatch: seq={} player={} raw_line={}",
+            seq,
+            player_name,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::UncalledReturnAmountMismatch {
+            seq,
+            player_name,
+            allowed_refund,
+            actual_refund,
+        } => format!(
+            "uncalled_return_amount_mismatch: seq={} player={} allowed_refund={} actual_refund={} raw_line={}",
+            seq,
+            player_name,
+            allowed_refund,
+            actual_refund,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::IllegalCheck {
+            street,
+            seq,
+            player_name,
+            required_call,
+        } => format!(
+            "illegal_check: street={} seq={} player={} required_call={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            required_call,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::IllegalCallAmount {
+            street,
+            seq,
+            player_name,
+            expected_call,
+            actual_amount,
+        } => format!(
+            "illegal_call_amount: street={} seq={} player={} expected_call={} actual_amount={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            expected_call,
+            actual_amount,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::UndercallInconsistency {
+            street,
+            seq,
+            player_name,
+            expected_call,
+            actual_amount,
+        } => format!(
+            "undercall_inconsistency: street={} seq={} player={} expected_call={} actual_amount={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            expected_call,
+            actual_amount,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::OvercallInconsistency {
+            street,
+            seq,
+            player_name,
+            expected_call,
+            actual_amount,
+        } => format!(
+            "overcall_inconsistency: street={} seq={} player={} expected_call={} actual_amount={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            expected_call,
+            actual_amount,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::IllegalBetFacingOpenBet {
+            street,
+            seq,
+            player_name,
+            required_call,
+        } => format!(
+            "illegal_bet_facing_open_bet: street={} seq={} player={} required_call={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            required_call,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::ActionNotReopenedAfterShortAllIn {
+            street,
+            seq,
+            player_name,
+        } => format!(
+            "action_not_reopened_after_short_all_in: street={} seq={} player={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::IncompleteRaiseToCall {
+            street,
+            seq,
+            player_name,
+            current_to_call,
+            attempted_to,
+        } => format!(
+            "incomplete_raise: street={} seq={} player={} current_to_call={} attempted_to={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            current_to_call,
+            attempted_to,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::IncompleteRaiseSize {
+            street,
+            seq,
+            player_name,
+            min_raise,
+            actual_raise,
+        } => format!(
+            "incomplete_raise: street={} seq={} player={} min_raise={} actual_raise={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            min_raise,
+            actual_raise,
+            action_raw_line(parsed_hand, *seq)
+        ),
+    }
+}
+
+fn invariant_issue_code(issue: &InvariantIssue) -> &'static str {
+    match issue {
+        InvariantIssue::ChipConservationMismatch { .. } => "chip_conservation_mismatch",
+        InvariantIssue::PotConservationMismatch { .. } => "pot_conservation_mismatch",
+        InvariantIssue::SummaryTotalPotMismatch { .. } => "summary_total_pot_mismatch",
+        InvariantIssue::PrematureStreetClose { .. } => "premature_street_close",
+        InvariantIssue::IllegalActorOrder { .. } => "illegal_actor_order",
+        InvariantIssue::IllegalSmallBlindActor { .. } => "illegal_small_blind_actor",
+        InvariantIssue::IllegalBigBlindActor { .. } => "illegal_big_blind_actor",
+        InvariantIssue::UncalledReturnActorMismatch { .. } => "uncalled_return_actor_mismatch",
+        InvariantIssue::UncalledReturnAmountMismatch { .. } => "uncalled_return_amount_mismatch",
+        InvariantIssue::IllegalCheck { .. } => "illegal_check",
+        InvariantIssue::IllegalCallAmount { .. } => "illegal_call_amount",
+        InvariantIssue::UndercallInconsistency { .. } => "undercall_inconsistency",
+        InvariantIssue::OvercallInconsistency { .. } => "overcall_inconsistency",
+        InvariantIssue::IllegalBetFacingOpenBet { .. } => "illegal_bet_facing_open_bet",
+        InvariantIssue::ActionNotReopenedAfterShortAllIn { .. } => {
+            "action_not_reopened_after_short_all_in"
+        }
+        InvariantIssue::IncompleteRaiseToCall { .. } => "incomplete_raise",
+        InvariantIssue::IncompleteRaiseSize { .. } => "incomplete_raise",
+    }
+}
+
+fn settlement_issue_manifest(hand: &NormalizedHand) -> Vec<String> {
+    let mut issues = hand
+        .settlement
+        .issues
+        .iter()
+        .map(format_settlement_issue)
+        .collect::<Vec<_>>();
+    issues.extend(hand.settlement.pots.iter().flat_map(|pot| {
+        pot.issues
+            .iter()
+            .map(move |issue| format_pot_settlement_issue(pot.pot_no, issue))
+    }));
+    issues
+}
+
+fn settlement_issue_codes(hand: &NormalizedHand) -> Vec<&'static str> {
+    let mut codes = hand
+        .settlement
+        .issues
+        .iter()
+        .map(settlement_issue_code)
+        .collect::<Vec<_>>();
+    codes.extend(
+        hand.settlement
+            .pots
+            .iter()
+            .flat_map(|pot| pot.issues.iter())
+            .map(pot_settlement_issue_code),
+    );
+    codes
+}
+
+fn format_settlement_issue(issue: &SettlementIssue) -> String {
+    match issue {
+        SettlementIssue::CollectEventsWithoutPots => "collect_events_without_pots".to_string(),
+        SettlementIssue::MissingCollections => "pot_winners_missing_collections".to_string(),
+        SettlementIssue::MultipleExactAllocations => {
+            "pot_settlement_multiple_exact_allocations".to_string()
+        }
+        SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts => {
+            "pot_settlement_collect_conflict".to_string()
+        }
+    }
+}
+
+fn settlement_issue_code(issue: &SettlementIssue) -> &'static str {
+    match issue {
+        SettlementIssue::CollectEventsWithoutPots => "collect_events_without_pots",
+        SettlementIssue::MissingCollections => "pot_winners_missing_collections",
+        SettlementIssue::MultipleExactAllocations => "pot_settlement_multiple_exact_allocations",
+        SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts => {
+            "pot_settlement_collect_conflict"
+        }
+    }
+}
+
+fn format_pot_settlement_issue(pot_no: u8, issue: &PotSettlementIssue) -> String {
+    match issue {
+        PotSettlementIssue::AmbiguousHiddenShowdown { eligible_players } => format!(
+            "pot_settlement_ambiguous_hidden_showdown: pot_no={}, eligible_players={}",
+            pot_no,
+            eligible_players.join("|")
+        ),
+        PotSettlementIssue::AmbiguousPartialReveal { eligible_players } => format!(
+            "pot_settlement_ambiguous_partial_reveal: pot_no={}, eligible_players={}",
+            pot_no,
+            eligible_players.join("|")
+        ),
+    }
+}
+
+fn pot_settlement_issue_code(issue: &PotSettlementIssue) -> &'static str {
+    match issue {
+        PotSettlementIssue::AmbiguousHiddenShowdown { .. } => {
+            "pot_settlement_ambiguous_hidden_showdown"
+        }
+        PotSettlementIssue::AmbiguousPartialReveal { .. } => {
+            "pot_settlement_ambiguous_partial_reveal"
+        }
+    }
 }
 
 fn materialize_action_contracts(
@@ -2255,6 +2584,30 @@ fn materialize_pot_eligibilities_contract(
         .iter()
         .map(|(pot_no, player_name)| (*pot_no, (*player_name).to_string()))
         .collect()
+}
+
+fn materialize_str_contract(contracts: &[&'static str]) -> Vec<String> {
+    contracts.iter().map(|contract| (*contract).to_string()).collect()
+}
+
+fn action_raw_line<'a>(parsed_hand: &'a CanonicalParsedHand, seq: usize) -> &'a str {
+    parsed_hand
+        .actions
+        .iter()
+        .find(|event| event.seq == seq)
+        .map(|event| event.raw_line.as_str())
+        .unwrap_or_else(|| panic!("missing action seq {seq} in `{}`", parsed_hand.header.hand_id))
+}
+
+fn street_name(street: Street) -> &'static str {
+    match street {
+        Street::Preflop => "preflop",
+        Street::Flop => "flop",
+        Street::Turn => "turn",
+        Street::River => "river",
+        Street::Showdown => "showdown",
+        Street::Summary => "summary",
+    }
 }
 
 fn normalized_edge_matrix() -> BTreeMap<String, tracker_parser_core::models::NormalizedHand> {

@@ -1,15 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     ParserError,
     betting_rules::evaluate_action_legality,
     models::{
-        ActionType, CanonicalParsedHand, CertaintyState, FinalPot, HandElimination,
-        HandOutcomeActual, HandReturn, NormalizationInvariants, NormalizedHand, ParsedHandSeat,
-        PlayerNodeState, PlayerStatus, PotContribution, PotSlice, PotWinner,
+        ActionType, CanonicalParsedHand, CertaintyState, HandElimination,
+        HandEliminationKoShare, HandInvariants, HandOutcomeActual, HandReturn, InvariantIssue,
+        NormalizedHand, ParsedHandSeat, PlayerNodeState, PlayerStatus, PotSlice,
         ResolutionNodeSnapshot, Street,
     },
-    pot_resolution::resolve_hand_pots,
+    pot_resolution::{observed_payouts, resolve_hand_pots},
 };
 
 #[derive(Debug, Clone)]
@@ -21,6 +21,7 @@ struct ReplayState {
     committed_total: BTreeMap<String, i64>,
     committed_by_street: BTreeMap<String, BTreeMap<String, i64>>,
     betting_round_contrib: BTreeMap<String, i64>,
+    pending_live_actors: BTreeSet<String>,
     status: BTreeMap<String, PlayerStatus>,
     current_street: Street,
     snapshot: Option<ResolutionNodeSnapshot>,
@@ -74,21 +75,22 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         &replay.committed_total,
         &replay.status,
     )?;
+    let settlement = pot_resolution.settlement;
+    let observed_payout_totals = observed_payouts(hand).best_effort_totals();
 
     let stacks_after_actual = player_order
         .iter()
         .map(|player| {
             let final_stack = replay.starting_stack[player] - replay.committed_total[player]
-                + hand.collected_amounts.get(player).copied().unwrap_or(0);
+                + observed_payout_totals.get(player).copied().unwrap_or(0);
             (player.clone(), final_stack)
         })
         .collect::<BTreeMap<_, _>>();
 
     let total_committed = replay.committed_total.values().sum::<i64>();
-    let total_collected = hand.collected_amounts.values().sum::<i64>();
-    let mut invariant_errors = Vec::new();
-    invariant_errors.append(&mut legality_errors);
-    invariant_errors.extend(pot_resolution.invariant_errors.clone());
+    let total_collected = observed_payout_totals.values().sum::<i64>();
+    let mut invariant_issues = Vec::new();
+    invariant_issues.append(&mut legality_errors);
 
     let eliminations = ordered_seats
         .iter()
@@ -99,12 +101,8 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
                 .unwrap_or(0);
             (seat.starting_stack > 0 && final_stack == 0).then(|| {
                 build_elimination(
-                    hand,
                     seat,
-                    &pot_resolution.pot_contributions,
-                    &pot_resolution.final_pots,
-                    &pot_resolution.pot_winners,
-                    pot_resolution.certainty_state,
+                    &settlement,
                 )
             })
         })
@@ -114,48 +112,47 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
     let final_sum = stacks_after_actual.values().sum::<i64>();
     let chip_conservation_ok = starting_sum == final_sum;
     if !chip_conservation_ok {
-        invariant_errors.push(format!(
-            "chip_conservation_mismatch: starting_sum={starting_sum}, final_sum={final_sum}"
-        ));
+        invariant_issues.push(InvariantIssue::ChipConservationMismatch {
+            starting_sum,
+            final_sum,
+        });
     }
 
     let pot_conservation_ok = total_committed == total_collected + rake_amount;
     if !pot_conservation_ok {
-        invariant_errors.push(format!(
-            "pot_conservation_mismatch: committed_total={total_committed}, collected_total={total_collected}, rake_amount={rake_amount}"
-        ));
+        invariant_issues.push(InvariantIssue::PotConservationMismatch {
+            committed_total: total_committed,
+            collected_total: total_collected,
+            rake_amount,
+        });
     }
     if let Some(summary_total_pot) = hand.summary_total_pot
         && summary_total_pot != total_collected + rake_amount
     {
-        invariant_errors.push(format!(
-            "summary_total_pot_mismatch: summary_total_pot={summary_total_pot}, collected_plus_rake={}",
-            total_collected + rake_amount
-        ));
+        invariant_issues.push(InvariantIssue::SummaryTotalPotMismatch {
+            summary_total_pot,
+            collected_plus_rake: total_collected + rake_amount,
+        });
     }
 
     Ok(NormalizedHand {
         hand_id: hand.header.hand_id.clone(),
         player_order,
         snapshot: replay.snapshot,
-        final_pots: pot_resolution.final_pots,
-        pot_contributions: pot_resolution.pot_contributions,
-        pot_eligibilities: pot_resolution.pot_eligibilities,
-        pot_winners: pot_resolution.pot_winners,
+        settlement,
         returns,
         actual: HandOutcomeActual {
             committed_total_by_player: replay.committed_total,
             stacks_after_actual,
-            winner_collections: hand.collected_amounts.clone(),
+            winner_collections: observed_payout_totals,
             final_board_cards,
             rake_amount,
         },
         eliminations,
-        invariants: NormalizationInvariants {
+        invariants: HandInvariants {
             chip_conservation_ok,
             pot_conservation_ok,
-            invariant_errors,
-            uncertain_reason_codes: pot_resolution.uncertain_reason_codes,
+            issues: invariant_issues,
         },
         warnings,
     })
@@ -195,6 +192,11 @@ impl ReplayState {
                 (player.clone(), player_status)
             })
             .collect::<BTreeMap<_, _>>();
+        let pending_live_actors = status
+            .iter()
+            .filter(|(_, status)| **status == PlayerStatus::Live)
+            .map(|(player, _)| player.clone())
+            .collect::<BTreeSet<_>>();
 
         Self {
             ordered_seats,
@@ -204,6 +206,7 @@ impl ReplayState {
             committed_total,
             committed_by_street,
             betting_round_contrib,
+            pending_live_actors,
             status,
             current_street: Street::Preflop,
             snapshot: None,
@@ -290,8 +293,9 @@ impl ReplayState {
         }
 
         self.update_player_status(player_name, event);
+        self.update_pending_live_actors(player_name, event);
 
-        if self.snapshot.is_none() && self.should_capture_snapshot(event) {
+        if self.snapshot.is_none() && self.should_capture_snapshot() {
             self.snapshot = Some(build_snapshot(
                 hand,
                 hero_name,
@@ -323,6 +327,12 @@ impl ReplayState {
                 .iter()
                 .map(|player| (player.clone(), 0_i64))
                 .collect::<BTreeMap<_, _>>();
+            self.pending_live_actors = self
+                .player_order
+                .iter()
+                .filter(|player| self.status[player.as_str()] == PlayerStatus::Live)
+                .cloned()
+                .collect::<BTreeSet<_>>();
         }
     }
 
@@ -342,7 +352,50 @@ impl ReplayState {
         }
     }
 
-    fn should_capture_snapshot(&self, event: &crate::models::HandActionEvent) -> bool {
+    fn update_pending_live_actors(
+        &mut self,
+        player_name: &str,
+        event: &crate::models::HandActionEvent,
+    ) {
+        self.pending_live_actors
+            .retain(|player| self.status[player.as_str()] == PlayerStatus::Live);
+
+        match event.action_type {
+            ActionType::Bet | ActionType::RaiseTo => {
+                self.pending_live_actors = self
+                    .player_order
+                    .iter()
+                    .filter(|player| {
+                        player.as_str() != player_name
+                            && self.status[player.as_str()] == PlayerStatus::Live
+                    })
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+            }
+            ActionType::Check | ActionType::Call | ActionType::Fold => {
+                self.pending_live_actors.remove(player_name);
+            }
+            ActionType::ReturnUncalled => {
+                self.pending_live_actors.clear();
+            }
+            ActionType::PostAnte
+            | ActionType::PostSb
+            | ActionType::PostBb
+            | ActionType::PostDead
+            | ActionType::Collect
+            | ActionType::Show
+            | ActionType::Muck => {}
+        }
+    }
+
+    fn should_capture_snapshot(&self) -> bool {
+        if matches!(self.current_street, Street::Showdown | Street::Summary) {
+            return false;
+        }
+        if !self.pending_live_actors.is_empty() {
+            return false;
+        }
+
         let contestants = self
             .player_order
             .iter()
@@ -362,13 +415,11 @@ impl ReplayState {
             .iter()
             .filter(|player| self.status[player.as_str()] == PlayerStatus::Live)
             .count();
-
-        let betting_closed_with_single_live = all_in_count >= 1
-            && live_count == 1
-            && matches!(event.action_type, ActionType::Call | ActionType::Check);
         let all_contestants_all_in = contestants.len() >= 2 && all_in_count == contestants.len();
+        let betting_closed_with_single_live =
+            contestants.len() >= 2 && all_in_count >= 1 && live_count == 1;
 
-        contestants.len() >= 2 && (all_contestants_all_in || betting_closed_with_single_live)
+        all_contestants_all_in || betting_closed_with_single_live
     }
 }
 
@@ -401,116 +452,118 @@ fn build_returns(
 }
 
 fn build_elimination(
-    hand: &CanonicalParsedHand,
     seat: &ParsedHandSeat,
-    pot_contributions: &[PotContribution],
-    final_pots: &[FinalPot],
-    pot_winners: &[PotWinner],
-    winner_mapping_state: CertaintyState,
+    settlement: &crate::models::HandSettlement,
 ) -> HandElimination {
-    // Шаг 1: найти все pot'ы, в которые busted player внёсся (диагностический след).
-    let resolved_by_pot_nos = pot_contributions
+    let pots_participated_by_busted = settlement
+        .pots
         .iter()
-        .filter(|contribution| contribution.seat_no == seat.seat_no)
-        .map(|contribution| contribution.pot_no)
+        .filter(|pot| {
+            pot.contributions
+                .iter()
+                .any(|contribution| contribution.seat_no == seat.seat_no)
+        })
+        .map(|pot| pot.pot_no)
         .collect::<Vec<_>>();
-    let resolved_by_pot_nos = dedup_preserving_order(resolved_by_pot_nos);
+    let mut pots_causing_bust = Vec::new();
+    let mut stack_remaining = seat.starting_stack;
 
-    if resolved_by_pot_nos.is_empty() {
-        return HandElimination {
-            eliminated_seat_no: seat.seat_no,
-            eliminated_player_name: seat.player_name.clone(),
-            resolved_by_pot_nos: Vec::new(),
-            ko_credit_pot_no: None,
-            ko_involved_winners: Vec::new(),
-            hero_ko_share_total: None,
-            joint_ko: false,
-            resolved_by_pot_no: None,
-            ko_involved_winner_count: 0,
-            hero_involved: false,
-            hero_share_fraction: None,
-            is_split_ko: false,
-            split_n: None,
-            is_sidepot_based: false,
-            certainty_state: CertaintyState::Uncertain,
+    for pot in &settlement.pots {
+        let Some(contribution) = pot
+            .contributions
+            .iter()
+            .find(|contribution| contribution.seat_no == seat.seat_no)
+        else {
+            continue;
         };
+
+        stack_remaining -= contribution.amount;
+
+        let player_is_eligible = pot
+            .eligibilities
+            .iter()
+            .any(|eligibility| eligibility.seat_no == seat.seat_no);
+        let player_won_share = pot.selected_allocation.as_ref().is_some_and(|allocation| {
+            allocation
+                .shares
+                .iter()
+                .any(|share| share.seat_no == seat.seat_no && share.share_amount > 0)
+        });
+
+        if player_is_eligible && !player_won_share && stack_remaining <= 0 {
+            pots_causing_bust.push(pot.pot_no);
+            break;
+        }
     }
 
-    // Шаг 2: KO credit pot — highest pot_no, содержащий chips busted player.
-    // Правило GG: bounty делится только между winners последнего side pot.
-    let ko_credit_pot_no = *resolved_by_pot_nos.iter().max().unwrap();
-
-    // Шаг 3: winners и hero share считаем ТОЛЬКО по credit pot.
-    let credit_pot_winners = pot_winners
-        .iter()
-        .filter(|winner| winner.pot_no == ko_credit_pot_no)
-        .collect::<Vec<_>>();
-    let credit_pot_amount = final_pots
-        .iter()
-        .find(|pot| pot.pot_no == ko_credit_pot_no)
-        .map(|pot| pot.amount)
-        .unwrap_or(0);
-    let hero_name = hand.hero_name.as_deref().unwrap_or_default();
-    let hero_share = credit_pot_winners
-        .iter()
-        .filter(|winner| winner.player_name == hero_name)
-        .map(|winner| winner.share_amount)
-        .sum::<i64>();
-    let share_fraction =
-        if winner_mapping_state == CertaintyState::Exact && credit_pot_amount > 0 {
-            Some(hero_share as f64 / credit_pot_amount as f64)
-        } else {
-            None
-        };
-    let ko_involved_winners = dedup_preserving_order(
-        credit_pot_winners
+    let last_busting_pot_no = pots_causing_bust.last().copied();
+    let busting_pot = last_busting_pot_no.and_then(|pot_no| {
+        settlement
+            .pots
             .iter()
-            .map(|winner| winner.player_name.clone())
-            .collect::<Vec<_>>(),
-    );
-    let split_n = (!ko_involved_winners.is_empty()).then_some(ko_involved_winners.len() as u8);
-    let resolved_by_pot_no = (resolved_by_pot_nos.len() == 1).then_some(resolved_by_pot_nos[0]);
-    let joint_ko = ko_involved_winners.len() > 1;
+            .find(|pot| pot.pot_no == pot_no)
+    });
+    let (ko_winner_set, ko_share_fraction_by_winner, ko_certainty_state) =
+        if let Some(pot) = busting_pot {
+            if let Some(allocation) = pot.selected_allocation.as_ref() {
+                let ko_winner_set = allocation
+                    .shares
+                    .iter()
+                    .map(|share| share.player_name.clone())
+                    .collect::<Vec<_>>();
+                let ko_share_fraction_by_winner = if pot.amount > 0 {
+                    allocation
+                        .shares
+                        .iter()
+                        .map(|share| HandEliminationKoShare {
+                            seat_no: share.seat_no,
+                            player_name: share.player_name.clone(),
+                            share_fraction: share.share_amount as f64 / pot.amount as f64,
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
+
+                (
+                    ko_winner_set,
+                    ko_share_fraction_by_winner,
+                    CertaintyState::Exact,
+                )
+            } else {
+                (
+                    Vec::new(),
+                    Vec::new(),
+                    fallback_ko_certainty_state(settlement.certainty_state),
+                )
+            }
+        } else {
+            (
+                Vec::new(),
+                Vec::new(),
+                fallback_ko_certainty_state(settlement.certainty_state),
+            )
+        };
 
     HandElimination {
         eliminated_seat_no: seat.seat_no,
         eliminated_player_name: seat.player_name.clone(),
-        resolved_by_pot_nos: resolved_by_pot_nos.clone(),
-        ko_credit_pot_no: Some(ko_credit_pot_no),
-        ko_involved_winners: ko_involved_winners.clone(),
-        hero_ko_share_total: share_fraction,
-        joint_ko,
-        resolved_by_pot_no,
-        ko_involved_winner_count: ko_involved_winners.len() as u8,
-        hero_involved: hero_share > 0,
-        hero_share_fraction: share_fraction,
-        is_split_ko: ko_involved_winners.len() > 1,
-        split_n,
-        is_sidepot_based: ko_credit_pot_no > 1,
-        certainty_state: if credit_pot_winners.is_empty() {
-            if winner_mapping_state == CertaintyState::Inconsistent {
-                CertaintyState::Inconsistent
-            } else {
-                CertaintyState::Uncertain
-            }
-        } else {
-            winner_mapping_state
-        },
+        pots_participated_by_busted,
+        pots_causing_bust,
+        last_busting_pot_no,
+        ko_winner_set,
+        ko_share_fraction_by_winner,
+        elimination_certainty_state: CertaintyState::Exact,
+        ko_certainty_state,
     }
 }
 
-fn dedup_preserving_order<T>(items: Vec<T>) -> Vec<T>
-where
-    T: Ord + Clone,
-{
-    let mut seen = std::collections::BTreeSet::new();
-    let mut unique = Vec::new();
-    for item in items {
-        if seen.insert(item.clone()) {
-            unique.push(item);
-        }
+fn fallback_ko_certainty_state(settlement_certainty_state: CertaintyState) -> CertaintyState {
+    match settlement_certainty_state {
+        CertaintyState::Inconsistent => CertaintyState::Inconsistent,
+        CertaintyState::Estimated => CertaintyState::Estimated,
+        CertaintyState::Exact | CertaintyState::Uncertain => CertaintyState::Uncertain,
     }
-    unique
 }
 
 fn build_snapshot(

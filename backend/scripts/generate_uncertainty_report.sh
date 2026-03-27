@@ -170,7 +170,7 @@ ${ORDER_COVERAGE}
 
 - Extended real corpus beyond committed pack has not been run yet.
 - Timezone-normalized timestamps remain NULL; ordering relies on local timestamps.
-- \`is_nut_hand\` / \`is_nut_draw\` remain deferred under \`STREET_HAND_STRENGTH_NUT_POLICY = deferred\`.
+- \`is_nut_hand\` and \`is_nut_draw\` are now exact under \`STREET_HAND_STRENGTH_NUT_POLICY = hand_and_draw\`; runtime filters for nut predicates still remain intentionally unsupported.
 - Big KO / adjusted money stats are frequency-weighted estimates, not posterior reconstructions.
 - Same-timestamp hands from different tables may produce arbitrary ordering within their tie class.
 

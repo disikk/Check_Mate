@@ -7,10 +7,15 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use mbr_stats_runtime::{GG_MBR_FT_MAX_PLAYERS, materialize_player_hand_features};
 use postgres::{Client, NoTls, Transaction};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracker_parser_core::{
+    EXACT_CORE_RESOLUTION_VERSION,
     SourceKind, detect_source_kind,
-    models::{ActionType, CanonicalParsedHand, CertaintyState, Street, TournamentSummary},
+    models::{
+        ActionType, CanonicalParsedHand, CertaintyState, HandSettlement, InvariantIssue, Street,
+        TournamentSummary,
+    },
     normalizer::normalize_hand,
     parsers::{
         hand_history::{parse_canonical_hand, split_hand_history},
@@ -24,7 +29,7 @@ use uuid::Uuid;
 const DEV_ORG_NAME: &str = "Check Mate Dev Org";
 const DEV_USER_EMAIL: &str = "mbr-dev-student@example.com";
 const DEV_PLAYER_NAME: &str = "Hero";
-const HAND_RESOLUTION_VERSION: &str = "gg_mbr_v1";
+const HAND_RESOLUTION_VERSION: &str = EXACT_CORE_RESOLUTION_VERSION;
 
 #[derive(Debug)]
 pub struct LocalImportReport {
@@ -142,10 +147,11 @@ struct HandStateResolutionRow {
     resolution_version: String,
     chip_conservation_ok: bool,
     pot_conservation_ok: bool,
+    settlement_state: String,
     rake_amount: i64,
     final_stacks: BTreeMap<String, i64>,
-    invariant_errors: Vec<String>,
-    uncertain_reason_codes: Vec<String>,
+    settlement: HandSettlement,
+    invariant_issues: Vec<InvariantIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,29 +188,24 @@ struct HandReturnRow {
     reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct HandEliminationKoShareRow {
+    seat_no: i32,
+    player_name: String,
+    share_fraction: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct HandEliminationRow {
     eliminated_seat_no: i32,
     eliminated_player_name: String,
-    resolved_by_pot_nos: Vec<i32>,
-    ko_credit_pot_no: Option<i32>,
-    ko_involved_winners: Vec<String>,
-    hero_ko_share_total: Option<String>,
-    joint_ko: bool,
-    resolved_by_pot_no: Option<i32>,
-    ko_involved_winner_count: i32,
-    hero_involved: bool,
-    hero_share_fraction: Option<String>,
-    ko_pot_resolution_type: String,
-    money_share_model_state: String,
-    money_share_exact_fraction: Option<String>,
-    money_share_estimated_min_fraction: Option<String>,
-    money_share_estimated_ev_fraction: Option<String>,
-    money_share_estimated_max_fraction: Option<String>,
-    is_split_ko: bool,
-    split_n: Option<i32>,
-    is_sidepot_based: bool,
-    certainty_state: String,
+    pots_participated_by_busted: Vec<i32>,
+    pots_causing_bust: Vec<i32>,
+    last_busting_pot_no: Option<i32>,
+    ko_winner_set: Vec<String>,
+    ko_share_fraction_by_winner: Vec<HandEliminationKoShareRow>,
+    elimination_certainty_state: String,
+    ko_certainty_state: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -672,12 +673,8 @@ fn import_hand_history(
         .iter()
         .zip(normalized_hands.iter())
         .map(|(hand, normalized_hand)| {
-            let exact_hero_boundary_ko_share = normalized_hand
-                .eliminations
-                .iter()
-                .filter(|elimination| elimination.certainty_state == CertaintyState::Exact)
-                .filter_map(|elimination| elimination.hero_share_fraction)
-                .reduce(|accumulator, share| accumulator + share);
+            let exact_hero_boundary_ko_share =
+                exact_hero_boundary_ko_share(hand, normalized_hand);
 
             StageHandFact {
                 hand_id: hand.header.hand_id.clone(),
@@ -1082,8 +1079,8 @@ fn persist_normalized_hand(
     let return_rows = build_hand_return_rows(normalized_hand);
     let elimination_rows = build_hand_elimination_rows(normalized_hand);
     let final_stacks_json = serde_json::to_string(&row.final_stacks)?;
-    let invariant_errors_json = serde_json::to_string(&row.invariant_errors)?;
-    let uncertain_reason_codes_json = serde_json::to_string(&row.uncertain_reason_codes)?;
+    let settlement_json = serde_json::to_string(&row.settlement)?;
+    let invariant_issues_json = serde_json::to_string(&row.invariant_issues)?;
 
     tx.execute(
         "INSERT INTO derived.hand_state_resolutions (
@@ -1091,29 +1088,32 @@ fn persist_normalized_hand(
             resolution_version,
             chip_conservation_ok,
             pot_conservation_ok,
+            settlement_state,
             rake_amount,
             final_stacks,
-            invariant_errors,
-            uncertain_reason_codes
+            settlement,
+            invariant_issues
         )
-        VALUES ($1, $2, $3, $4, $5, ($6::text)::jsonb, ($7::text)::jsonb, ($8::text)::jsonb)
+        VALUES ($1, $2, $3, $4, $5, $6, ($7::text)::jsonb, ($8::text)::jsonb, ($9::text)::jsonb)
         ON CONFLICT (hand_id, resolution_version)
         DO UPDATE SET
             chip_conservation_ok = EXCLUDED.chip_conservation_ok,
             pot_conservation_ok = EXCLUDED.pot_conservation_ok,
+            settlement_state = EXCLUDED.settlement_state,
             rake_amount = EXCLUDED.rake_amount,
             final_stacks = EXCLUDED.final_stacks,
-            invariant_errors = EXCLUDED.invariant_errors,
-            uncertain_reason_codes = EXCLUDED.uncertain_reason_codes",
+            settlement = EXCLUDED.settlement,
+            invariant_issues = EXCLUDED.invariant_issues",
         &[
             &hand_id,
             &row.resolution_version,
             &row.chip_conservation_ok,
             &row.pot_conservation_ok,
+            &row.settlement_state,
             &row.rake_amount,
             &final_stacks_json,
-            &invariant_errors_json,
-            &uncertain_reason_codes_json,
+            &settlement_json,
+            &invariant_issues_json,
         ],
     )?;
 
@@ -1207,60 +1207,35 @@ fn persist_normalized_hand(
     )?;
 
     for elimination_row in elimination_rows {
+        let ko_share_fraction_by_winner_json =
+            serde_json::to_string(&elimination_row.ko_share_fraction_by_winner)?;
         tx.execute(
             "INSERT INTO derived.hand_eliminations (
                 hand_id,
                 eliminated_seat_no,
                 eliminated_player_name,
-                resolved_by_pot_nos,
-                ko_credit_pot_no,
-                ko_involved_winners,
-                hero_ko_share_total,
-                joint_ko,
-                resolved_by_pot_no,
-                ko_involved_winner_count,
-                hero_involved,
-                hero_share_fraction,
-                ko_pot_resolution_type,
-                money_share_model_state,
-                money_share_exact_fraction,
-                money_share_estimated_min_fraction,
-                money_share_estimated_ev_fraction,
-                money_share_estimated_max_fraction,
-                is_split_ko,
-                split_n,
-                is_sidepot_based,
-                certainty_state
+                pots_participated_by_busted,
+                pots_causing_bust,
+                last_busting_pot_no,
+                ko_winner_set,
+                ko_share_fraction_by_winner,
+                elimination_certainty_state,
+                ko_certainty_state
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, ($7::text)::numeric(12,6), $8, $9, $10, $11,
-                ($12::text)::numeric(12,6), $13, $14, ($15::text)::numeric(12,6),
-                ($16::text)::numeric(12,6), ($17::text)::numeric(12,6),
-                ($18::text)::numeric(12,6), $19, $20, $21, $22
+                $1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb, $9, $10
             )",
             &[
                 &hand_id,
                 &elimination_row.eliminated_seat_no,
                 &elimination_row.eliminated_player_name,
-                &elimination_row.resolved_by_pot_nos,
-                &elimination_row.ko_credit_pot_no,
-                &elimination_row.ko_involved_winners,
-                &elimination_row.hero_ko_share_total,
-                &elimination_row.joint_ko,
-                &elimination_row.resolved_by_pot_no,
-                &elimination_row.ko_involved_winner_count,
-                &elimination_row.hero_involved,
-                &elimination_row.hero_share_fraction,
-                &elimination_row.ko_pot_resolution_type,
-                &elimination_row.money_share_model_state,
-                &elimination_row.money_share_exact_fraction,
-                &elimination_row.money_share_estimated_min_fraction,
-                &elimination_row.money_share_estimated_ev_fraction,
-                &elimination_row.money_share_estimated_max_fraction,
-                &elimination_row.is_split_ko,
-                &elimination_row.split_n,
-                &elimination_row.is_sidepot_based,
-                &elimination_row.certainty_state,
+                &elimination_row.pots_participated_by_busted,
+                &elimination_row.pots_causing_bust,
+                &elimination_row.last_busting_pot_no,
+                &elimination_row.ko_winner_set,
+                &ko_share_fraction_by_winner_json,
+                &elimination_row.elimination_certainty_state,
+                &elimination_row.ko_certainty_state,
             ],
         )?;
     }
@@ -1550,10 +1525,12 @@ fn build_hand_state_resolution(
         resolution_version: HAND_RESOLUTION_VERSION.to_string(),
         chip_conservation_ok: normalized_hand.invariants.chip_conservation_ok,
         pot_conservation_ok: normalized_hand.invariants.pot_conservation_ok,
+        settlement_state: certainty_state_code(normalized_hand.settlement.certainty_state)
+            .to_string(),
         rake_amount: normalized_hand.actual.rake_amount,
         final_stacks: normalized_hand.actual.stacks_after_actual.clone(),
-        invariant_errors: normalized_hand.invariants.invariant_errors.clone(),
-        uncertain_reason_codes: normalized_hand.invariants.uncertain_reason_codes.clone(),
+        settlement: normalized_hand.settlement.clone(),
+        invariant_issues: normalized_hand.invariants.issues.clone(),
     }
 }
 
@@ -1561,7 +1538,8 @@ fn build_hand_pot_rows(
     normalized_hand: &tracker_parser_core::models::NormalizedHand,
 ) -> Vec<HandPotRow> {
     normalized_hand
-        .final_pots
+        .settlement
+        .pots
         .iter()
         .map(|pot| HandPotRow {
             pot_no: i32::from(pot.pot_no),
@@ -1602,8 +1580,10 @@ fn build_hand_pot_eligibility_rows(
     normalized_hand: &tracker_parser_core::models::NormalizedHand,
 ) -> Vec<HandPotEligibilityRow> {
     normalized_hand
-        .pot_eligibilities
+        .settlement
+        .pots
         .iter()
+        .flat_map(|pot| pot.eligibilities.iter())
         .map(|eligibility| HandPotEligibilityRow {
             pot_no: i32::from(eligibility.pot_no),
             seat_no: i32::from(eligibility.seat_no),
@@ -1615,8 +1595,10 @@ fn build_hand_pot_contribution_rows(
     normalized_hand: &tracker_parser_core::models::NormalizedHand,
 ) -> Vec<HandPotContributionRow> {
     normalized_hand
-        .pot_contributions
+        .settlement
+        .pots
         .iter()
+        .flat_map(|pot| pot.contributions.iter())
         .map(|contribution| HandPotContributionRow {
             pot_no: i32::from(contribution.pot_no),
             seat_no: i32::from(contribution.seat_no),
@@ -1629,12 +1611,22 @@ fn build_hand_pot_winner_rows(
     normalized_hand: &tracker_parser_core::models::NormalizedHand,
 ) -> Vec<HandPotWinnerRow> {
     normalized_hand
-        .pot_winners
+        .settlement
+        .pots
         .iter()
-        .map(|winner| HandPotWinnerRow {
-            pot_no: i32::from(winner.pot_no),
-            seat_no: i32::from(winner.seat_no),
-            share_amount: winner.share_amount,
+        .flat_map(|pot| {
+            pot.selected_allocation
+                .iter()
+                .flat_map(move |allocation| {
+                    allocation
+                        .shares
+                        .iter()
+                        .map(move |share| HandPotWinnerRow {
+                            pot_no: i32::from(pot.pot_no),
+                            seat_no: i32::from(share.seat_no),
+                            share_amount: share.share_amount,
+                        })
+                })
         })
         .collect()
 }
@@ -1660,44 +1652,38 @@ fn build_hand_elimination_rows(
         .eliminations
         .iter()
         .map(|elimination| {
-            let (
-                money_share_model_state,
-                money_share_exact_fraction,
-                money_share_estimated_min_fraction,
-                money_share_estimated_ev_fraction,
-                money_share_estimated_max_fraction,
-            ) = money_share_contract(elimination);
-
             HandEliminationRow {
                 eliminated_seat_no: elimination.eliminated_seat_no as i32,
                 eliminated_player_name: elimination.eliminated_player_name.clone(),
-                resolved_by_pot_nos: elimination
-                    .resolved_by_pot_nos
+                pots_participated_by_busted: elimination
+                    .pots_participated_by_busted
                     .iter()
                     .copied()
                     .map(i32::from)
                     .collect(),
-                ko_credit_pot_no: elimination.ko_credit_pot_no.map(i32::from),
-                ko_involved_winners: elimination.ko_involved_winners.clone(),
-                hero_ko_share_total: format_fraction(elimination.hero_ko_share_total),
-                joint_ko: elimination.joint_ko,
-                resolved_by_pot_no: elimination.resolved_by_pot_no.map(i32::from),
-                ko_involved_winner_count: i32::from(elimination.ko_involved_winner_count),
-                hero_involved: elimination.hero_involved,
-                hero_share_fraction: format_fraction(elimination.hero_share_fraction),
-                ko_pot_resolution_type: ko_pot_resolution_type_code(
-                    &elimination.resolved_by_pot_nos,
+                pots_causing_bust: elimination
+                    .pots_causing_bust
+                    .iter()
+                    .copied()
+                    .map(i32::from)
+                    .collect(),
+                last_busting_pot_no: elimination.last_busting_pot_no.map(i32::from),
+                ko_winner_set: elimination.ko_winner_set.clone(),
+                ko_share_fraction_by_winner: elimination
+                    .ko_share_fraction_by_winner
+                    .iter()
+                    .map(|share| HandEliminationKoShareRow {
+                        seat_no: i32::from(share.seat_no),
+                        player_name: share.player_name.clone(),
+                        share_fraction: format_fraction_value(share.share_fraction),
+                    })
+                    .collect(),
+                elimination_certainty_state: certainty_state_code(
+                    elimination.elimination_certainty_state,
                 )
                 .to_string(),
-                money_share_model_state: money_share_model_state.to_string(),
-                money_share_exact_fraction,
-                money_share_estimated_min_fraction,
-                money_share_estimated_ev_fraction,
-                money_share_estimated_max_fraction,
-                is_split_ko: elimination.is_split_ko,
-                split_n: elimination.split_n.map(i32::from),
-                is_sidepot_based: elimination.is_sidepot_based,
-                certainty_state: certainty_state_code(elimination.certainty_state).to_string(),
+                ko_certainty_state: certainty_state_code(elimination.ko_certainty_state)
+                    .to_string(),
             }
         })
         .collect()
@@ -2402,49 +2388,33 @@ fn certainty_state_code(state: tracker_parser_core::models::CertaintyState) -> &
     }
 }
 
-fn format_fraction(value: Option<f64>) -> Option<String> {
-    value.map(|fraction| format!("{fraction:.6}"))
+fn format_fraction_value(value: f64) -> String {
+    format!("{value:.6}")
 }
 
-fn ko_pot_resolution_type_code(resolved_by_pot_nos: &[u8]) -> &'static str {
-    match resolved_by_pot_nos {
-        [] => "unresolved",
-        [pot_no] if *pot_no > 1 => "side_pot_only",
-        [_] => "main_pot_only",
-        _ => "multi_pot_joint",
-    }
+fn exact_hero_boundary_ko_share(
+    hand: &CanonicalParsedHand,
+    normalized_hand: &tracker_parser_core::models::NormalizedHand,
+) -> Option<f64> {
+    let hero_name = hand.hero_name.as_deref()?;
+
+    normalized_hand
+        .eliminations
+        .iter()
+        .filter(|elimination| elimination.ko_certainty_state == CertaintyState::Exact)
+        .filter_map(|elimination| hero_ko_share_fraction(elimination, hero_name))
+        .reduce(|accumulator, share| accumulator + share)
 }
 
-fn money_share_contract(
+fn hero_ko_share_fraction(
     elimination: &tracker_parser_core::models::HandElimination,
-) -> (
-    &'static str,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    use tracker_parser_core::models::CertaintyState;
-
-    if !elimination.hero_involved {
-        return ("not_applicable", None, None, None, None);
-    }
-
-    if elimination.certainty_state != CertaintyState::Exact {
-        return ("blocked_uncertain_event", None, None, None, None);
-    }
-
-    if elimination.ko_involved_winner_count == 1 {
-        return (
-            "exact_single_winner",
-            format_fraction(elimination.hero_ko_share_total),
-            None,
-            None,
-            None,
-        );
-    }
-
-    ("blocked_split_policy", None, None, None, None)
+    hero_name: &str,
+) -> Option<f64> {
+    elimination
+        .ko_share_fraction_by_winner
+        .iter()
+        .find(|share| share.player_name == hero_name)
+        .map(|share| share.share_fraction)
 }
 
 fn insert_source_file(
@@ -2913,11 +2883,13 @@ mod tests {
         assert_eq!(row.resolution_version, HAND_RESOLUTION_VERSION);
         assert!(row.chip_conservation_ok);
         assert!(row.pot_conservation_ok);
+        assert_eq!(row.settlement_state, "exact");
         assert_eq!(row.rake_amount, 0);
         assert_eq!(row.final_stacks.get("Hero"), Some(&18_000));
         assert_eq!(row.final_stacks.get("f02e54a6"), Some(&0));
-        assert!(row.invariant_errors.is_empty());
-        assert!(row.uncertain_reason_codes.is_empty());
+        assert!(row.invariant_issues.is_empty());
+        assert_eq!(row.settlement.certainty_state, CertaintyState::Exact);
+        assert!(row.settlement.issues.is_empty());
     }
 
     #[test]
@@ -2932,22 +2904,25 @@ mod tests {
             normalized.eliminations[0].eliminated_player_name,
             "f02e54a6"
         );
-        assert_eq!(normalized.eliminations[0].resolved_by_pot_no, Some(1));
-        assert_eq!(normalized.eliminations[0].ko_involved_winner_count, 1);
+        assert_eq!(normalized.eliminations[0].last_busting_pot_no, Some(1));
+        assert_eq!(normalized.eliminations[0].ko_winner_set, vec!["Hero".to_string()]);
 
         let rows = build_hand_elimination_rows(&normalized);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].resolved_by_pot_nos, vec![1]);
-        assert_eq!(rows[0].ko_involved_winners, vec!["Hero".to_string()]);
-        assert_eq!(rows[0].hero_ko_share_total.as_deref(), Some("1.000000"));
-        assert!(!rows[0].joint_ko);
-        assert_eq!(rows[0].resolved_by_pot_no, Some(1));
-        assert!(rows[0].hero_involved);
-        assert_eq!(rows[0].hero_share_fraction.as_deref(), Some("1.000000"));
-        assert!(!rows[0].is_split_ko);
-        assert_eq!(rows[0].split_n, Some(1));
-        assert!(!rows[0].is_sidepot_based);
-        assert_eq!(rows[0].certainty_state, "exact");
+        assert_eq!(rows[0].pots_participated_by_busted, vec![1]);
+        assert_eq!(rows[0].pots_causing_bust, vec![1]);
+        assert_eq!(rows[0].last_busting_pot_no, Some(1));
+        assert_eq!(rows[0].ko_winner_set, vec!["Hero".to_string()]);
+        assert_eq!(
+            rows[0].ko_share_fraction_by_winner,
+            vec![HandEliminationKoShareRow {
+                seat_no: 7,
+                player_name: "Hero".to_string(),
+                share_fraction: "1.000000".to_string(),
+            }]
+        );
+        assert_eq!(rows[0].elimination_certainty_state, "exact");
+        assert_eq!(rows[0].ko_certainty_state, "exact");
     }
 
     #[test]
@@ -2961,27 +2936,20 @@ mod tests {
             .find(|row| row.eliminated_player_name == "Medium")
             .unwrap();
 
-        // resolved_by_pot_nos — диагностический след: Medium внёсся в оба pot'а.
-        assert_eq!(medium.resolved_by_pot_nos, vec![1, 2]);
-        // ko_credit_pot_no — highest pot (GG rule: bounty идёт winners последнего side pot).
-        assert_eq!(medium.ko_credit_pot_no, Some(2));
-        // KO-credit считается ТОЛЬКО по credit pot (pot 2), где Hero — единственный winner.
+        assert_eq!(medium.pots_participated_by_busted, vec![1, 2]);
+        assert_eq!(medium.pots_causing_bust, vec![2]);
+        assert_eq!(medium.last_busting_pot_no, Some(2));
+        assert_eq!(medium.ko_winner_set, vec!["Hero".to_string()]);
         assert_eq!(
-            medium.ko_involved_winners,
-            vec!["Hero".to_string()]
+            medium.ko_share_fraction_by_winner,
+            vec![HandEliminationKoShareRow {
+                seat_no: 1,
+                player_name: "Hero".to_string(),
+                share_fraction: "1.000000".to_string(),
+            }]
         );
-        // Hero share = 1000/1000 = 1.0 (full credit pot).
-        assert_eq!(medium.hero_ko_share_total.as_deref(), Some("1.000000"));
-        // Только 1 winner в credit pot → не joint KO.
-        assert!(!medium.joint_ko);
-        assert_eq!(medium.resolved_by_pot_no, None);
-        assert_eq!(medium.ko_involved_winner_count, 1);
-        assert!(medium.hero_involved);
-        assert_eq!(medium.hero_share_fraction.as_deref(), Some("1.000000"));
-        assert!(!medium.is_split_ko);
-        assert_eq!(medium.split_n, Some(1));
-        assert!(medium.is_sidepot_based);
-        assert_eq!(medium.certainty_state, "exact");
+        assert_eq!(medium.elimination_certainty_state, "exact");
+        assert_eq!(medium.ko_certainty_state, "exact");
     }
 
     #[test]
@@ -3018,7 +2986,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_cm05_pot_eligibility_and_uncertain_reason_rows() {
+    fn builds_cm05_pot_eligibility_and_settlement_issue_rows() {
         let hand = parse_canonical_hand(&cm05_hidden_showdown_hand_text()).unwrap();
         let normalized = normalize_hand(&hand).unwrap();
 
@@ -3028,14 +2996,23 @@ mod tests {
 
         assert!(winner_rows.is_empty());
         assert_eq!(eligibility_rows.len(), 6);
-        assert_eq!(resolution_row.uncertain_reason_codes.len(), 2);
+        assert!(resolution_row.invariant_issues.is_empty());
+        assert_eq!(resolution_row.settlement_state, "uncertain");
+        assert_eq!(resolution_row.settlement.pots.len(), 2);
         assert_eq!(
-            resolution_row.uncertain_reason_codes,
+            resolution_row
+                .settlement
+                .pots
+                .iter()
+                .map(|pot| pot.issues.clone())
+                .collect::<Vec<_>>(),
             vec![
-                "pot_settlement_ambiguous_hidden_showdown: pot_no=1, eligible_players=Hero|Villain"
-                    .to_string(),
-                "pot_settlement_ambiguous_hidden_showdown: pot_no=2, eligible_players=Hero|Villain"
-                    .to_string(),
+                vec![tracker_parser_core::models::PotSettlementIssue::AmbiguousHiddenShowdown {
+                    eligible_players: vec!["Hero".to_string(), "Villain".to_string()],
+                }],
+                vec![tracker_parser_core::models::PotSettlementIssue::AmbiguousHiddenShowdown {
+                    eligible_players: vec!["Hero".to_string(), "Villain".to_string()],
+                }],
             ]
         );
     }
@@ -3857,12 +3834,7 @@ mod tests {
                 played_at: hand.header.played_at.clone(),
                 max_players: hand.header.max_players,
                 seat_count: hand.seats.len(),
-                exact_hero_boundary_ko_share: normalized_hand
-                    .eliminations
-                    .iter()
-                    .filter(|elimination| elimination.certainty_state == CertaintyState::Exact)
-                    .filter_map(|elimination| elimination.hero_share_fraction)
-                    .reduce(|accumulator, share| accumulator + share),
+                exact_hero_boundary_ko_share: exact_hero_boundary_ko_share(hand, normalized_hand),
             })
             .collect::<Vec<_>>();
         let stage_rows = build_mbr_stage_resolutions_from_facts(Uuid::nil(), &stage_facts);
@@ -4289,6 +4261,94 @@ mod tests {
                 "money_share_estimated_min_fraction".to_string(),
                 "money_share_exact_fraction".to_string(),
                 "money_share_model_state".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0019_adds_unified_settlement_contracts() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_core_schema_migrations(&mut client);
+
+        let columns = client
+            .query(
+                "SELECT column_name
+                 FROM information_schema.columns
+                 WHERE table_schema = 'derived'
+                   AND table_name = 'hand_state_resolutions'
+                   AND column_name IN (
+                       'settlement_state',
+                       'settlement',
+                       'invariant_issues',
+                       'invariant_errors',
+                       'uncertain_reason_codes'
+                   )
+                 ORDER BY column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            columns,
+            vec![
+                "invariant_issues".to_string(),
+                "settlement".to_string(),
+                "settlement_state".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0020_adds_hand_eliminations_v2_contract() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_core_schema_migrations(&mut client);
+
+        let columns = client
+            .query(
+                "SELECT column_name
+                 FROM information_schema.columns
+                 WHERE table_schema = 'derived'
+                   AND table_name = 'hand_eliminations'
+                   AND column_name IN (
+                       'pots_participated_by_busted',
+                       'pots_causing_bust',
+                       'last_busting_pot_no',
+                       'ko_winner_set',
+                       'ko_share_fraction_by_winner',
+                       'elimination_certainty_state',
+                       'ko_certainty_state'
+                   )
+                 ORDER BY column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            columns,
+            vec![
+                "elimination_certainty_state".to_string(),
+                "ko_certainty_state".to_string(),
+                "ko_share_fraction_by_winner".to_string(),
+                "ko_winner_set".to_string(),
+                "last_busting_pot_no".to_string(),
+                "pots_causing_bust".to_string(),
+                "pots_participated_by_busted".to_string(),
             ]
         );
     }
@@ -5682,11 +5742,13 @@ mod tests {
                 "SELECT
                     chip_conservation_ok,
                     pot_conservation_ok,
+                    settlement_state,
                     rake_amount,
                     final_stacks->>'Hero',
                     final_stacks->>'f02e54a6',
-                    invariant_errors::text,
-                    uncertain_reason_codes::text
+                    invariant_issues::text,
+                    settlement->>'certainty_state',
+                    (settlement->'issues')::text
                  FROM derived.hand_state_resolutions
                  WHERE hand_id = $1
                    AND resolution_version = $2",
@@ -5696,14 +5758,16 @@ mod tests {
 
         assert!(resolution.get::<_, bool>(0));
         assert!(resolution.get::<_, bool>(1));
-        assert_eq!(resolution.get::<_, i64>(2), 0);
+        assert_eq!(resolution.get::<_, String>(2), "exact");
+        assert_eq!(resolution.get::<_, i64>(3), 0);
         assert_eq!(
-            resolution.get::<_, Option<String>>(3).as_deref(),
+            resolution.get::<_, Option<String>>(4).as_deref(),
             Some("18000")
         );
-        assert_eq!(resolution.get::<_, Option<String>>(4).as_deref(), Some("0"));
-        assert_eq!(resolution.get::<_, String>(5), "[]");
+        assert_eq!(resolution.get::<_, Option<String>>(5).as_deref(), Some("0"));
         assert_eq!(resolution.get::<_, String>(6), "[]");
+        assert_eq!(resolution.get::<_, String>(7), "exact");
+        assert_eq!(resolution.get::<_, String>(8), "[]");
 
         let mbr_stage = client
             .query_one(
@@ -5913,24 +5977,15 @@ mod tests {
                 "SELECT
                     eliminated_seat_no,
                     eliminated_player_name,
-                    resolved_by_pot_nos::text,
-                    ko_involved_winners::text,
-                    hero_ko_share_total::text,
-                    joint_ko,
-                    resolved_by_pot_no,
-                    ko_involved_winner_count,
-                    hero_involved,
-                    hero_share_fraction::text,
-                    ko_pot_resolution_type,
-                    money_share_model_state,
-                    money_share_exact_fraction::text,
-                    money_share_estimated_min_fraction::text,
-                    money_share_estimated_ev_fraction::text,
-                    money_share_estimated_max_fraction::text,
-                    is_split_ko,
-                    split_n,
-                    is_sidepot_based,
-                    certainty_state
+                    pots_participated_by_busted::text,
+                    pots_causing_bust::text,
+                    last_busting_pot_no,
+                    ko_winner_set::text,
+                    ko_share_fraction_by_winner #>> '{0,seat_no}',
+                    ko_share_fraction_by_winner #>> '{0,player_name}',
+                    ko_share_fraction_by_winner #>> '{0,share_fraction}',
+                    elimination_certainty_state,
+                    ko_certainty_state
                  FROM derived.hand_eliminations
                  WHERE hand_id = $1",
                 &[&hand_id],
@@ -5940,32 +5995,20 @@ mod tests {
         assert_eq!(elimination.get::<_, i32>(0), 3);
         assert_eq!(elimination.get::<_, String>(1), "f02e54a6");
         assert_eq!(elimination.get::<_, String>(2), "{1}");
-        assert_eq!(elimination.get::<_, String>(3), "{Hero}");
+        assert_eq!(elimination.get::<_, String>(3), "{1}");
+        assert_eq!(elimination.get::<_, Option<i32>>(4), Some(1));
+        assert_eq!(elimination.get::<_, String>(5), "{Hero}");
+        assert_eq!(elimination.get::<_, Option<String>>(6).as_deref(), Some("7"));
         assert_eq!(
-            elimination.get::<_, Option<String>>(4).as_deref(),
+            elimination.get::<_, Option<String>>(7).as_deref(),
+            Some("Hero")
+        );
+        assert_eq!(
+            elimination.get::<_, Option<String>>(8).as_deref(),
             Some("1.000000")
         );
-        assert!(!elimination.get::<_, bool>(5));
-        assert_eq!(elimination.get::<_, Option<i32>>(6), Some(1));
-        assert_eq!(elimination.get::<_, i32>(7), 1);
-        assert!(elimination.get::<_, bool>(8));
-        assert_eq!(
-            elimination.get::<_, Option<String>>(9).as_deref(),
-            Some("1.000000")
-        );
-        assert_eq!(elimination.get::<_, String>(10), "main_pot_only");
-        assert_eq!(elimination.get::<_, String>(11), "exact_single_winner");
-        assert_eq!(
-            elimination.get::<_, Option<String>>(12).as_deref(),
-            Some("1.000000")
-        );
-        assert_eq!(elimination.get::<_, Option<String>>(13), None);
-        assert_eq!(elimination.get::<_, Option<String>>(14), None);
-        assert_eq!(elimination.get::<_, Option<String>>(15), None);
-        assert!(!elimination.get::<_, bool>(16));
-        assert_eq!(elimination.get::<_, Option<i32>>(17), Some(1));
-        assert!(!elimination.get::<_, bool>(18));
-        assert_eq!(elimination.get::<_, String>(19), "exact");
+        assert_eq!(elimination.get::<_, String>(9), "exact");
+        assert_eq!(elimination.get::<_, String>(10), "exact");
 
         let street_strength_columns = client
             .query(
@@ -6054,8 +6097,8 @@ mod tests {
         assert!(!hero_flop_street_strength.get::<_, bool>(5));
         assert!(!hero_flop_street_strength.get::<_, bool>(6));
         assert!(!hero_flop_street_strength.get::<_, bool>(7));
-        assert_eq!(hero_flop_street_strength.get::<_, Option<bool>>(8), None);
-        assert_eq!(hero_flop_street_strength.get::<_, Option<bool>>(9), None);
+        assert_eq!(hero_flop_street_strength.get::<_, Option<bool>>(8), Some(false));
+        assert_eq!(hero_flop_street_strength.get::<_, Option<bool>>(9), Some(false));
         assert_eq!(hero_flop_street_strength.get::<_, String>(10), "exact");
 
         let pot_count: i64 = client
@@ -6511,24 +6554,15 @@ mod tests {
                 "SELECT
                     eliminated_seat_no,
                     eliminated_player_name,
-                    resolved_by_pot_nos::text,
-                    ko_involved_winners::text,
-                    hero_ko_share_total::text,
-                    joint_ko,
-                    resolved_by_pot_no,
-                    ko_involved_winner_count,
-                    hero_involved,
-                    hero_share_fraction::text,
-                    ko_pot_resolution_type,
-                    money_share_model_state,
-                    money_share_exact_fraction::text,
-                    money_share_estimated_min_fraction::text,
-                    money_share_estimated_ev_fraction::text,
-                    money_share_estimated_max_fraction::text,
-                    is_split_ko,
-                    split_n,
-                    is_sidepot_based,
-                    certainty_state
+                    pots_participated_by_busted::text,
+                    pots_causing_bust::text,
+                    last_busting_pot_no,
+                    ko_winner_set::text,
+                    ko_share_fraction_by_winner #>> '{0,seat_no}',
+                    ko_share_fraction_by_winner #>> '{0,player_name}',
+                    ko_share_fraction_by_winner #>> '{0,share_fraction}',
+                    elimination_certainty_state,
+                    ko_certainty_state
                  FROM derived.hand_eliminations
                  WHERE hand_id = $1",
                 &[&hand_id],
@@ -6538,29 +6572,20 @@ mod tests {
         assert_eq!(elimination.get::<_, i32>(0), 3);
         assert_eq!(elimination.get::<_, String>(1), "Medium");
         assert_eq!(elimination.get::<_, String>(2), "{1,2}");
-        assert_eq!(elimination.get::<_, String>(3), "{Shorty,Hero}");
+        assert_eq!(elimination.get::<_, String>(3), "{2}");
+        assert_eq!(elimination.get::<_, Option<i32>>(4), Some(2));
+        assert_eq!(elimination.get::<_, String>(5), "{Hero}");
+        assert_eq!(elimination.get::<_, Option<String>>(6).as_deref(), Some("1"));
         assert_eq!(
-            elimination.get::<_, Option<String>>(4).as_deref(),
-            Some("0.400000")
+            elimination.get::<_, Option<String>>(7).as_deref(),
+            Some("Hero")
         );
-        assert!(elimination.get::<_, bool>(5));
-        assert_eq!(elimination.get::<_, Option<i32>>(6), None);
-        assert_eq!(elimination.get::<_, i32>(7), 2);
-        assert!(elimination.get::<_, bool>(8));
         assert_eq!(
-            elimination.get::<_, Option<String>>(9).as_deref(),
-            Some("0.400000")
+            elimination.get::<_, Option<String>>(8).as_deref(),
+            Some("1.000000")
         );
-        assert_eq!(elimination.get::<_, String>(10), "multi_pot_joint");
-        assert_eq!(elimination.get::<_, String>(11), "blocked_split_policy");
-        assert_eq!(elimination.get::<_, Option<String>>(12), None);
-        assert_eq!(elimination.get::<_, Option<String>>(13), None);
-        assert_eq!(elimination.get::<_, Option<String>>(14), None);
-        assert_eq!(elimination.get::<_, Option<String>>(15), None);
-        assert!(elimination.get::<_, bool>(16));
-        assert_eq!(elimination.get::<_, Option<i32>>(17), Some(2));
-        assert!(elimination.get::<_, bool>(18));
-        assert_eq!(elimination.get::<_, String>(19), "exact");
+        assert_eq!(elimination.get::<_, String>(9), "exact");
+        assert_eq!(elimination.get::<_, String>(10), "exact");
     }
 
     #[test]
@@ -6847,43 +6872,43 @@ mod tests {
             .query_one(
                 "SELECT
                     COUNT(*) FILTER (
-                        WHERE he.certainty_state = 'exact'
+                        WHERE he.elimination_certainty_state = 'exact'
                           AND eliminated_seat.is_hero IS TRUE
                           AND msr.is_stage_6_9
                     )::bigint,
                     COUNT(*) FILTER (
-                        WHERE he.hero_involved IS TRUE
-                          AND he.certainty_state = 'exact'
+                        WHERE hero_winner.hand_id IS NOT NULL
+                          AND he.ko_certainty_state = 'exact'
                           AND msr.ft_players_remaining_exact IN (2, 3)
                     )::bigint,
                     COUNT(*) FILTER (
-                        WHERE he.hero_involved IS TRUE
-                          AND he.certainty_state = 'exact'
+                        WHERE hero_winner.hand_id IS NOT NULL
+                          AND he.ko_certainty_state = 'exact'
                           AND msr.is_stage_3_4
                     )::bigint,
                     COUNT(*) FILTER (
-                        WHERE he.hero_involved IS TRUE
-                          AND he.certainty_state = 'exact'
+                        WHERE hero_winner.hand_id IS NOT NULL
+                          AND he.ko_certainty_state = 'exact'
                           AND msr.is_stage_4_5
                     )::bigint,
                     COUNT(*) FILTER (
-                        WHERE he.hero_involved IS TRUE
-                          AND he.certainty_state = 'exact'
+                        WHERE hero_winner.hand_id IS NOT NULL
+                          AND he.ko_certainty_state = 'exact'
                           AND msr.is_stage_5_6
                     )::bigint,
                     COUNT(*) FILTER (
-                        WHERE he.hero_involved IS TRUE
-                          AND he.certainty_state = 'exact'
+                        WHERE hero_winner.hand_id IS NOT NULL
+                          AND he.ko_certainty_state = 'exact'
                           AND msr.is_stage_6_9
                     )::bigint,
                     COUNT(*) FILTER (
-                        WHERE he.hero_involved IS TRUE
-                          AND he.certainty_state = 'exact'
+                        WHERE hero_winner.hand_id IS NOT NULL
+                          AND he.ko_certainty_state = 'exact'
                           AND msr.ft_players_remaining_exact IN (7, 8, 9)
                     )::bigint,
                     COUNT(*) FILTER (
-                        WHERE he.hero_involved IS TRUE
-                          AND he.certainty_state = 'exact'
+                        WHERE hero_winner.hand_id IS NOT NULL
+                          AND he.ko_certainty_state = 'exact'
                           AND helper.first_ft_hand_id IS NOT NULL
                           AND h.tournament_hand_order IS NOT NULL
                           AND COALESCE(msr.is_boundary_hand, FALSE) IS FALSE
@@ -6902,6 +6927,10 @@ mod tests {
                  LEFT JOIN core.hand_seats eliminated_seat
                    ON eliminated_seat.hand_id = he.hand_id
                   AND eliminated_seat.seat_no = he.eliminated_seat_no
+                 LEFT JOIN core.hand_seats hero_winner
+                   ON hero_winner.hand_id = he.hand_id
+                  AND hero_winner.is_hero IS TRUE
+                  AND hero_winner.player_name = ANY(he.ko_winner_set)
                  LEFT JOIN derived.mbr_tournament_ft_helper helper
                    ON helper.tournament_id = h.tournament_id
                   AND helper.player_profile_id = h.player_profile_id
@@ -7058,7 +7087,7 @@ mod tests {
         let ko_money_events = client
             .query(
                 "SELECT
-                    (COALESCE(he.hero_ko_share_total, he.hero_share_fraction) * 1000000)::bigint,
+                    (hero_share.hero_share_fraction * 1000000)::bigint,
                     COALESCE(msr.ft_players_remaining_exact IN (2, 3), FALSE),
                     COALESCE(msr.is_stage_3_4, FALSE),
                     COALESCE(msr.is_stage_4_5, FALSE),
@@ -7068,15 +7097,23 @@ mod tests {
                  FROM core.hands h
                  INNER JOIN derived.hand_eliminations he
                    ON he.hand_id = h.id
+                 INNER JOIN core.hand_seats hero_seat
+                   ON hero_seat.hand_id = h.id
+                  AND hero_seat.is_hero IS TRUE
+                 INNER JOIN LATERAL (
+                    SELECT (share->>'share_fraction')::numeric AS hero_share_fraction
+                    FROM jsonb_array_elements(he.ko_share_fraction_by_winner) share
+                    WHERE (share->>'seat_no')::int = hero_seat.seat_no
+                    LIMIT 1
+                 ) hero_share
+                   ON TRUE
                  LEFT JOIN derived.mbr_stage_resolution msr
                    ON msr.hand_id = h.id
                   AND msr.player_profile_id = h.player_profile_id
                  WHERE h.tournament_id = $1
                    AND h.player_profile_id = $2
-                   AND he.hero_involved IS TRUE
-                   AND he.certainty_state = 'exact'
-                   AND COALESCE(he.hero_ko_share_total, he.hero_share_fraction) IS NOT NULL
-                   AND COALESCE(he.hero_ko_share_total, he.hero_share_fraction) > 0",
+                   AND he.ko_certainty_state = 'exact'
+                   AND hero_share.hero_share_fraction > 0",
                 &[&ts_report.tournament_id, &player_profile_id],
             )
             .unwrap();
@@ -7861,6 +7898,14 @@ mod tests {
                         operator: FilterOperator::Eq,
                         value: FilterValue::Bool(true),
                     },
+                    FilterCondition {
+                        feature: FeatureRef::Street {
+                            street: "seat".to_string(),
+                            feature_key: "summary_outcome_kind".to_string(),
+                        },
+                        operator: FilterOperator::Eq,
+                        value: FilterValue::Enum("showed_won".to_string()),
+                    },
                 ],
             },
         )
@@ -8042,7 +8087,7 @@ mod tests {
                  FROM derived.hand_state_resolutions hs
                  JOIN core.hands h ON h.id = hs.hand_id
                  WHERE h.player_profile_id = $1
-                   AND jsonb_array_length(hs.uncertain_reason_codes) > 0",
+                   AND hs.settlement_state <> 'exact'",
                 &[&player_profile_id],
             )
             .unwrap()
@@ -8058,7 +8103,7 @@ mod tests {
                    AND (
                        NOT hs.chip_conservation_ok
                        OR NOT hs.pot_conservation_ok
-                       OR jsonb_array_length(hs.invariant_errors) > 0
+                       OR jsonb_array_length(hs.invariant_issues) > 0
                    )",
                 &[&player_profile_id],
             )
@@ -8072,7 +8117,10 @@ mod tests {
                  FROM derived.hand_eliminations e
                  JOIN core.hands h ON h.id = e.hand_id
                  WHERE h.player_profile_id = $1
-                   AND e.certainty_state <> 'exact'",
+                   AND (
+                       e.elimination_certainty_state <> 'exact'
+                       OR e.ko_certainty_state <> 'exact'
+                   )",
                 &[&player_profile_id],
             )
             .unwrap()
@@ -8354,6 +8402,14 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
         apply_sql_file(
             client,
             &fixture_path("../../migrations/0015_ko_event_money_contracts.sql"),
+        );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0019_unified_settlement_contract.sql"),
+        );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0020_hand_eliminations_v2.sql"),
         );
     }
 

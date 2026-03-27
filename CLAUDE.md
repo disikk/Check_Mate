@@ -128,8 +128,8 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `normalize_hand` now runs through an internal replay ledger instead of relying on `collect` line order;
   - `tracker_parser_core::pot_resolution` now owns `pot construction -> pot settlement` as separate phases, instead of keeping reverse winner mapping inline inside `normalizer.rs`;
   - `normalize_hand` now exposes committed totals, exact final pot graph, explicit `pot_eligibilities`, return rows, resolved eliminations, and invariant results;
-  - deterministic settlement now uses summary non-winner markers, summary shown cards, river showdown ranks, single-collector fallback, and aggregate `collect` totals only as evidence constraints; arbitrary reverse subset-search over candidate winners is no longer the primary mechanism;
-  - odd-chip allocation is only attempted inside already-proven showdown ties and is then reconciled against aggregate collected totals; exact contradictory `collect` distributions now surface as `pot_settlement_collect_conflict:*` instead of silently downgrading to guessed winners;
+  - deterministic settlement now uses summary non-winner markers, summary shown cards, river showdown ranks, single-collector fallback, and observed payout totals (`collect` first, otherwise summary `won/collected`) as evidence constraints; arbitrary reverse subset-search over candidate winners is no longer the primary mechanism;
+  - odd-chip allocation is only attempted inside already-proven showdown ties; observed odd-chip payouts from either `collect` or summary can prove `exact`, unresolved odd-chip stays `uncertain`, and contradictory `collect` vs summary payout totals surface as `pot_settlement_collect_conflict:*` instead of silently downgrading to guessed winners;
   - hidden showdown / partial reveal gaps now stay `uncertain` through explicit `uncertain_reason_codes`, and guessed `core.hand_pot_winners` rows are intentionally never materialized for those hands;
   - `parser_worker import-local` persists the first exact derived row into `derived.hand_state_resolutions`;
   - persisted fields currently include `chip_conservation_ok`, `pot_conservation_ok`, parsed `rake_amount`, `final_stacks`, `invariant_errors`, and `uncertain_reason_codes`; pot eligibility rows persist separately in `core.hand_pot_eligibility` via migration `0009_hand_pot_eligibility_and_uncertain_codes.sql`.
@@ -159,33 +159,49 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - decoder is deterministic and search-based, with no greedy fallback path.
 - Current elimination persistence behavior:
   - `normalize_hand` now derives eliminations for players whose starting stack was positive and whose final stack after the hand is zero;
-  - **KO-credit semantics (CM-P0-01 fix)**: `build_elimination()` now computes KO-credit attribution from the highest `pot_no` among bust-relevant pots (`ko_credit_pot_no`), not from the union of all pots; this matches the official GG MBR rule: bounty goes to winners of the last side pot containing the busted player's chips;
-  - `HandElimination` now carries `ko_credit_pot_no: Option<u8>` — the authoritative pot for KO-credit; `resolved_by_pot_nos` remains as a diagnostic trace of all pots the busted player contributed to;
-  - `hero_involved`, `hero_share_fraction`, `ko_involved_winners`, `joint_ko`, `split_n`, `is_split_ko`, and `ko_involved_winner_count` are now computed exclusively from credit pot winners;
-  - migration `backend/migrations/0016_ko_credit_pot_no.sql` adds the `ko_credit_pot_no` column to `derived.hand_eliminations`;
-  - `parser_worker import-local` now persists `ko_credit_pot_no` into `derived.hand_eliminations`;
-  - when settlement is ambiguous or inconsistent, elimination rows still keep the busted seat context but intentionally omit guessed exact winner attribution details.
+  - `HandElimination` is now `v2`: it stores `pots_participated_by_busted`, `pots_causing_bust`, `last_busting_pot_no`, `ko_winner_set`, `ko_share_fraction_by_winner`, `elimination_certainty_state`, and `ko_certainty_state`;
+  - KO-credit is derived only from `last_busting_pot_no`, not from the union of all bust-relevant pots;
+  - split KO shares are proportional to actual busting-pot `share_amount / pot_amount`;
+  - elimination remains exact even when KO stays `uncertain` or `inconsistent`;
+  - migration `backend/migrations/0020_hand_eliminations_v2.sql` adds the canonical v2 persisted surface to `derived.hand_eliminations`;
+  - `parser_worker import-local` now persists only the canonical v2 elimination facts, and runtime derives split/sidepot/Hero-share behavior from those facts instead of legacy convenience flags.
 - Current street-strength persistence behavior:
   - `tracker_parser_core` now exposes a pure `street_strength` evaluator over `CanonicalParsedHand`;
   - `parser_worker import-local` now persists exact `flop` / `turn` / `river` descriptors into `derived.street_hand_strength`;
+  - current product direction intentionally does **not** add a structural preflop descriptor layer into `street_strength`; preflop ranges are expected to be defined separately via an explicit starter-hand matrix;
   - rows are materialized for Hero and for opponents whose hole cards are exact-known by showdown, and showdown-known opponents are backfilled across all reached streets;
   - the active unversioned persisted contract is `best_hand_class`, `best_hand_rank_value`, `made_hand_category`, `draw_category`, `overcards_count`, `has_air`, `missed_flush_draw`, `missed_straight_draw`, `is_nut_hand`, `is_nut_draw`, and `certainty_state`;
   - legacy `pair_strength`, independent draw bits, `has_overcards`, `has_missed_draw_by_river`, and `descriptor_version` are no longer part of the active runtime surface;
-  - straight-draw semantics are player-specific only; board-only straight completions do not raise canonical draw categories;
-  - river missed draws are split into `missed_flush_draw` and `missed_straight_draw`, and still ignore backdoor-only history or river `two_pair+` improvements;
-  - `is_nut_hand` and `is_nut_draw` are explicitly deferred under `STREET_HAND_STRENGTH_NUT_POLICY = deferred`; `NULL` here means unavailable, not computed `false`.
+  - ordinary `draw_category` semantics are now improvement-aware: `gutshot` / `open_ended` / `double_gutshot` / `flush_draw` / `combo_draw` are derived only from legal unseen next cards that raise `best_hand_class`;
+  - ordinary straight and flush draws count only exact `Straight` / exact `Flush` next-card improvements that still use at least one hole card in the resulting best hand; board-only completions and pure redraws to `StraightFlush` are intentionally excluded from ordinary draw categories;
+  - `backdoor_flush_only` is a separate flop-only runner-runner flush-family descriptor and may include paths that finish as `StraightFlush`;
+  - river missed draws are split into `missed_flush_draw` and `missed_straight_draw`, and are now pure historical flags: they are built only from the same improvement-aware ordinary draw history, ignore backdoor-only history until it promotes into an ordinary family, exclude redraw history, and are no longer suppressed by the final river made hand;
+  - `is_nut_hand` is now an active exact postflop field under `STREET_HAND_STRENGTH_NUT_POLICY = hand_and_draw`: it is computed board-relatively from the player's hole cards plus all legal opponent hole-card combinations from the remaining deck, with shared nuts/chops counted as `true`;
+  - known showdown hole cards of opponents are intentionally ignored as dead cards for `is_nut_hand`, so the flag stays stable независимо от reveal surface конкретной раздачи;
+  - `is_nut_draw` is now an active exact postflop field under the same policy: it is derived only from ordinary improving next-card draw families, uses strict family-level nutness instead of one lucky out, treats `combo_draw` as `true` when at least one active ordinary family is nut, and materializes `Some(false)` for river / no-draw / backdoor-only rows.
+- `backend/docs/street_strength_contract.md` is now the canonical exact contract for `tracker_parser_core::street_strength` and must be updated whenever its semantics change.
 - Current canonical parser correction:
   - repeated GG `collected ... from pot` lines for the same player are now accumulated instead of overwritten;
   - this was required for exact multi-pot final stacks, pot conservation, and future side-pot/KO derivations.
 - `backend/docs/exact_core_contract.md` is now the canonical exact-core contract for parser/normalizer/pot-resolution semantics and must be updated whenever those semantics change.
+- Current unified settlement contract:
+  - `NormalizedHand` no longer exports top-level `final_pots`, `pot_contributions`, `pot_eligibilities`, or `pot_winners`; the single canonical pot-resolution surface is `settlement`;
+  - `settlement` carries hand-level `certainty_state`, typed `issues`, evidence facts (`collect_events_seen`, `summary_outcomes_seen`, `show_hands_seen`), and per-pot facts (`contributions`, `eligibilities`, `contenders`, `candidate_allocations`, `selected_allocation`, `issues`);
+  - `invariants` now persist typed `issues` instead of string arrays, and downstream sparse feature layers must canonicalize enum codes explicitly instead of parsing human-readable messages.
 - Current phase0 exact-core proof pack:
   - `backend/fixtures/mbr/hh/GG20260325-phase0-exact-core-edge-matrix.txt` is the canonical 12-hand exact-core edge matrix for forced all-in, blinds/antes, dead blind, actor-order, uncalled-return, side-pot, odd-chip, and ambiguity regressions;
-  - `tracker_parser_core/tests/phase0_exact_core_corpus.rs` now enforces manifest-style per-hand contracts over action stream facts (`seq`, `street`, `player_name`, `action_type`, `is_forced`, `is_all_in`, `all_in_reason`, `forced_all_in_preflop`) and normalization facts (`committed_total`, `returns`, `final_pots`, `pot_contributions`, `pot_eligibilities`, invariant/uncertainty codes);
-  - new canonical rows `BRCM0404` and `BRCM0405` lock in `short BB forced all-in` and `dead blind + ante`; the 3-level side-pot ladder proof stays anchored on `BRSIDE1`.
+  - `tracker_parser_core/tests/phase0_exact_core_corpus.rs` now enforces manifest-style per-hand contracts over action stream facts (`seq`, `street`, `player_name`, `action_type`, `is_forced`, `is_all_in`, `all_in_reason`, `forced_all_in_preflop`) and normalization facts (`committed_total`, `returns`, projected pots/contributions/eligibilities, and typed invariant/settlement issue codes via manifest materializers);
+  - new canonical rows `BRCM0404` and `BRCM0405` lock in `short BB forced all-in` and `dead blind + ante`; the 3-level side-pot ladder proof stays anchored on `BRSIDE1`;
+  - odd-chip proof is now guarded at three levels: edge-matrix exactness for `BRCM0503`, summary-only exact settlement in `hand_normalization.rs`, and aggregate ambiguous odd-chip uncertainty without a guessed winner.
 - Current normalized-hand golden regression:
   - `tracker_parser_core/tests/normalized_hand_golden.rs` now snapshots the full serialized `NormalizedHand` output for the entire committed HH pack under `tracker_parser_core/tests/goldens/`;
   - goldens are stored per committed HH fixture file, not per hand;
   - ordinary test runs are read-only; refreshing goldens requires explicit `UPDATE_GOLDENS=1`.
+- Current terminal all-in snapshot semantics:
+  - `tracker_parser_core::normalizer` now captures `snapshot` by resolved table state, not by a narrow `Call | Check` event gate;
+  - capture happens only after the current action leaves at least two contestants in `Live | AllIn`, with at least one `AllIn`, and no pending `Live` actors left on the street;
+  - terminal closure through final `Fold` is valid for snapshot capture, and a later `ReturnUncalled` in short-all-in branches does not retroactively erase that snapshot;
+  - uncontested `bet/fold + return uncalled` remains snapshot-free.
 - Current canonical summary-result persistence:
   - summary seat-result prose in `*** SUMMARY ***` is now parsed into dedicated `core.hand_summary_results` rows instead of being silently ignored or mixed with action rows;
   - summary rows are validated against `core.hand_seats(hand_id, seat_no)` rather than being remapped by player name;
@@ -201,11 +217,16 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - the canonical label table now covers `2..=10` active players, including `UTG+2` and `MP+1` for future 10-max support;
   - heads-up stays compact as `BTN` / `BB`; the seat posting the small blind in HU still persists as `position_label = BTN`, without a dedicated `BTN_SB` code.
 - Current betting legality engine:
-  - `tracker_parser_core::betting_rules` now validates the canonical action stream before pot resolution and feeds reason-coded legality issues into `NormalizationInvariants.invariant_errors`;
+  - `tracker_parser_core::betting_rules` now validates the canonical action stream before pot resolution and feeds typed legality issues into `HandInvariants.issues`;
   - the legality layer covers heads-up preflop/postflop order, legal actor order, illegal checks/calls/raises, short-all-in non-reopen, full-raise reopen, and premature street close;
   - `ReturnUncalled` now validates that the refund goes back only to an actual over-contributor, and forced `PostSb` / `PostBb` actors are checked against the computed blind seats;
   - blindless `0/0(ante)` preflop hands now use a clockwise-after-button opener order instead of blind-based preflop indexes, preventing false legality errors on ante-only committed fixtures;
-  - legality issues are persisted downstream through the existing hand-state resolution `invariant_errors` JSON, without inventing guessed exact facts or a parallel temporary schema.
+  - legality issues are persisted downstream through `derived.hand_state_resolutions.invariant_issues`, while exact/uncertain settlement evidence lives in the same row under `settlement_state + settlement`.
+- Current hand-state resolution persistence:
+  - `tracker_parser_core::EXACT_CORE_RESOLUTION_VERSION = gg_mbr_v2` is the active persisted exact-core resolution version;
+  - `parser_worker import-local` now stores canonical settlement state in `derived.hand_state_resolutions` as `settlement_state`, full `settlement` JSON, and typed `invariant_issues` JSON;
+  - `core.hand_pots`, `core.hand_pot_eligibility`, `core.hand_pot_contributions`, and `core.hand_pot_winners` remain SQL projections derived from `settlement`, not independent sources of truth;
+  - migration `0019_unified_settlement_contract.sql` upgrades the DB contract to this unified shape and removes the old `invariant_errors` / `uncertain_reason_codes` columns.
 - Current forced-all-in / sit-out surface:
   - canonical seat rows now carry `is_sitting_out`, and sit-out seats are excluded consistently from position derivation, legality order, and normalizer live-seat initialization;
   - action parser now materializes `PostDead` and player-line `Muck` instead of leaving them in unreachable enum-only state;
@@ -249,12 +270,11 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `derived.mbr_stage_resolution` now also persists the canonical hand-grain stage predicate surface:
     - `is_ft_hand`, `ft_players_remaining_exact`, `is_stage_2`, `is_stage_3_4`, `is_stage_4_5`, `is_stage_5_6`, `is_stage_6_9`, `is_boundary_hand`;
     - `played_ft_hand`, `entered_boundary_zone`, and `ft_table_size` remain compatibility/debug surfaces, but stage-aware logic must prefer the formal predicate fields;
-  - KO event features are materialized only from `derived.hand_eliminations` rows where `hero_involved = true` and `certainty_state = exact`; split/sidepot subsets count eliminated players, not winner shares;
-  - `derived.hand_eliminations` now also persists explicit KO money-share contract columns:
-    - `ko_pot_resolution_type`;
-    - `money_share_model_state`;
-    - `money_share_exact_fraction`;
-    - `money_share_estimated_min_fraction`, `money_share_estimated_ev_fraction`, `money_share_estimated_max_fraction`;
+  - KO event features are materialized only from `derived.hand_eliminations` rows where `ko_certainty_state = exact` and Hero is present in `ko_winner_set`;
+  - split KO and sidepot KO are derived runtime-side from canonical facts:
+    - split = `array_length(ko_winner_set) > 1`;
+    - sidepot-based = `last_busting_pot_no > 1`;
+  - KO money/event queries read Hero share from `ko_share_fraction_by_winner` JSON, not from legacy `hero_*` convenience columns.
   - current money-share contract is intentionally conservative: single-winner exact events may surface `exact_single_winner`, while split or uncertain cases remain blocked/null until later phases formalize KO-money semantics;
   - `docs/architecture/ko_split_bounty_rounding_policy.md` is the canonical split-bounty rounding reference for ugly-cent KO splits;
   - `mbr_stats_runtime::split_bounty::project_split_bounty_share` now maps split money projections into either `exact_integral` cents or a conservative `floor/ceil` candidate interval, and `mbr_stats_runtime::big_ko` uses that adapter to avoid false `Infeasible` outcomes on valid ugly-cent split cases;
@@ -325,7 +345,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current intentional limitation:
   - canonical UTC timestamps are still left `NULL` in DB import until GG MBR timezone handling is fixed exactly, even though raw/local/provenance fields are now persisted;
   - date-range filters and session filters are still intentionally absent from the runtime query contract because timestamp normalization and session modeling are not exact yet;
-  - street-strength exact descriptors are now materialized into runtime analytics rows, but nut-policy fields still remain deferred and unsupported in filters;
+  - street-strength exact descriptors are now materialized into runtime analytics rows; `is_nut_hand` is exact in the descriptor layer, but runtime filters still intentionally reject both nut predicates until query semantics are specified;
   - the public `best | good | weak | trash` street buckets are heuristic runtime/UI helpers only and must not be treated as solver truth or persisted exact facts;
   - FT reach and KO averages are currently defined over tournaments with imported HH coverage, not summary-only tournaments;
   - `hero_exact_ko_event_count` remains a per-hand event-count proxy and must not be treated as KO money or as the public source for aggregate KO seed stats;
