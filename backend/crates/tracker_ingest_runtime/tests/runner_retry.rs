@@ -245,3 +245,109 @@ fn terminal_failure_keeps_bundle_in_partial_success_ready_surface() {
 
     tx.rollback().unwrap();
 }
+
+#[test]
+#[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+fn claim_next_job_preserves_bundle_file_order_across_uploaded_bundles() {
+    let _guard = db_test_guard();
+    let mut client = Client::connect(&db_url(), NoTls).unwrap();
+    apply_all_migrations(&mut client);
+    reset_ingest_runtime_tables(&mut client);
+    let mut tx = client.transaction().unwrap();
+    let (organization_id, user_id, player_profile_id) = seed_actor_shell(&mut tx);
+
+    enqueue_bundle(
+        &mut tx,
+        &IngestBundleInput {
+            organization_id,
+            player_profile_id,
+            created_by_user_id: user_id,
+            files: vec![
+                IngestFileInput {
+                    room: "gg".to_string(),
+                    file_kind: FileKind::TournamentSummary,
+                    sha256: "g".repeat(64),
+                    original_filename: "first-ts.txt".to_string(),
+                    byte_size: 10,
+                    storage_uri: "local://first-ts.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
+                },
+                IngestFileInput {
+                    room: "gg".to_string(),
+                    file_kind: FileKind::HandHistory,
+                    sha256: "h".repeat(64),
+                    original_filename: "first-hh.txt".to_string(),
+                    byte_size: 10,
+                    storage_uri: "local://first-hh.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
+                },
+            ],
+        },
+    )
+    .unwrap();
+
+    enqueue_bundle(
+        &mut tx,
+        &IngestBundleInput {
+            organization_id,
+            player_profile_id,
+            created_by_user_id: user_id,
+            files: vec![
+                IngestFileInput {
+                    room: "gg".to_string(),
+                    file_kind: FileKind::TournamentSummary,
+                    sha256: "i".repeat(64),
+                    original_filename: "second-ts.txt".to_string(),
+                    byte_size: 10,
+                    storage_uri: "local://second-ts.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
+                },
+                IngestFileInput {
+                    room: "gg".to_string(),
+                    file_kind: FileKind::HandHistory,
+                    sha256: "j".repeat(64),
+                    original_filename: "second-hh.txt".to_string(),
+                    byte_size: 10,
+                    storage_uri: "local://second-hh.txt".to_string(),
+                    members: vec![],
+                    diagnostics: vec![],
+                },
+            ],
+        },
+    )
+    .unwrap();
+
+    let claimed_order = (0..4)
+        .map(|_| claim_next_job(&mut tx, "test-runner").unwrap().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        claimed_order
+            .iter()
+            .map(|job| job.member_path.clone().unwrap())
+            .collect::<Vec<_>>(),
+        vec![
+            "first-ts.txt".to_string(),
+            "first-hh.txt".to_string(),
+            "second-ts.txt".to_string(),
+            "second-hh.txt".to_string(),
+        ]
+    );
+    assert_eq!(
+        claimed_order
+            .iter()
+            .map(|job| job.file_kind.unwrap())
+            .collect::<Vec<_>>(),
+        vec![
+            FileKind::TournamentSummary,
+            FileKind::HandHistory,
+            FileKind::TournamentSummary,
+            FileKind::HandHistory,
+        ]
+    );
+
+    tx.rollback().unwrap();
+}

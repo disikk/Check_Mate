@@ -12,120 +12,128 @@ use crate::models::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TournamentBuyinFact {
-    tournament_id: Uuid,
-    buyin_total_cents: i64,
+pub(crate) struct TournamentBuyinFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) buyin_total_cents: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SummaryTournamentFact {
-    tournament_id: Uuid,
-    buyin_total_cents: i64,
-    payout_cents: i64,
-    regular_prize_cents: i64,
-    finish_place: Option<i32>,
+pub(crate) struct SummaryTournamentFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) buyin_total_cents: i64,
+    pub(crate) payout_cents: i64,
+    pub(crate) regular_prize_cents: i64,
+    pub(crate) finish_place: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct TournamentFtHelperFact {
-    tournament_id: Uuid,
-    reached_ft_exact: bool,
-    ft_started_incomplete: Option<bool>,
-    deepest_ft_size_reached: Option<i32>,
-    hero_ft_entry_stack_chips: Option<i64>,
-    hero_ft_entry_stack_bb: Option<f64>,
+pub(crate) struct TournamentFtHelperFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) reached_ft_exact: bool,
+    pub(crate) ft_started_incomplete: Option<bool>,
+    pub(crate) deepest_ft_size_reached: Option<i32>,
+    pub(crate) hero_ft_entry_stack_chips: Option<i64>,
+    pub(crate) hero_ft_entry_stack_bb: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TournamentKoEventFact {
-    tournament_id: Uuid,
-    total_exact_ko_event_count: u64,
-    early_ft_exact_ko_event_count: u64,
+pub(crate) struct TournamentKoEventFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) total_exact_ko_event_count: u64,
+    pub(crate) early_ft_exact_ko_event_count: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct DeepFtEntryFact {
-    tournament_id: Uuid,
-    hero_stack_chips: Option<i64>,
-    hero_stack_bb: Option<f64>,
+pub(crate) struct DeepFtEntryFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) hero_stack_chips: Option<i64>,
+    pub(crate) hero_stack_bb: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TournamentStageEventFact {
-    tournament_id: Uuid,
-    early_ft_bust_count: u64,
-    ko_stage_2_3_event_count: u64,
-    ko_stage_3_4_event_count: u64,
-    ko_stage_4_5_event_count: u64,
-    ko_stage_5_6_event_count: u64,
-    ko_stage_6_9_event_count: u64,
-    ko_stage_7_9_event_count: u64,
-    pre_ft_ko_count: u64,
+pub(crate) struct TournamentStageEventFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) early_ft_bust_count: u64,
+    pub(crate) ko_stage_2_3_event_count: u64,
+    pub(crate) ko_stage_3_4_event_count: u64,
+    pub(crate) ko_stage_4_5_event_count: u64,
+    pub(crate) ko_stage_5_6_event_count: u64,
+    pub(crate) ko_stage_6_9_event_count: u64,
+    pub(crate) ko_stage_7_9_event_count: u64,
+    pub(crate) pre_ft_ko_count: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TournamentStageAttemptFact {
-    tournament_id: Uuid,
-    ko_stage_2_3_attempt_count: u64,
-    ko_stage_3_4_attempt_count: u64,
-    ko_stage_4_5_attempt_count: u64,
-    ko_stage_5_6_attempt_count: u64,
-    ko_stage_6_9_attempt_count: u64,
-    ko_stage_7_9_attempt_count: u64,
+pub(crate) struct TournamentStageAttemptFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) ko_stage_2_3_attempt_count: u64,
+    pub(crate) ko_stage_3_4_attempt_count: u64,
+    pub(crate) ko_stage_4_5_attempt_count: u64,
+    pub(crate) ko_stage_5_6_attempt_count: u64,
+    pub(crate) ko_stage_6_9_attempt_count: u64,
+    pub(crate) ko_stage_7_9_attempt_count: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct TournamentStageEntryFact {
-    tournament_id: Uuid,
-    reached_stage_2_3: bool,
-    reached_stage_3_4: bool,
-    reached_stage_4_5: bool,
-    reached_stage_5_6: bool,
-    reached_stage_7_9: bool,
-    hero_stage_5_6_stack_bb: Option<f64>,
-    hero_stage_3_4_stack_bb: Option<f64>,
+pub(crate) struct TournamentStageEntryFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) reached_stage_2_3: bool,
+    pub(crate) reached_stage_3_4: bool,
+    pub(crate) reached_stage_4_5: bool,
+    pub(crate) reached_stage_5_6: bool,
+    pub(crate) reached_stage_7_9: bool,
+    pub(crate) hero_stage_5_6_stack_bb: Option<f64>,
+    pub(crate) hero_stage_3_4_stack_bb: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TournamentKoMoneyEventFact {
-    tournament_id: Uuid,
-    share_micros: i64,
-    is_stage_2_3: bool,
-    is_stage_3_4: bool,
-    is_stage_4_5: bool,
-    is_stage_5_6: bool,
-    is_stage_6_9: bool,
-    is_stage_7_9: bool,
+pub(crate) struct TournamentKoMoneyEventFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) share_micros: i64,
+    pub(crate) is_stage_2_3: bool,
+    pub(crate) is_stage_3_4: bool,
+    pub(crate) is_stage_4_5: bool,
+    pub(crate) is_stage_5_6: bool,
+    pub(crate) is_stage_6_9: bool,
+    pub(crate) is_stage_7_9: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MysteryEnvelopeFact {
-    buyin_total_cents: i64,
-    sort_order: i32,
-    payout_cents: i64,
-    frequency_per_100m: i64,
+pub(crate) struct MysteryEnvelopeFact {
+    pub(crate) buyin_total_cents: i64,
+    pub(crate) sort_order: i32,
+    pub(crate) payout_cents: i64,
+    pub(crate) frequency_per_100m: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TournamentPreFtChipFact {
-    tournament_id: Uuid,
-    chip_delta: i64,
+pub(crate) struct TournamentPreFtChipFact {
+    pub(crate) tournament_id: Uuid,
+    pub(crate) chip_delta: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct CanonicalQueryInputs {
-    tournament_buyin_facts: Vec<TournamentBuyinFact>,
-    summary_facts: Vec<SummaryTournamentFact>,
-    hand_covered_tournaments: Vec<Uuid>,
-    ft_helper_facts: Vec<TournamentFtHelperFact>,
-    ko_event_facts: Vec<TournamentKoEventFact>,
-    deep_ft_entry_facts: Vec<DeepFtEntryFact>,
-    stage_event_facts: Vec<TournamentStageEventFact>,
-    stage_attempt_facts: Vec<TournamentStageAttemptFact>,
-    stage_entry_facts: Vec<TournamentStageEntryFact>,
-    ko_money_event_facts: Vec<TournamentKoMoneyEventFact>,
-    mystery_envelope_facts: Vec<MysteryEnvelopeFact>,
-    pre_ft_chip_facts: Vec<TournamentPreFtChipFact>,
+pub(crate) struct CanonicalQueryInputs {
+    pub(crate) tournament_buyin_facts: Vec<TournamentBuyinFact>,
+    pub(crate) summary_facts: Vec<SummaryTournamentFact>,
+    pub(crate) hand_covered_tournaments: Vec<Uuid>,
+    pub(crate) ft_helper_facts: Vec<TournamentFtHelperFact>,
+    pub(crate) ko_event_facts: Vec<TournamentKoEventFact>,
+    pub(crate) deep_ft_entry_facts: Vec<DeepFtEntryFact>,
+    pub(crate) stage_event_facts: Vec<TournamentStageEventFact>,
+    pub(crate) stage_attempt_facts: Vec<TournamentStageAttemptFact>,
+    pub(crate) stage_entry_facts: Vec<TournamentStageEntryFact>,
+    pub(crate) ko_money_event_facts: Vec<TournamentKoMoneyEventFact>,
+    pub(crate) mystery_envelope_facts: Vec<MysteryEnvelopeFact>,
+    pub(crate) pre_ft_chip_facts: Vec<TournamentPreFtChipFact>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CanonicalQueryScope {
+    pub(crate) organization_id: Uuid,
+    pub(crate) player_profile_id: Uuid,
+    pub(crate) buyin_total_cents: Option<Vec<i64>>,
+    pub(crate) allowed_tournament_ids: Option<BTreeSet<Uuid>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,7 +153,15 @@ pub fn query_seed_stats(
     client: &mut impl GenericClient,
     filters: SeedStatsFilters,
 ) -> Result<SeedStatSnapshot> {
-    let inputs = load_canonical_query_inputs(client, filters)?;
+    let inputs = load_canonical_query_inputs_for_scope(
+        client,
+        CanonicalQueryScope {
+            organization_id: filters.organization_id,
+            player_profile_id: filters.player_profile_id,
+            buyin_total_cents: filters.buyin_total_cents,
+            allowed_tournament_ids: None,
+        },
+    )?;
     Ok(build_seed_stat_snapshot(build_seed_stat_accumulator(
         &inputs.summary_facts,
         &inputs.hand_covered_tournaments,
@@ -158,21 +174,36 @@ pub fn query_canonical_stats(
     client: &mut impl GenericClient,
     filters: SeedStatsFilters,
 ) -> Result<CanonicalStatSnapshot> {
-    let inputs = load_canonical_query_inputs(client, filters)?;
+    query_canonical_stats_for_scope(
+        client,
+        CanonicalQueryScope {
+            organization_id: filters.organization_id,
+            player_profile_id: filters.player_profile_id,
+            buyin_total_cents: filters.buyin_total_cents,
+            allowed_tournament_ids: None,
+        },
+    )
+}
+
+pub(crate) fn query_canonical_stats_for_scope(
+    client: &mut impl GenericClient,
+    scope: CanonicalQueryScope,
+) -> Result<CanonicalStatSnapshot> {
+    let inputs = load_canonical_query_inputs_for_scope(client, scope)?;
     Ok(build_canonical_stat_snapshot(&inputs))
 }
 
-fn load_canonical_query_inputs(
+pub(crate) fn load_canonical_query_inputs_for_scope(
     client: &mut impl GenericClient,
-    filters: SeedStatsFilters,
+    scope: CanonicalQueryScope,
 ) -> Result<CanonicalQueryInputs> {
-    let buyin_filter = filters
+    let buyin_filter = scope
         .buyin_total_cents
         .as_ref()
         .map(|values| values.iter().copied().collect::<BTreeSet<_>>());
     let tournament_buyin_facts =
-        load_tournament_buyin_facts(client, filters.organization_id, filters.player_profile_id)?;
-    let allowed_tournaments = tournament_buyin_facts
+        load_tournament_buyin_facts(client, scope.organization_id, scope.player_profile_id)?;
+    let buyin_allowed_tournaments = tournament_buyin_facts
         .iter()
         .filter(|fact| match &buyin_filter {
             Some(set) => set.contains(&fact.buyin_total_cents),
@@ -180,67 +211,77 @@ fn load_canonical_query_inputs(
         })
         .map(|fact| fact.tournament_id)
         .collect::<BTreeSet<_>>();
+    let allowed_tournaments = match &scope.allowed_tournament_ids {
+        Some(extra_scope) => buyin_allowed_tournaments
+            .intersection(extra_scope)
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        None => buyin_allowed_tournaments,
+    };
     let tournament_buyin_facts = tournament_buyin_facts
         .into_iter()
         .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
         .collect::<Vec<_>>();
     let summary_facts =
-        load_summary_tournament_facts(client, filters.organization_id, filters.player_profile_id)?
+        load_summary_tournament_facts(client, scope.organization_id, scope.player_profile_id)?
             .into_iter()
             .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
             .collect::<Vec<_>>();
     let hand_covered_tournaments = load_hand_covered_tournament_ids(
         client,
-        filters.organization_id,
-        filters.player_profile_id,
+        scope.organization_id,
+        scope.player_profile_id,
     )?
     .into_iter()
     .filter(|tournament_id| allowed_tournaments.contains(tournament_id))
     .collect::<Vec<_>>();
     let ft_helper_facts = load_tournament_ft_helper_facts(
         client,
-        filters.organization_id,
-        filters.player_profile_id,
+        scope.organization_id,
+        scope.player_profile_id,
     )?
     .into_iter()
     .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
     .collect::<Vec<_>>();
-    let ko_event_facts =
-        load_tournament_ko_event_facts(client, filters.organization_id, filters.player_profile_id)?
-            .into_iter()
-            .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
-            .collect::<Vec<_>>();
+    let ko_event_facts = load_tournament_ko_event_facts(
+        client,
+        scope.organization_id,
+        scope.player_profile_id,
+    )?
+    .into_iter()
+    .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
+    .collect::<Vec<_>>();
     let deep_ft_entry_facts =
-        load_deep_ft_entry_facts(client, filters.organization_id, filters.player_profile_id)?
+        load_deep_ft_entry_facts(client, scope.organization_id, scope.player_profile_id)?
             .into_iter()
             .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
             .collect::<Vec<_>>();
     let stage_event_facts =
-        load_stage_event_facts(client, filters.organization_id, filters.player_profile_id)?
+        load_stage_event_facts(client, scope.organization_id, scope.player_profile_id)?
             .into_iter()
             .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
             .collect::<Vec<_>>();
     let stage_attempt_facts =
-        load_stage_attempt_facts(client, filters.organization_id, filters.player_profile_id)?
+        load_stage_attempt_facts(client, scope.organization_id, scope.player_profile_id)?
             .into_iter()
             .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
             .collect::<Vec<_>>();
     let stage_entry_facts =
-        load_stage_entry_facts(client, filters.organization_id, filters.player_profile_id)?
+        load_stage_entry_facts(client, scope.organization_id, scope.player_profile_id)?
             .into_iter()
             .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
             .collect::<Vec<_>>();
     let ko_money_event_facts = load_tournament_ko_money_event_facts(
         client,
-        filters.organization_id,
-        filters.player_profile_id,
+        scope.organization_id,
+        scope.player_profile_id,
     )?
     .into_iter()
     .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
     .collect::<Vec<_>>();
     let mystery_envelope_facts = load_mystery_envelope_facts(client)?;
     let pre_ft_chip_facts =
-        load_pre_ft_chip_facts(client, filters.organization_id, filters.player_profile_id)?
+        load_pre_ft_chip_facts(client, scope.organization_id, scope.player_profile_id)?
             .into_iter()
             .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
             .collect::<Vec<_>>();
@@ -951,7 +992,7 @@ fn build_seed_stat_accumulator(
     }
 }
 
-fn build_canonical_stat_snapshot(inputs: &CanonicalQueryInputs) -> CanonicalStatSnapshot {
+pub(crate) fn build_canonical_stat_snapshot(inputs: &CanonicalQueryInputs) -> CanonicalStatSnapshot {
     let tournament_buyin_facts = &inputs.tournament_buyin_facts;
     let summary_facts = &inputs.summary_facts;
     let hand_covered_tournaments = &inputs.hand_covered_tournaments;

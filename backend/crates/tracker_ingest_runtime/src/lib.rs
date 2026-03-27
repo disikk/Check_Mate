@@ -885,18 +885,27 @@ pub fn claim_next_job(
     let Some(row) = client.query_opt(
         "WITH next_job AS (
              SELECT
-                 id,
-                 bundle_id,
-                 bundle_file_id,
-                 source_file_id,
-                 source_file_member_id,
-                 job_kind,
-                 organization_id
-             FROM import.import_jobs
-             WHERE status = 'queued'
-               AND job_kind IN ('file_ingest', 'bundle_finalize')
-             ORDER BY created_at, id
-             FOR UPDATE SKIP LOCKED
+                 jobs.id,
+                 jobs.bundle_id,
+                 jobs.bundle_file_id,
+                 jobs.source_file_id,
+                 jobs.source_file_member_id,
+                 jobs.job_kind,
+                 jobs.organization_id
+             FROM import.import_jobs AS jobs
+             LEFT JOIN import.ingest_bundle_files AS bundle_files
+               ON bundle_files.id = jobs.bundle_file_id
+             LEFT JOIN import.ingest_bundles AS bundles
+               ON bundles.id = jobs.bundle_id
+             WHERE jobs.status = 'queued'
+               AND jobs.job_kind IN ('file_ingest', 'bundle_finalize')
+             ORDER BY
+                 bundles.queue_order NULLS LAST,
+                 CASE WHEN jobs.job_kind = 'file_ingest' THEN 0 ELSE 1 END,
+                 COALESCE(bundle_files.file_order_index, 2147483647),
+                 jobs.created_at,
+                 jobs.id
+             FOR UPDATE OF jobs SKIP LOCKED
              LIMIT 1
          )
          SELECT

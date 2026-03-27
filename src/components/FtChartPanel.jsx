@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -11,7 +11,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { ftChartConfig, ftChartOptions, getFtChartData } from '../data/ftAnalyticsMock'
+
+import { ftChartOptions } from '../data/ftAnalyticsConfig'
 
 function formatChartNumber(value, decimals = 1) {
   return value.toLocaleString('en-US', {
@@ -36,8 +37,8 @@ function FtBarLabel({ x, y, width, index, bars }) {
       textAnchor="middle"
       fontSize={11}
     >
-      {lines.map((line, index) => (
-        <tspan key={`${point.label}-${index}`} x={x + width / 2} dy={index === 0 ? 0 : 12}>
+      {lines.map((line, lineIndex) => (
+        <tspan key={`${point.label}-${lineIndex}`} x={x + width / 2} dy={lineIndex === 0 ? 0 : 12}>
           {line}
         </tspan>
       ))}
@@ -123,38 +124,84 @@ function roundTick(value) {
   return Math.round(value * 10) / 10
 }
 
-export default function FtChartPanel({ filters, bigKoCards, inlineStats }) {
+function resolveChartVariant(chart, densityStep) {
+  if (!chart) {
+    return null
+  }
+
+  if (!chart.densityOptions?.length) {
+    return chart.variants?.default || Object.values(chart.variants || {})[0] || null
+  }
+
+  const resolvedKey = densityStep || String(chart.defaultDensityStep || chart.densityOptions[0])
+  return chart.variants?.[resolvedKey] || Object.values(chart.variants || {})[0] || null
+}
+
+function getChartEmptyMessage(chart) {
+  if (!chart) {
+    return 'График появится после первой загрузки реальных данных.'
+  }
+
+  if (chart.state === 'empty') {
+    return 'По текущим фильтрам для этого графика пока нет данных.'
+  }
+
+  if (chart.state === 'blocked') {
+    return 'Недостаточно покрытия, чтобы честно построить этот график.'
+  }
+
+  return 'График обновляется.'
+}
+
+export default function FtChartPanel({ charts, bigKoCards, inlineStats }) {
   const [chartType, setChartType] = useState('ft')
   const [densityStep, setDensityStep] = useState('')
 
+  const chart = useMemo(
+    () => charts?.[chartType] || charts?.ft || null,
+    [chartType, charts],
+  )
+
   useEffect(() => {
-    const config = ftChartConfig[chartType]
-    if (config.densityOptions?.length) {
+    if (!charts?.[chartType] && charts?.ft) {
+      setChartType('ft')
+    }
+  }, [chartType, charts])
+
+  useEffect(() => {
+    if (!chart) {
+      setDensityStep('')
+      return
+    }
+
+    if (chart.densityOptions?.length) {
+      const normalizedOptions = chart.densityOptions.map((option) => String(option))
       setDensityStep((currentStep) => (
-        config.densityOptions.includes(Number(currentStep))
+        normalizedOptions.includes(currentStep)
           ? currentStep
-          : String(config.densityOptions[0])
+          : String(chart.defaultDensityStep || chart.densityOptions[0])
       ))
     } else {
       setDensityStep('')
     }
-  }, [chartType])
+  }, [chart])
 
-  const chartData = getFtChartData(chartType, filters, densityStep)
-  const yAxisProps = getYAxisProps(chartData.metric, chartData.bars)
-  const showLabels = chartData.bars.length <= 18
-  const xAxisAngle = chartData.bars.length > 14 ? -35 : 0
+  const chartData = resolveChartVariant(chart, densityStep)
+  const bars = chartData?.bars || []
+  const yAxisProps = getYAxisProps(chart?.metric || 'count', bars)
+  const showLabels = bars.length <= 18
+  const xAxisAngle = bars.length > 14 ? -35 : 0
 
   return (
     <section className="bento-card ft-chart-card">
       <div className="ft-chart-toolbar">
         <div className="ft-chart-header">
-          <span>{chartData.header}</span>
-          {chartData.tooltip && (
-            <span className="chart-tooltip-icon ft-tooltip-anchor" data-tooltip={chartData.tooltip}>
+          <span>{chart?.header || 'FT chart'}</span>
+          {chart?.tooltip ? (
+            <span className="chart-tooltip-icon ft-tooltip-anchor" data-tooltip={chart.tooltip}>
               ?
             </span>
-          )}
+          ) : null}
         </div>
 
         <div className="ft-chart-selectors">
@@ -166,9 +213,9 @@ export default function FtChartPanel({ filters, bigKoCards, inlineStats }) {
             ))}
           </select>
 
-          {chartData.densityOptions?.length ? (
+          {chart?.densityOptions?.length ? (
             <select value={densityStep} onChange={(event) => setDensityStep(event.target.value)}>
-              {chartData.densityOptions.map((option) => (
+              {chart.densityOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -179,65 +226,71 @@ export default function FtChartPanel({ filters, bigKoCards, inlineStats }) {
       </div>
 
       <div className="ft-chart-container">
-        <ResponsiveContainer width="100%" height={440}>
-          <BarChart data={chartData.bars} margin={{ top: 40, right: 16, left: 8, bottom: xAxisAngle ? 76 : 28 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-            <XAxis
-              dataKey="label"
-              tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-              axisLine={{ stroke: 'var(--border-subtle)' }}
-              tickLine={{ stroke: 'var(--border-subtle)' }}
-              height={xAxisAngle ? 70 : 34}
-              interval={0}
-              angle={xAxisAngle}
-              textAnchor={xAxisAngle ? 'end' : 'middle'}
-              label={{
-                value: chartData.xAxisLabel,
-                position: 'insideBottom',
-                offset: xAxisAngle ? -52 : -8,
-                fill: 'var(--text-muted)',
-                fontSize: 12,
-              }}
-            />
-            <YAxis
-              tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-              axisLine={{ stroke: 'var(--border-subtle)' }}
-              tickLine={{ stroke: 'var(--border-subtle)' }}
-              width={72}
-              {...yAxisProps}
-            />
-            <Tooltip
-              cursor={{ fill: 'rgba(99, 102, 241, 0.08)' }}
-              content={(
-                <FtChartTooltip
-                  metric={chartData.metric}
-                  xAxisLabel={chartData.xAxisLabel}
-                />
-              )}
-            />
-            {chartData.medianLabel ? (
-              <ReferenceLine
-                x={chartData.medianLabel}
-                stroke="var(--warning)"
-                strokeDasharray="6 4"
+        {chart?.state === 'ready' && bars.length > 0 ? (
+          <ResponsiveContainer width="100%" height={440}>
+            <BarChart data={bars} margin={{ top: 40, right: 16, left: 8, bottom: xAxisAngle ? 76 : 28 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+              <XAxis
+                dataKey="label"
+                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                axisLine={{ stroke: 'var(--border-subtle)' }}
+                tickLine={{ stroke: 'var(--border-subtle)' }}
+                height={xAxisAngle ? 70 : 34}
+                interval={0}
+                angle={xAxisAngle}
+                textAnchor={xAxisAngle ? 'end' : 'middle'}
                 label={{
-                  value: `Медиана: ${chartData.medianLabel}`,
-                  fill: 'var(--warning)',
-                  fontSize: 11,
-                  position: 'top',
+                  value: chart.xAxisLabel,
+                  position: 'insideBottom',
+                  offset: xAxisAngle ? -52 : -8,
+                  fill: 'var(--text-muted)',
+                  fontSize: 12,
                 }}
               />
-            ) : null}
-            <Bar dataKey="value" radius={[5, 5, 0, 0]} isAnimationActive={false}>
-              {chartData.bars.map((bar) => (
-                <Cell key={`${chartType}-${bar.label}`} fill={bar.color} />
-              ))}
-              {showLabels ? (
-                <LabelList content={(props) => <FtBarLabel {...props} bars={chartData.bars} />} />
+              <YAxis
+                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                axisLine={{ stroke: 'var(--border-subtle)' }}
+                tickLine={{ stroke: 'var(--border-subtle)' }}
+                width={72}
+                {...yAxisProps}
+              />
+              <Tooltip
+                cursor={{ fill: 'rgba(99, 102, 241, 0.08)' }}
+                content={(
+                  <FtChartTooltip
+                    metric={chart.metric}
+                    xAxisLabel={chart.xAxisLabel}
+                  />
+                )}
+              />
+              {chartData?.medianLabel ? (
+                <ReferenceLine
+                  x={chartData.medianLabel}
+                  stroke="var(--warning)"
+                  strokeDasharray="6 4"
+                  label={{
+                    value: `Медиана: ${chartData.medianLabel}`,
+                    fill: 'var(--warning)',
+                    fontSize: 11,
+                    position: 'top',
+                  }}
+                />
               ) : null}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+              <Bar dataKey="value" radius={[5, 5, 0, 0]} isAnimationActive={false}>
+                {bars.map((bar) => (
+                  <Cell key={`${chartType}-${bar.label}`} fill={bar.color} />
+                ))}
+                {showLabels ? (
+                  <LabelList content={(props) => <FtBarLabel {...props} bars={bars} />} />
+                ) : null}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="ft-chart-empty-state">
+            {getChartEmptyMessage(chart)}
+          </div>
+        )}
       </div>
 
       <div className="ft-big-ko-grid">

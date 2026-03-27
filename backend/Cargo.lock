@@ -891,10 +891,12 @@ name = "mbr_stats_runtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "parser_worker",
  "postgres",
  "serde",
  "serde_json",
  "serde_yaml",
+ "tracker_ingest_runtime",
  "uuid",
 ]
 
@@ -1997,6 +1999,8 @@ dependencies = [
  "axum",
  "futures-util",
  "http",
+ "mbr_stats_runtime",
+ "parser_worker",
  "postgres",
  "reqwest",
  "serde",

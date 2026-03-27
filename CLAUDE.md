@@ -49,14 +49,17 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 ### Data
 
 - `src/data/mockData.js` — error summary & trends
-- `src/data/ftAnalyticsMock.js` — FT stat-cards, filters, chart configs, derived datasets
+- `src/data/ftAnalyticsConfig.js` — статический UI-config для live FT dashboard (card rows, chart metadata, palettes)
+- `src/services/ftDashboardApi.js` — реальный client для `GET /api/ft/dashboard`
+- `src/services/ftDashboardState.js` — pure adapter `FT dashboard snapshot -> UI state`
+- `src/data/ftAnalyticsMock.js` — legacy mock-only reference file, больше не используется FT страницей
 - `src/services/uploadApi.js` — реальный upload/session/WebSocket client для `tracker_web_api`
 - `src/services/uploadState.js` — pure adapter `bundle snapshot / event -> UI state`
 - `backend/crates/tracker_web_api` — axum HTTP server для real upload/status slice
 - `backend/crates/tracker_ingest_runner` — отдельный process-style runner поверх `tracker_ingest_runtime`
 - `backend/fixtures/mbr/*` — реальный sample-pack GG MBR для новой parser/db ветки
 
-Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уже подключён к реальному backend ingest flow.
+`upload` и `FT analytics` уже подключены к реальному backend ingest/API flow. Dashboard overview / errors и будущий hand explorer пока остаются вне live derived integration.
 
 ## Code Conventions
 
@@ -72,7 +75,8 @@ Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уж
 - `UploadHandsPage` больше не сидит на `mockHandUpload.js`: реальный vertical slice идёт через `uploadApi.js` + `uploadState.js` + `tracker_web_api` WebSocket snapshot/event contract.
 - Vite dev server теперь проксирует `/api` и WebSocket upgrade на `http://127.0.0.1:3001`, поэтому local frontend/backend handoff ожидает поднятый `tracker_web_api`.
 - Upload v1 intentionally does **not** support true server-side cancel; UI не должен обещать остановку backend processing.
-- FT-раздел повторяет структуру `MBR_Stats`, но намеренно без player selector и aggregate-режима (student-only view).
+- FT-раздел повторяет структуру `MBR_Stats`, но намеренно без player selector и aggregate-режима (student-only view); live backend contract идёт через `GET /api/ft/dashboard`, где `session = ingest bundle`, `buyin = buyin_total_cents`, а date-range фильтруется по `tournament local start`.
+- FT frontend не пересчитывает MBR-метрики локально: `tracker_web_api` отдаёт page-specific snapshot, а `ftDashboardState.js` только адаптирует honest `ready / empty / partial / blocked` backend surface к текущему UI.
 - Внутри `Check_Mate` backend-скоуп текущего цикла ограничен только `GG MBR`; Chico для этого проекта не реализуется.
 - Канонический onboarding path теперь Docker-first: root `docker-compose.yml`, root `scripts/` и `Makefile`.
 - Канонический локальный DB contract для repo-level setup: `CHECK_MATE_DATABASE_URL="host=localhost port=5432 user=postgres password=postgres dbname=check_mate_dev"`.
@@ -117,6 +121,7 @@ Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уж
   - `import-local` smoke path into PostgreSQL using `CHECK_MATE_DATABASE_URL`.
 - `tracker_ingest_runtime` now owns the generic ingest orchestration layer:
   - DB-backed `ingest_bundles` + `ingest_bundle_files`;
+  - `ingest_bundles.queue_order` is the explicit global queue contract for bundle scheduling, so cross-bundle `TS -> HH` file ordering no longer depends on timestamp or UUID accidents;
   - runnable `file_ingest` / `bundle_finalize` jobs in `import.import_jobs`;
   - attempt history in `import.job_attempts`;
   - claim/retry/status recomputation logic for `queued | running | succeeded | failed_retriable | failed_terminal` file jobs and `queued | running | finalizing | succeeded | partial_success | failed` bundles.
@@ -131,6 +136,7 @@ Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уж
   - `backend/migrations/0022_web_upload_member_ingest.sql` adds member-aware ingest bundle/file/event persistence for the real upload pipeline;
   - `backend/migrations/0023_file_fragments_member_uniqueness.sql` switches fragment uniqueness to `(source_file_member_id, fragment_index)` for member-safe upserts;
   - `backend/migrations/0024_user_timezone_and_gg_timestamp_contract.sql` adds `auth.users.timezone_name` and strict GG timestamp provenance values (`gg_user_timezone | gg_user_timezone_missing`);
+  - `backend/migrations/0025_ingest_bundle_queue_order.sql` adds explicit ingest bundle queue order so multi-file and multi-bundle upload flows preserve stable bundle-level execution order;
   - `backend/seeds/0001_reference_data.sql` now seeds the minimal analytics catalog slice required by the current runtime materializer and seed stat query layer;
   - `core.hands` is upserted by `(player_profile_id, external_hand_id)`;
   - `import.source_files` is deduped by `(player_profile_id, room, file_kind, sha256)`, `import.file_fragments` by `(source_file_id, sha256)`, `import.source_file_members` by both `(source_file_id, member_index)` and `(source_file_id, sha256)`, and `import.job_attempts` by `(import_job_id, attempt_no)`;
@@ -198,11 +204,13 @@ Dashboard / FT analytics пока всё ещё mock. Раздел `upload` уж
   - `is_nut_draw` is now an active exact postflop field under the same policy: it is derived only from ordinary improving next-card draw families, uses strict family-level nutness instead of one lucky out, treats `combo_draw` as `true` when at least one active ordinary family is nut, and materializes `Some(false)` for river / no-draw / backdoor-only rows.
   - the proof surface for `street_strength` is now three-layered: synthetic acceptance coverage (`tests/street_hand_strength.rs`), independent reference/differential coverage (`tests/street_strength_reference.rs`), and corpus-backed golden coverage (`tests/street_strength_corpus_golden.rs`);
   - the corpus-backed layer snapshots the full active row contract for `Hero` and showdown-known opponents in two formats: curated raw real-hand goldens and an aggregated full-pack coverage sweep over committed HH fixtures; refresh remains explicit via `UPDATE_GOLDENS=1`.
-- Current real upload vertical slice:
+- Current real web slices:
   - `tracker_web_api` is the active HTTP/WebSocket transport for v1 upload flow and exposes `GET /api/session`, `POST /api/ingest/bundles`, `GET /api/ingest/bundles/{bundle_id}`, and `GET /api/ingest/bundles/{bundle_id}/ws`;
+  - the same crate now also exposes `GET /api/ft/dashboard` as the page-specific MBR/FT snapshot endpoint over `mbr_stats_runtime`;
   - upload accepts `.txt`, `.hh`, and `.zip`, spools raw files to local disk, expands ZIP members into member-level ingest jobs, and persists skipped-member diagnostics into `import.ingest_events`;
   - `tracker_ingest_runner` is the separate runner process for this slice; `parser_worker` remains the shared execution engine, but it now resolves execution context from the job's `organization_id/player_profile_id` instead of hardcoded dev context;
-  - `UploadHandsPage` is now wired to real backend snapshot/event flow; FT analytics and dashboard sections remain mock-backed and are not part of this vertical slice.
+  - `UploadHandsPage` is now wired to real backend snapshot/event flow;
+  - `FtAnalyticsPage` is now wired to real backend FT snapshot flow via `ftDashboardApi.js` + `ftDashboardState.js`, preserving the existing screen structure while rendering honest blocked/empty states from backend coverage.
 - `backend/docs/street_strength_contract.md` is now the canonical exact contract for `tracker_parser_core::street_strength` and must be updated whenever its semantics change.
 - Current canonical parser correction:
   - repeated GG `collected ... from pot` lines for the same player are now accumulated instead of overwritten;

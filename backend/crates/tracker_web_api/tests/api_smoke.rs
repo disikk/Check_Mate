@@ -8,6 +8,7 @@ use std::{
 };
 
 use futures_util::StreamExt;
+use parser_worker::local_import::run_ingest_runner_until_idle;
 use postgres::{Client as PgClient, NoTls};
 use reqwest::Client;
 use serde_json::Value;
@@ -104,6 +105,42 @@ async fn spawn_test_server(config: WebApiConfig) -> (String, tokio::task::JoinHa
         serve(listener, config).await.unwrap();
     });
     (base_url, handle)
+}
+
+async fn upload_bundle(
+    http: &Client,
+    base_url: &str,
+    files: &[PathBuf],
+) -> Value {
+    let mut form = reqwest::multipart::Form::new();
+    for path in files {
+        let filename = path.file_name().unwrap().to_string_lossy().to_string();
+        let bytes = fs::read(path).unwrap();
+        form = form.part(
+            "files",
+            reqwest::multipart::Part::bytes(bytes).file_name(filename),
+        );
+    }
+
+    let response = http
+        .post(format!("{base_url}/api/ingest/bundles"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    response.json().await.unwrap()
+}
+
+async fn run_real_ingest_runner() {
+    let database_url = db_url();
+    let processed_jobs = tokio::task::spawn_blocking(move || {
+        run_ingest_runner_until_idle(&database_url, "tracker_web_api_ft_dashboard_test", 3)
+            .expect("real ingest runner")
+    })
+    .await
+    .unwrap();
+    assert!(processed_jobs > 0, "runner must process at least one ingest job");
 }
 
 struct SuccessExecutor {
@@ -366,4 +403,257 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
     runtime_task.await.unwrap();
     handle.abort();
     let _ = fs::remove_dir_all(spool_dir);
+}
+
+#[tokio::test]
+#[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+async fn ft_dashboard_endpoint_returns_live_snapshot_and_respects_filters() {
+    let _guard = db_test_guard();
+    prepare_database(db_url()).await;
+
+    let spool_dir = unique_spool_dir("ft-dashboard");
+    fs::create_dir_all(&spool_dir).unwrap();
+    let config = WebApiConfig {
+        bind_addr: "127.0.0.1:0".parse().unwrap(),
+        database_url: db_url(),
+        spool_dir: spool_dir.clone(),
+        session_seed: unique_seed("ft-dashboard"),
+        ws_poll_interval: Duration::from_millis(25),
+    };
+    let (base_url, handle) = spawn_test_server(config).await;
+    let http = Client::new();
+
+    let first_bundle_json = upload_bundle(
+        &http,
+        &base_url,
+        &[
+            fixture_path(
+                "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+            ),
+            fixture_path("fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt"),
+        ],
+    )
+    .await;
+    let second_bundle_json = upload_bundle(
+        &http,
+        &base_url,
+        &[
+            fixture_path(
+                "fixtures/mbr/ts/GG20260316 - Tournament #271769772 - Mystery Battle Royale 25.txt",
+            ),
+            fixture_path("fixtures/mbr/hh/GG20260316-0342 - Mystery Battle Royale 25.txt"),
+        ],
+    )
+    .await;
+
+    run_real_ingest_runner().await;
+
+    let first_bundle_id = first_bundle_json
+        .get("bundle_id")
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_string();
+    let second_bundle_id = second_bundle_json
+        .get("bundle_id")
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_string();
+
+    let response = http
+        .get(format!(
+            "{base_url}/api/ft/dashboard?timezone=Asia/Krasnoyarsk"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let dashboard: Value = response.json().await.unwrap();
+
+    assert_eq!(dashboard.get("data_state").and_then(Value::as_str), Some("ready"));
+    assert_eq!(
+        dashboard
+            .get("coverage")
+            .and_then(|coverage| coverage.get("summary_tournament_count"))
+            .and_then(Value::as_u64),
+        Some(2)
+    );
+    assert_eq!(
+        dashboard
+            .get("coverage")
+            .and_then(|coverage| coverage.get("hand_tournament_count"))
+            .and_then(Value::as_u64),
+        Some(2)
+    );
+    let bundle_ids = dashboard
+        .get("filter_options")
+        .and_then(|options| options.get("bundle_options"))
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(|option| option.get("bundle_id").and_then(Value::as_str))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        bundle_ids,
+        std::collections::BTreeSet::from([
+            first_bundle_id.as_str(),
+            second_bundle_id.as_str(),
+        ])
+    );
+    assert_eq!(
+        dashboard
+            .get("selected_filters")
+            .and_then(|filters| filters.get("timezone_name"))
+            .and_then(Value::as_str),
+        Some("Asia/Krasnoyarsk")
+    );
+
+    let first_bundle_response = http
+        .get(format!(
+            "{base_url}/api/ft/dashboard?timezone=Asia/Krasnoyarsk&bundle_id={first_bundle_id}"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first_bundle_response.status(), 200);
+    let first_bundle_dashboard: Value = first_bundle_response.json().await.unwrap();
+    assert_eq!(
+        first_bundle_dashboard
+            .get("coverage")
+            .and_then(|coverage| coverage.get("summary_tournament_count"))
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+
+    let empty_response = http
+        .get(format!(
+            "{base_url}/api/ft/dashboard?timezone=Asia/Krasnoyarsk&buyin=999999"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(empty_response.status(), 200);
+    let empty_dashboard: Value = empty_response.json().await.unwrap();
+    assert_eq!(empty_dashboard.get("data_state").and_then(Value::as_str), Some("empty"));
+
+    let date_response = http
+        .get(format!(
+            "{base_url}/api/ft/dashboard?timezone=Asia/Krasnoyarsk&date_from=2026-03-17T00:00"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(date_response.status(), 200);
+    let date_dashboard: Value = date_response.json().await.unwrap();
+    assert_eq!(date_dashboard.get("data_state").and_then(Value::as_str), Some("empty"));
+
+    handle.abort();
+    let _ = fs::remove_dir_all(spool_dir);
+}
+
+#[tokio::test]
+#[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+async fn ft_dashboard_endpoint_rejects_invalid_filters_and_preserves_session_scope() {
+    let _guard = db_test_guard();
+    prepare_database(db_url()).await;
+
+    let session_one_spool = unique_spool_dir("ft-dashboard-scope-a");
+    fs::create_dir_all(&session_one_spool).unwrap();
+    let session_one_config = WebApiConfig {
+        bind_addr: "127.0.0.1:0".parse().unwrap(),
+        database_url: db_url(),
+        spool_dir: session_one_spool.clone(),
+        session_seed: unique_seed("ft-dashboard-scope-a"),
+        ws_poll_interval: Duration::from_millis(25),
+    };
+    let (session_one_base_url, session_one_handle) = spawn_test_server(session_one_config).await;
+    let http = Client::new();
+
+    let ts_only_bundle = upload_bundle(
+        &http,
+        &session_one_base_url,
+        &[fixture_path(
+            "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        )],
+    )
+    .await;
+    run_real_ingest_runner().await;
+
+    let ts_only_bundle_id = ts_only_bundle
+        .get("bundle_id")
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_string();
+
+    let partial_response = http
+        .get(format!(
+            "{session_one_base_url}/api/ft/dashboard?timezone=Asia/Krasnoyarsk&bundle_id={ts_only_bundle_id}"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(partial_response.status(), 200);
+    let partial_dashboard: Value = partial_response.json().await.unwrap();
+    assert_eq!(
+        partial_dashboard.get("data_state").and_then(Value::as_str),
+        Some("partial")
+    );
+    assert_eq!(
+        partial_dashboard
+            .get("stat_cards")
+            .and_then(|cards| cards.get("avgFtStack"))
+            .and_then(|card| card.get("state"))
+            .and_then(Value::as_str),
+        Some("blocked")
+    );
+    assert_eq!(
+        partial_dashboard
+            .get("charts")
+            .and_then(|charts| charts.get("ft_stack"))
+            .and_then(|chart| chart.get("state"))
+            .and_then(Value::as_str),
+        Some("blocked")
+    );
+
+    let invalid_timezone_response = http
+        .get(format!(
+            "{session_one_base_url}/api/ft/dashboard?timezone=Mars/OlympusMons"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(invalid_timezone_response.status(), 400);
+
+    let invalid_date_response = http
+        .get(format!(
+            "{session_one_base_url}/api/ft/dashboard?timezone=Asia/Krasnoyarsk&date_from=broken-date"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(invalid_date_response.status(), 400);
+
+    let session_two_spool = unique_spool_dir("ft-dashboard-scope-b");
+    fs::create_dir_all(&session_two_spool).unwrap();
+    let session_two_config = WebApiConfig {
+        bind_addr: "127.0.0.1:0".parse().unwrap(),
+        database_url: db_url(),
+        spool_dir: session_two_spool.clone(),
+        session_seed: unique_seed("ft-dashboard-scope-b"),
+        ws_poll_interval: Duration::from_millis(25),
+    };
+    let (session_two_base_url, session_two_handle) = spawn_test_server(session_two_config).await;
+
+    let forbidden_response = http
+        .get(format!(
+            "{session_two_base_url}/api/ft/dashboard?timezone=Asia/Krasnoyarsk&bundle_id={ts_only_bundle_id}"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(forbidden_response.status(), 403);
+
+    session_two_handle.abort();
+    session_one_handle.abort();
+    let _ = fs::remove_dir_all(session_one_spool);
+    let _ = fs::remove_dir_all(session_two_spool);
 }

@@ -83,12 +83,16 @@
   - `tracker_web_api` принимает `.txt/.hh/.zip`, создаёт ingest bundles и стримит snapshot/events через WebSocket;
   - `tracker_ingest_runner` — отдельный process-style runner, который дренирует queued ingest jobs;
   - `UploadHandsPage` во фронте больше не использует `mockHandUpload.js`.
+- real FT analytics slice тоже уже поднят:
+  - `tracker_web_api` теперь отдаёт `GET /api/ft/dashboard` как page-specific MBR/FT snapshot endpoint;
+  - runtime считает FT dashboard поверх `mbr_stats_runtime`, а не через generic hand/street query layer;
+  - фронт больше не пересчитывает FT mock math локально: `FtAnalyticsPage` использует `ftDashboardApi.js` + `ftDashboardState.js` и честно показывает `ready / empty / partial / blocked`.
 
 ## Что нужно следующим слоем
 
 1. hand/drilldown HTTP/API слой поверх `tracker_query_runtime`;
-2. реальная аналитическая интеграция FT/dashboard вместо mock data;
-3. auth / true session / cleanup / retention hardening для upload slice.
+2. hand/street explorer UI поверх реального derived-layer;
+3. auth / true session / cleanup / retention hardening для upload + FT slices.
 
 ## Основные команды
 
