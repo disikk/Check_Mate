@@ -93,6 +93,7 @@ pub fn split_hand_history(input: &str) -> Result<Vec<HandRecord>, ParserError> {
 pub fn parse_hand_header(hand_text: &str) -> Result<HandHeader, ParserError> {
     static FIRST_REGEX: OnceLock<Regex> = OnceLock::new();
     static SECOND_REGEX: OnceLock<Regex> = OnceLock::new();
+    static ANTE_REGEX: OnceLock<Regex> = OnceLock::new();
 
     let normalized = normalize_newlines(hand_text);
     let mut lines = normalized.lines().filter(|line| !line.trim().is_empty());
@@ -104,7 +105,7 @@ pub fn parse_hand_header(hand_text: &str) -> Result<HandHeader, ParserError> {
 
     let first_regex = FIRST_REGEX.get_or_init(|| {
         Regex::new(
-            r"^Poker Hand #(?P<hand_id>[^:]+): Tournament #(?P<tournament_id>\d+), (?P<game_name>.+) - (?P<level_name>Level\d+)\((?P<small_blind>[\d,]+)/(?P<big_blind>[\d,]+)\((?P<ante>[\d,]+)\)\) - (?P<played_at>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})$",
+            r"^Poker Hand #(?P<hand_id>[^:]+): Tournament #(?P<tournament_id>\d+), (?P<game_name>.+) - (?P<level_name>Level\d+)\((?P<small_blind>[\d,]+)/(?P<big_blind>[\d,]+)(?:\((?P<ante>[\d,]+)\))?\) - (?P<played_at>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})$",
         )
         .expect("hand header regex must compile")
     });
@@ -114,6 +115,10 @@ pub fn parse_hand_header(hand_text: &str) -> Result<HandHeader, ParserError> {
         )
         .expect("table regex must compile")
     });
+    let ante_regex = ANTE_REGEX.get_or_init(|| {
+        Regex::new(r"^[^:]+: posts the ante (?P<ante>[\d,]+)$")
+            .expect("ante regex must compile")
+    });
 
     let header_caps = first_regex
         .captures(first_line)
@@ -122,6 +127,23 @@ pub fn parse_hand_header(hand_text: &str) -> Result<HandHeader, ParserError> {
         .captures(second_line)
         .ok_or_else(|| invalid_field("table_line", second_line))?;
 
+    let ante = header_caps
+        .name("ante")
+        .map(|ante| parse_u32(ante.as_str(), "ante"))
+        .transpose()?
+        .or_else(|| {
+            normalized
+                .lines()
+                .skip(2)
+                .map(str::trim)
+                .find_map(|line| ante_regex.captures(line))
+                .map(|captures| parse_u32(&captures["ante"], "ante"))
+                .transpose()
+                .ok()
+                .flatten()
+        })
+        .unwrap_or(0);
+
     Ok(HandHeader {
         hand_id: header_caps["hand_id"].to_string(),
         tournament_id: parse_u64(&header_caps["tournament_id"], "tournament_id")?,
@@ -129,7 +151,7 @@ pub fn parse_hand_header(hand_text: &str) -> Result<HandHeader, ParserError> {
         level_name: header_caps["level_name"].to_string(),
         small_blind: parse_u32(&header_caps["small_blind"], "small_blind")?,
         big_blind: parse_u32(&header_caps["big_blind"], "big_blind")?,
-        ante: parse_u32(&header_caps["ante"], "ante")?,
+        ante,
         played_at: header_caps["played_at"].to_string(),
         table_name: table_caps["table_name"].to_string(),
         max_players: parse_u8(&table_caps["max_players"], "max_players")?,

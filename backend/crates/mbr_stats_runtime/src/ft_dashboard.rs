@@ -158,9 +158,9 @@ struct StackTournamentRecord {
     payout_cents: Option<i64>,
     ft_entry_stack_chips: i64,
     ft_entry_stack_bb: Option<f64>,
-    total_exact_ko_event_count: u64,
-    early_ft_exact_ko_event_count: u64,
-    ko_stage_5_6_event_count: u64,
+    total_exact_ko_value: f64,
+    early_ft_exact_ko_value: f64,
+    ko_stage_5_6_value: f64,
     ko_stage_6_9_attempt_count: u64,
     ko_stage_5_6_attempt_count: u64,
     stage_5_6_stack_bb: Option<f64>,
@@ -444,8 +444,8 @@ fn build_stat_cards(canonical: &CanonicalStatSnapshot) -> BTreeMap<String, FtDas
         "avgKo".to_string(),
         dual_stat_card(
             canonical,
-            "avg_ko_event_per_tournament",
-            "early_ft_ko_event_per_tournament",
+            "avg_ko_per_tournament",
+            "early_ft_ko_per_tournament",
         ),
     );
     cards.insert("koAttempts1".to_string(), blocked_card());
@@ -470,13 +470,13 @@ fn build_stat_cards(canonical: &CanonicalStatSnapshot) -> BTreeMap<String, FtDas
         dual_stat_card(
             canonical,
             "ft_stack_conversion_7_9",
-            "ft_stack_conversion_7_9_attempts",
+            "ko_attempts_per_ft_7_9",
         ),
     );
     cards.insert("koAttempts2".to_string(), blocked_card());
     cards.insert(
         "winningsFromKo".to_string(),
-        single_stat_card(canonical, "ko_contribution_percent"),
+        single_stat_card(canonical, "ko_contribution"),
     );
     cards.insert(
         "avgPlaceFt".to_string(),
@@ -491,13 +491,13 @@ fn build_stat_cards(canonical: &CanonicalStatSnapshot) -> BTreeMap<String, FtDas
         dual_stat_card(
             canonical,
             "ft_stack_conversion_5_6",
-            "ft_stack_conversion_5_6_attempts",
+            "ko_attempts_per_ft_5_6",
         ),
     );
     cards.insert("koAttempts3p".to_string(), blocked_card());
     cards.insert(
         "winningsFromItm".to_string(),
-        complement_percent_card(canonical, "ko_contribution_percent"),
+        complement_percent_card(canonical, "ko_contribution"),
     );
     cards.insert(
         "avgPlaceAll".to_string(),
@@ -512,7 +512,7 @@ fn build_stat_cards(canonical: &CanonicalStatSnapshot) -> BTreeMap<String, FtDas
         dual_stat_card(
             canonical,
             "ft_stack_conversion_3_4",
-            "ft_stack_conversion_3_4_attempts",
+            "ko_attempts_per_ft_3_4",
         ),
     );
 
@@ -525,17 +525,17 @@ fn build_inline_stats(
     BTreeMap::from([
         (
             "koLuck".to_string(),
-            single_inline_stat(canonical, "ko_luck_money_delta"),
+            single_inline_stat(canonical, "ko_luck"),
         ),
         (
             "roiAdj".to_string(),
-            single_inline_stat(canonical, "roi_adj_pct"),
+            single_inline_stat(canonical, "roi_adj"),
         ),
     ])
 }
 
 fn build_big_ko_cards(canonical: &CanonicalStatSnapshot) -> Vec<FtDashboardBigKoCard> {
-    let total_ko_count = stat_to_f64(canonical.values.get("total_ko_event_count")).unwrap_or(0.0);
+    let total_ko_count = stat_to_f64(canonical.values.get("total_ko")).unwrap_or(0.0);
 
     [
         ("x1.5", "big_ko_x1_5_count"),
@@ -663,23 +663,29 @@ fn build_stack_records(inputs: &CanonicalQueryInputs) -> Vec<StackTournamentReco
                     tournament_id: fact.tournament_id,
                     total_exact_ko_event_count: 0,
                     early_ft_exact_ko_event_count: 0,
+                    total_exact_ko_share_total: 0.0,
+                    exact_ft_ko_share_total: 0.0,
+                    early_ft_exact_ko_share_total: 0.0,
                 });
             let stage_event = stage_events.get(&fact.tournament_id).copied().unwrap_or(
                 TournamentStageEventFact {
                     tournament_id: fact.tournament_id,
                     early_ft_bust_count: 0,
-                    ko_stage_2_3_event_count: 0,
-                    ko_stage_3_4_event_count: 0,
-                    ko_stage_4_5_event_count: 0,
-                    ko_stage_5_6_event_count: 0,
-                    ko_stage_6_9_event_count: 0,
-                    ko_stage_7_9_event_count: 0,
-                    pre_ft_ko_count: 0,
+                    ko_stage_2_3_share_total: 0.0,
+                    ko_stage_3_4_share_total: 0.0,
+                    ko_stage_4_5_share_total: 0.0,
+                    ko_stage_5_6_share_total: 0.0,
+                    ko_stage_6_9_share_total: 0.0,
+                    ko_stage_7_9_share_total: 0.0,
+                    transition_exact_ko_share_total: 0.0,
                 },
             );
             let stage_attempt = stage_attempts.get(&fact.tournament_id).copied().unwrap_or(
                 TournamentStageAttemptFact {
                     tournament_id: fact.tournament_id,
+                    exact_ft_attempt_count: 0,
+                    transition_exact_attempt_count: 0,
+                    transition_exact_opportunity_count: 0,
                     ko_stage_2_3_attempt_count: 0,
                     ko_stage_3_4_attempt_count: 0,
                     ko_stage_4_5_attempt_count: 0,
@@ -696,8 +702,12 @@ fn build_stack_records(inputs: &CanonicalQueryInputs) -> Vec<StackTournamentReco
                     reached_stage_4_5: false,
                     reached_stage_5_6: false,
                     reached_stage_7_9: false,
+                    hero_stage_5_6_stack_chips: None,
                     hero_stage_5_6_stack_bb: None,
+                    hero_stage_5_6_entry_players: None,
+                    hero_stage_3_4_stack_chips: None,
                     hero_stage_3_4_stack_bb: None,
+                    hero_stage_3_4_entry_players: None,
                 },
             );
 
@@ -710,9 +720,9 @@ fn build_stack_records(inputs: &CanonicalQueryInputs) -> Vec<StackTournamentReco
                 payout_cents: summary.map(|summary| summary.payout_cents),
                 ft_entry_stack_chips: chips,
                 ft_entry_stack_bb: fact.hero_ft_entry_stack_bb,
-                total_exact_ko_event_count: ko.total_exact_ko_event_count,
-                early_ft_exact_ko_event_count: ko.early_ft_exact_ko_event_count,
-                ko_stage_5_6_event_count: stage_event.ko_stage_5_6_event_count,
+                total_exact_ko_value: ko.total_exact_ko_share_total,
+                early_ft_exact_ko_value: ko.early_ft_exact_ko_share_total,
+                ko_stage_5_6_value: stage_event.ko_stage_5_6_share_total,
                 ko_stage_6_9_attempt_count: stage_attempt.ko_stage_6_9_attempt_count,
                 ko_stage_5_6_attempt_count: stage_attempt.ko_stage_5_6_attempt_count,
                 stage_5_6_stack_bb: stage_entry.hero_stage_5_6_stack_bb,
@@ -840,15 +850,15 @@ fn build_stage_conversion_chart(
             }
 
             let (events_sum, denom_sum, attempts_sum) = matching.iter().fold(
-                (0_u64, 0.0_f64, 0_u64),
+                (0.0_f64, 0.0_f64, 0_u64),
                 |(events, denom, attempts), record| match stage {
                     "7_9" => (
-                        events + record.early_ft_exact_ko_event_count,
+                        events + record.early_ft_exact_ko_value,
                         denom + record.ft_entry_stack_bb.unwrap_or(0.0),
                         attempts + record.ko_stage_6_9_attempt_count,
                     ),
                     "5_6" => (
-                        events + record.ko_stage_5_6_event_count,
+                        events + record.ko_stage_5_6_value,
                         denom + record.stage_5_6_stack_bb.unwrap_or(0.0),
                         attempts + record.ko_stage_5_6_attempt_count,
                     ),
@@ -859,7 +869,7 @@ fn build_stage_conversion_chart(
             FtChartBar {
                 label: label.to_string(),
                 value: if denom_sum > 0.0 {
-                    events_sum as f64 / denom_sum
+                    events_sum / denom_sum
                 } else {
                     0.0
                 },
@@ -955,7 +965,7 @@ fn build_avg_ko_by_position_chart(inputs: &CanonicalQueryInputs) -> FtDashboardC
     let ko_by_tournament = inputs
         .ko_event_facts
         .iter()
-        .map(|fact| (fact.tournament_id, fact.total_exact_ko_event_count))
+        .map(|fact| (fact.tournament_id, fact.total_exact_ko_share_total))
         .collect::<BTreeMap<_, _>>();
 
     let bars = (1..=8)
@@ -972,13 +982,13 @@ fn build_avg_ko_by_position_chart(inputs: &CanonicalQueryInputs) -> FtDashboardC
                     ko_by_tournament
                         .get(&fact.tournament_id)
                         .copied()
-                        .unwrap_or(0)
+                        .unwrap_or(0.0)
                 })
-                .sum::<u64>();
+                .sum::<f64>();
             FtChartBar {
                 label: place.to_string(),
                 value: if sample_size > 0 {
-                    total as f64 / sample_size as f64
+                    total / sample_size as f64
                 } else {
                     0.0
                 },
@@ -1082,26 +1092,26 @@ fn build_ft_stack_bars(
                 "conv" => {
                     let events = matching
                         .iter()
-                        .map(|record| record.early_ft_exact_ko_event_count)
-                        .sum::<u64>();
+                        .map(|record| record.early_ft_exact_ko_value)
+                        .sum::<f64>();
                     let stack_sum = matching
                         .iter()
                         .filter_map(|record| record.ft_entry_stack_bb)
                         .sum::<f64>();
-                    ratio_to_float(events, stack_sum).unwrap_or(0.0)
+                    ratio_to_float_f64(events, stack_sum).unwrap_or(0.0)
                 }
                 "avg_ko" => {
                     matching
                         .iter()
-                        .map(|record| record.total_exact_ko_event_count)
-                        .sum::<u64>() as f64
+                        .map(|record| record.total_exact_ko_value)
+                        .sum::<f64>()
                         / sample_size as f64
                 }
                 "early_avg_ko" => {
                     matching
                         .iter()
-                        .map(|record| record.early_ft_exact_ko_event_count)
-                        .sum::<u64>() as f64
+                        .map(|record| record.early_ft_exact_ko_value)
+                        .sum::<f64>()
                         / sample_size as f64
                 }
                 _ => 0.0,
@@ -1346,10 +1356,128 @@ fn stat_to_f64(point: Option<&CanonicalStatPoint>) -> Option<f64> {
     }
 }
 
-fn ratio_to_float(numerator: u64, denominator: f64) -> Option<f64> {
-    (denominator > 0.0).then_some(numerator as f64 / denominator)
+fn ratio_to_float_f64(numerator: f64, denominator: f64) -> Option<f64> {
+    (denominator > 0.0).then_some(numerator / denominator)
 }
 
 fn roi_from_totals(payout_cents: i64, buyin_cents: i64) -> Option<f64> {
     (buyin_cents > 0).then_some(((payout_cents - buyin_cents) as f64 / buyin_cents as f64) * 100.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::{
+        FtValueState, build_big_ko_cards, build_inline_stats, build_stat_cards,
+    };
+    use crate::models::{CanonicalStatPoint, CanonicalStatSnapshot, SeedStatCoverage};
+
+    fn snapshot_with_values(values: BTreeMap<String, CanonicalStatPoint>) -> CanonicalStatSnapshot {
+        CanonicalStatSnapshot {
+            coverage: SeedStatCoverage {
+                summary_tournament_count: 1,
+                hand_tournament_count: 1,
+            },
+            values,
+        }
+    }
+
+    #[test]
+    fn dashboard_money_surface_uses_canonical_money_and_big_ko_values() {
+        let canonical = snapshot_with_values(BTreeMap::from([
+            (
+                "ko_contribution".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(43.825069294733595)),
+            ),
+            (
+                "ko_luck".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(-441.25)),
+            ),
+            (
+                "roi_adj".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(0.7415254237288136)),
+            ),
+            (
+                "total_ko".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(78.0)),
+            ),
+            (
+                "big_ko_x1_5_count".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(0.0)),
+            ),
+            (
+                "big_ko_x2_count".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(1.0)),
+            ),
+            (
+                "big_ko_x10_count".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(0.0)),
+            ),
+            (
+                "big_ko_x100_count".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(0.0)),
+            ),
+            (
+                "big_ko_x1000_count".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(0.0)),
+            ),
+            (
+                "big_ko_x10000_count".to_string(),
+                CanonicalStatPoint::from_optional_float(Some(0.0)),
+            ),
+        ]));
+
+        let stat_cards = build_stat_cards(&canonical);
+        let inline_stats = build_inline_stats(&canonical);
+        let big_ko_cards = build_big_ko_cards(&canonical);
+
+        assert_eq!(stat_cards["winningsFromKo"].state, FtValueState::Ready);
+        assert_eq!(
+            stat_cards["winningsFromKo"].value,
+            Some(43.825069294733595)
+        );
+        assert_eq!(stat_cards["winningsFromItm"].state, FtValueState::Ready);
+        assert_eq!(
+            stat_cards["winningsFromItm"].value,
+            Some(56.174930705266405)
+        );
+        assert_eq!(inline_stats["koLuck"].state, FtValueState::Ready);
+        assert_eq!(inline_stats["koLuck"].value, Some(-441.25));
+        assert_eq!(inline_stats["roiAdj"].state, FtValueState::Ready);
+        assert_eq!(inline_stats["roiAdj"].value, Some(0.7415254237288136));
+
+        let x2_card = big_ko_cards
+            .iter()
+            .find(|card| card.tier == "x2")
+            .expect("x2 big ko card");
+        assert_eq!(x2_card.state, FtValueState::Ready);
+        assert_eq!(x2_card.count, Some(1.0));
+        assert_eq!(x2_card.occurs_once_every_kos, Some(78.0));
+
+        let x15_card = big_ko_cards
+            .iter()
+            .find(|card| card.tier == "x1.5")
+            .expect("x1.5 big ko card");
+        assert_eq!(x15_card.state, FtValueState::Ready);
+        assert_eq!(x15_card.count, Some(0.0));
+        assert_eq!(x15_card.occurs_once_every_kos, None);
+    }
+
+    #[test]
+    fn dashboard_money_surface_blocks_when_canonical_values_are_missing() {
+        let canonical = snapshot_with_values(BTreeMap::new());
+
+        let stat_cards = build_stat_cards(&canonical);
+        let inline_stats = build_inline_stats(&canonical);
+        let big_ko_cards = build_big_ko_cards(&canonical);
+
+        assert_eq!(stat_cards["winningsFromKo"].state, FtValueState::Blocked);
+        assert_eq!(stat_cards["winningsFromItm"].state, FtValueState::Blocked);
+        assert_eq!(inline_stats["koLuck"].state, FtValueState::Blocked);
+        assert_eq!(inline_stats["roiAdj"].state, FtValueState::Blocked);
+        assert!(big_ko_cards
+            .iter()
+            .all(|card| card.state == FtValueState::Blocked));
+    }
 }

@@ -2,78 +2,73 @@ use std::collections::BTreeMap;
 
 use uuid::Uuid;
 
-/// Авторитетный перечень всех 60 канонических stat keys, которые runtime обязан
+/// Авторитетный перечень всех 59 канонических stat keys, которые runtime обязан
 /// вставлять в `CanonicalStatSnapshot.values`. Порядок алфавитный.
 /// Любое расхождение с `docs/stat_catalog/mbr_stats_spec_v1.yml` ловится parity-тестом.
 pub const CANONICAL_STAT_KEYS: &[&str] = &[
-    // seed-safe base (from SeedStatSnapshot::to_canonical_snapshot)
     "avg_finish_place",
-    "avg_ko_event_per_tournament",
-    "early_ft_ko_event_count",
-    "early_ft_ko_event_per_tournament",
-    "final_table_reach_percent",
-    "roi_pct",
-    "total_ko_event_count",
-    // Phase A: tournament / FT-helper / summary-money
     "avg_finish_place_ft",
     "avg_finish_place_no_ft",
     "avg_ft_initial_stack_bb",
     "avg_ft_initial_stack_chips",
+    "avg_ko_attempts_per_ft",
+    "avg_ko_per_tournament",
+    "big_ko_x10000_count",
+    "big_ko_x1000_count",
+    "big_ko_x100_count",
+    "big_ko_x10_count",
+    "big_ko_x1_5_count",
+    "big_ko_x2_count",
     "deep_ft_avg_stack_bb",
     "deep_ft_avg_stack_chips",
     "deep_ft_reach_percent",
     "deep_ft_roi_pct",
-    "incomplete_ft_percent",
-    "itm_percent",
-    "ko_contribution_percent",
-    "roi_on_ft_pct",
-    "winnings_from_itm",
-    "winnings_from_ko_total",
-    // Phase B: stage / conversion / attempt
-    "avg_ko_attempts_per_ft",
     "early_ft_bust_count",
     "early_ft_bust_per_tournament",
+    "early_ft_ko",
+    "early_ft_ko_per_tournament",
+    "final_table_reach_percent",
+    "ft_ko_success_rate",
     "ft_stack_conversion",
     "ft_stack_conversion_3_4",
-    "ft_stack_conversion_3_4_attempts",
     "ft_stack_conversion_5_6",
-    "ft_stack_conversion_5_6_attempts",
     "ft_stack_conversion_7_9",
-    "ft_stack_conversion_7_9_attempts",
-    "ko_attempts_success_rate",
-    "ko_stage_2_3_attempts_per_tournament",
-    "ko_stage_2_3_event_count",
+    "incomplete_ft_percent",
+    "itm_percent",
+    "ko_attempts_per_ft_3_4",
+    "ko_attempts_per_ft_5_6",
+    "ko_attempts_per_ft_7_9",
+    "ko_contribution",
+    "ko_contribution_adj",
+    "ko_luck",
+    "ko_stage_2_3",
     "ko_stage_2_3_money_total",
-    "ko_stage_3_4_attempts_per_tournament",
-    "ko_stage_3_4_event_count",
+    "ko_stage_3_4",
     "ko_stage_3_4_money_total",
-    "ko_stage_4_5_attempts_per_tournament",
-    "ko_stage_4_5_event_count",
+    "ko_stage_4_5",
     "ko_stage_4_5_money_total",
-    "ko_stage_5_6_attempts_per_tournament",
-    "ko_stage_5_6_event_count",
+    "ko_stage_5_6",
     "ko_stage_5_6_money_total",
-    "ko_stage_6_9_event_count",
+    "ko_stage_6_9",
     "ko_stage_6_9_money_total",
-    "ko_stage_7_9_attempts_per_tournament",
-    "ko_stage_7_9_event_count",
+    "ko_stage_7_9",
     "ko_stage_7_9_money_total",
-    "pre_ft_ko_count",
-    // Phase C: KO-money / adjusted / Big KO
-    "big_ko_x1000_count",
-    "big_ko_x100_count",
-    "big_ko_x10000_count",
-    "big_ko_x10_count",
-    "big_ko_x1_5_count",
-    "big_ko_x2_count",
-    "ko_contribution_adjusted_percent",
-    "ko_luck_money_delta",
-    "pre_ft_chipev",
-    "roi_adj_pct",
+    "ko_success_rate_3_4",
+    "ko_success_rate_5_6",
+    "ko_success_rate_7_9",
+    "pre_ft_attempts",
+    "pre_ft_chips",
+    "pre_ft_ko",
+    "roi_adj",
+    "roi_on_ft_pct",
+    "roi_pct",
+    "total_ko",
+    "winnings_from_itm",
+    "winnings_from_ko",
 ];
 
 pub const EXPECTED_MODULE_COUNT: usize = 31;
-pub const EXPECTED_KEY_COUNT: usize = 60;
+pub const EXPECTED_KEY_COUNT: usize = 59;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HandFeatureFacts {
@@ -85,6 +80,8 @@ pub struct HandFeatureFacts {
     pub exact_ko_count: u32,
     pub split_ko_count: u32,
     pub sidepot_ko_count: u32,
+    pub ko_attempt_count: u32,
+    pub ko_opportunity_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -208,22 +205,6 @@ impl SeedStatSnapshot {
             "final_table_reach_percent".to_string(),
             CanonicalStatPoint::from_optional_float(self.final_table_reach_percent),
         );
-        values.insert(
-            "total_ko_event_count".to_string(),
-            CanonicalStatPoint::from_integer(self.total_ko_event_count),
-        );
-        values.insert(
-            "avg_ko_event_per_tournament".to_string(),
-            CanonicalStatPoint::from_optional_float(self.avg_ko_event_per_tournament),
-        );
-        values.insert(
-            "early_ft_ko_event_count".to_string(),
-            CanonicalStatPoint::from_integer(self.early_ft_ko_event_count),
-        );
-        values.insert(
-            "early_ft_ko_event_per_tournament".to_string(),
-            CanonicalStatPoint::from_optional_float(self.early_ft_ko_event_per_tournament),
-        );
 
         CanonicalStatSnapshot {
             coverage: self.coverage.clone(),
@@ -273,6 +254,8 @@ mod tests {
             exact_ko_count: 0,
             split_ko_count: 0,
             sidepot_ko_count: 0,
+            ko_attempt_count: 0,
+            ko_opportunity_count: 0,
         };
 
         let snapshot = SeedStatSnapshot {
@@ -336,9 +319,6 @@ mod tests {
             canonical.values["roi_pct"].value,
             Some(CanonicalStatNumericValue::Float(30.0))
         );
-        assert_eq!(
-            canonical.values["total_ko_event_count"].value,
-            Some(CanonicalStatNumericValue::Integer(3))
-        );
+        assert_eq!(canonical.values.len(), 3);
     }
 }

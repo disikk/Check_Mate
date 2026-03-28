@@ -1,0 +1,243 @@
+{
+  "summary_tournament_count": 9,
+  "hand_tournament_count": 9,
+  "key_count": 59,
+  "stats": {
+    "avg_finish_place": {
+      "state": "value",
+      "value": 4.777778
+    },
+    "avg_finish_place_ft": {
+      "state": "value",
+      "value": 4.125
+    },
+    "avg_finish_place_no_ft": {
+      "state": "value",
+      "value": 10.0
+    },
+    "avg_ft_initial_stack_bb": {
+      "state": "value",
+      "value": 23.109062
+    },
+    "avg_ft_initial_stack_chips": {
+      "state": "value",
+      "value": 2232.25
+    },
+    "avg_ko_attempts_per_ft": {
+      "state": "value",
+      "value": 2.5
+    },
+    "avg_ko_per_tournament": {
+      "state": "value",
+      "value": 1.944444
+    },
+    "big_ko_x10000_count": {
+      "state": "value",
+      "value": 0.0
+    },
+    "big_ko_x1000_count": {
+      "state": "value",
+      "value": 0.0
+    },
+    "big_ko_x100_count": {
+      "state": "value",
+      "value": 0.0
+    },
+    "big_ko_x10_count": {
+      "state": "value",
+      "value": 0.0
+    },
+    "big_ko_x1_5_count": {
+      "state": "value",
+      "value": 0.0
+    },
+    "big_ko_x2_count": {
+      "state": "value",
+      "value": 0.0
+    },
+    "deep_ft_avg_stack_bb": {
+      "state": "value",
+      "value": 13.2175
+    },
+    "deep_ft_avg_stack_chips": {
+      "state": "value",
+      "value": 2770.75
+    },
+    "deep_ft_reach_percent": {
+      "state": "value",
+      "value": 44.444444
+    },
+    "deep_ft_roi_pct": {
+      "state": "value",
+      "value": 260.0
+    },
+    "early_ft_bust_count": {
+      "state": "value",
+      "value": 4
+    },
+    "early_ft_bust_per_tournament": {
+      "state": "value",
+      "value": 0.5
+    },
+    "early_ft_ko": {
+      "state": "value",
+      "value": 2.0
+    },
+    "early_ft_ko_per_tournament": {
+      "state": "value",
+      "value": 0.25
+    },
+    "final_table_reach_percent": {
+      "state": "value",
+      "value": 88.888889
+    },
+    "ft_ko_success_rate": {
+      "state": "value",
+      "value": 0.45
+    },
+    "ft_stack_conversion": {
+      "state": "value",
+      "value": 1.189952
+    },
+    "ft_stack_conversion_3_4": {
+      "state": "value",
+      "value": 3.775485
+    },
+    "ft_stack_conversion_5_6": {
+      "state": "value",
+      "value": 0.71599
+    },
+    "ft_stack_conversion_7_9": {
+      "state": "value",
+      "value": 0.76841
+    },
+    "incomplete_ft_percent": {
+      "state": "value",
+      "value": 25.0
+    },
+    "itm_percent": {
+      "state": "value",
+      "value": 22.222222
+    },
+    "ko_attempts_per_ft_3_4": {
+      "state": "value",
+      "value": 0.75
+    },
+    "ko_attempts_per_ft_5_6": {
+      "state": "value",
+      "value": 0.375
+    },
+    "ko_attempts_per_ft_7_9": {
+      "state": "value",
+      "value": 1.25
+    },
+    "ko_contribution": {
+      "state": "value",
+      "value": 44.444444
+    },
+    "ko_contribution_adj": {
+      "state": "value",
+      "value": 67.396841
+    },
+    "ko_luck": {
+      "state": "value",
+      "value": -253.437496
+    },
+    "ko_stage_2_3": {
+      "state": "value",
+      "value": 4.0
+    },
+    "ko_stage_2_3_money_total": {
+      "state": "value",
+      "value": 94.499999
+    },
+    "ko_stage_3_4": {
+      "state": "value",
+      "value": 5.0
+    },
+    "ko_stage_3_4_money_total": {
+      "state": "value",
+      "value": 118.124999
+    },
+    "ko_stage_4_5": {
+      "state": "value",
+      "value": 3.0
+    },
+    "ko_stage_4_5_money_total": {
+      "state": "value",
+      "value": 70.874999
+    },
+    "ko_stage_5_6": {
+      "state": "value",
+      "value": 1.0
+    },
+    "ko_stage_5_6_money_total": {
+      "state": "value",
+      "value": 23.625
+    },
+    "ko_stage_6_9": {
+      "state": "value",
+      "value": 2.0
+    },
+    "ko_stage_6_9_money_total": {
+      "state": "value",
+      "value": 47.25
+    },
+    "ko_stage_7_9": {
+      "state": "value",
+      "value": 2.0
+    },
+    "ko_stage_7_9_money_total": {
+      "state": "value",
+      "value": 47.25
+    },
+    "ko_success_rate_3_4": {
+      "state": "value",
+      "value": 0.833333
+    },
+    "ko_success_rate_5_6": {
+      "state": "value",
+      "value": 0.333333
+    },
+    "ko_success_rate_7_9": {
+      "state": "value",
+      "value": 0.2
+    },
+    "pre_ft_attempts": {
+      "state": "value",
+      "value": 0.0
+    },
+    "pre_ft_chips": {
+      "state": "value",
+      "value": 984.222222
+    },
+    "pre_ft_ko": {
+      "state": "value",
+      "value": 0.0
+    },
+    "roi_adj": {
+      "state": "value",
+      "value": 172.638887
+    },
+    "roi_on_ft_pct": {
+      "state": "value",
+      "value": 80.0
+    },
+    "roi_pct": {
+      "state": "value",
+      "value": 60.0
+    },
+    "total_ko": {
+      "state": "value",
+      "value": 17.5
+    },
+    "winnings_from_itm": {
+      "state": "value",
+      "value": 200.0
+    },
+    "winnings_from_ko": {
+      "state": "value",
+      "value": 160.0
+    }
+  }
+}

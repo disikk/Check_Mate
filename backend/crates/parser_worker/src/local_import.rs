@@ -229,6 +229,28 @@ struct HandEliminationRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct HandKoAttemptRow {
+    hero_seat_no: i32,
+    target_seat_no: i32,
+    target_player_name: String,
+    attempt_kind: String,
+    street: String,
+    source_sequence_no: i32,
+    is_forced_all_in: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HandKoOpportunityRow {
+    hero_seat_no: i32,
+    target_seat_no: i32,
+    target_player_name: String,
+    opportunity_kind: String,
+    street: String,
+    source_sequence_no: i32,
+    is_forced_all_in: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct MbrStageResolutionRow {
     player_profile_id: Uuid,
     played_ft_hand: bool,
@@ -1128,6 +1150,7 @@ fn import_hand_history_registered(
         )?;
         let normalized_hand = &normalized_hands[index];
         persist_normalized_hand(tx, hand_id, normalized_hand)?;
+        persist_hand_ko_events(tx, hand_id, context.player_profile_id, canonical_hand)?;
         let preflop_starting_hand_rows = build_preflop_starting_hand_rows(canonical_hand)?;
         persist_preflop_starting_hands(tx, hand_id, &preflop_starting_hand_rows)?;
         let street_strength_rows = build_street_hand_strength_rows(canonical_hand)?;
@@ -1687,6 +1710,80 @@ fn persist_normalized_hand(
     Ok(())
 }
 
+fn persist_hand_ko_events(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    player_profile_id: Uuid,
+    hand: &CanonicalParsedHand,
+) -> Result<()> {
+    let attempt_rows = build_hand_ko_attempt_rows(hand);
+    let opportunity_rows = build_hand_ko_opportunity_rows(hand);
+
+    tx.execute("DELETE FROM derived.hand_ko_attempts WHERE hand_id = $1", &[&hand_id])?;
+    tx.execute(
+        "DELETE FROM derived.hand_ko_opportunities WHERE hand_id = $1",
+        &[&hand_id],
+    )?;
+
+    for row in attempt_rows {
+        tx.execute(
+            "INSERT INTO derived.hand_ko_attempts (
+                hand_id,
+                player_profile_id,
+                hero_seat_no,
+                target_seat_no,
+                target_player_name,
+                attempt_kind,
+                street,
+                source_sequence_no,
+                is_forced_all_in
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            &[
+                &hand_id,
+                &player_profile_id,
+                &row.hero_seat_no,
+                &row.target_seat_no,
+                &row.target_player_name,
+                &row.attempt_kind,
+                &row.street,
+                &row.source_sequence_no,
+                &row.is_forced_all_in,
+            ],
+        )?;
+    }
+
+    for row in opportunity_rows {
+        tx.execute(
+            "INSERT INTO derived.hand_ko_opportunities (
+                hand_id,
+                player_profile_id,
+                hero_seat_no,
+                target_seat_no,
+                target_player_name,
+                opportunity_kind,
+                street,
+                source_sequence_no,
+                is_forced_all_in
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            &[
+                &hand_id,
+                &player_profile_id,
+                &row.hero_seat_no,
+                &row.target_seat_no,
+                &row.target_player_name,
+                &row.opportunity_kind,
+                &row.street,
+                &row.source_sequence_no,
+                &row.is_forced_all_in,
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
 fn persist_mbr_stage_resolution(
     tx: &mut impl postgres::GenericClient,
     hand_id: Uuid,
@@ -2063,6 +2160,275 @@ fn build_preflop_starting_hand_rows(
             certainty_state: certainty_state_code(descriptor.certainty_state).to_string(),
         })
         .collect())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct KoAttemptTrigger {
+    sequence_no: i32,
+    street: Street,
+    is_forced_all_in: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct KoTargetActionFacts {
+    fold_sequence_no: Option<i32>,
+    all_in_sequence_no: Option<i32>,
+    all_in_street: Option<Street>,
+    forced_auto_all_in_sequence_no: Option<i32>,
+    forced_auto_all_in_street: Option<Street>,
+}
+
+fn build_hand_ko_attempt_rows(hand: &CanonicalParsedHand) -> Vec<HandKoAttemptRow> {
+    let Some(hero_name) = hand.hero_name.as_deref() else {
+        return Vec::new();
+    };
+    let Some((hero_seat_no, hero_stack)) = hero_identity(hand, hero_name) else {
+        return Vec::new();
+    };
+    let hero_actions = player_actions(hand, hero_name);
+    let hero_fold_sequence_no = hero_actions
+        .iter()
+        .find(|action| action.action_type == ActionType::Fold)
+        .map(|action| action.seq as i32);
+
+    if hero_fold_sequence_no.is_some() {
+        return Vec::new();
+    }
+
+    let hero_push_trigger = first_hero_push_trigger(&hero_actions, hero_stack);
+
+    target_seat_rows(hand, hero_name, hero_stack)
+        .into_iter()
+        .filter_map(|(target_seat_no, target_player_name, target_stack)| {
+            let target_actions = player_actions(hand, target_player_name.as_str());
+            let target_facts = target_action_facts(&target_actions, target_stack);
+            let trigger = if let Some(hero_push_trigger) = hero_push_trigger {
+                target_can_still_confront_after_push(hero_push_trigger.sequence_no, &target_facts)
+                    .then_some(KoAttemptTrigger {
+                        sequence_no: hero_push_trigger.sequence_no,
+                        street: hero_push_trigger.street,
+                        is_forced_all_in: target_facts.forced_auto_all_in_sequence_no.is_some(),
+                    })
+            } else if let (Some(target_all_in_sequence_no), Some(target_all_in_street)) = (
+                target_facts.all_in_sequence_no,
+                target_facts.all_in_street,
+            ) {
+                hero_responded_after_all_in(&hero_actions, target_all_in_sequence_no).then_some(
+                    KoAttemptTrigger {
+                        sequence_no: target_all_in_sequence_no,
+                        street: target_all_in_street,
+                        is_forced_all_in: false,
+                    },
+                )
+            } else {
+                target_facts
+                    .forced_auto_all_in_sequence_no
+                    .zip(target_facts.forced_auto_all_in_street)
+                    .map(|(sequence_no, street)| KoAttemptTrigger {
+                        sequence_no,
+                        street,
+                        is_forced_all_in: true,
+                    })
+            }?;
+
+            Some(HandKoAttemptRow {
+                hero_seat_no,
+                target_seat_no,
+                target_player_name,
+                attempt_kind: if trigger.is_forced_all_in {
+                    "forced_auto_all_in".to_string()
+                } else if hero_push_trigger.is_some() {
+                    "hero_push".to_string()
+                } else {
+                    "hero_response".to_string()
+                },
+                street: street_code(trigger.street).to_string(),
+                source_sequence_no: trigger.sequence_no,
+                is_forced_all_in: trigger.is_forced_all_in,
+            })
+        })
+        .collect()
+}
+
+fn build_hand_ko_opportunity_rows(hand: &CanonicalParsedHand) -> Vec<HandKoOpportunityRow> {
+    let Some(hero_name) = hand.hero_name.as_deref() else {
+        return Vec::new();
+    };
+    let Some((hero_seat_no, hero_stack)) = hero_identity(hand, hero_name) else {
+        return Vec::new();
+    };
+    let hero_actions = player_actions(hand, hero_name);
+    let hero_fold_sequence_no = hero_actions
+        .iter()
+        .find(|action| action.action_type == ActionType::Fold)
+        .map(|action| action.seq as i32);
+
+    target_seat_rows(hand, hero_name, hero_stack)
+        .into_iter()
+        .filter_map(|(target_seat_no, target_player_name, target_stack)| {
+            let target_actions = player_actions(hand, target_player_name.as_str());
+            let target_facts = target_action_facts(&target_actions, target_stack);
+
+            if let (Some(sequence_no), Some(street)) =
+                (target_facts.all_in_sequence_no, target_facts.all_in_street)
+            {
+                if hero_fold_sequence_no.is_some_and(|fold_seq| fold_seq < sequence_no) {
+                    return None;
+                }
+
+                return Some(HandKoOpportunityRow {
+                    hero_seat_no,
+                    target_seat_no,
+                    target_player_name,
+                    opportunity_kind: "all_in".to_string(),
+                    street: street_code(street).to_string(),
+                    source_sequence_no: sequence_no,
+                    is_forced_all_in: false,
+                });
+            }
+
+            target_facts
+                .forced_auto_all_in_sequence_no
+                .zip(target_facts.forced_auto_all_in_street)
+                .map(|(sequence_no, street)| HandKoOpportunityRow {
+                    hero_seat_no,
+                    target_seat_no,
+                    target_player_name,
+                    opportunity_kind: "forced_auto_all_in".to_string(),
+                    street: street_code(street).to_string(),
+                    source_sequence_no: sequence_no,
+                    is_forced_all_in: true,
+                })
+        })
+        .collect()
+}
+
+fn hero_identity(hand: &CanonicalParsedHand, hero_name: &str) -> Option<(i32, i64)> {
+    hand.seats
+        .iter()
+        .find(|seat| seat.player_name == hero_name)
+        .map(|seat| (i32::from(seat.seat_no), seat.starting_stack))
+}
+
+fn player_actions<'a>(
+    hand: &'a CanonicalParsedHand,
+    player_name: &'a str,
+) -> Vec<&'a tracker_parser_core::models::HandActionEvent> {
+    hand.actions
+        .iter()
+        .filter(|action| action.player_name.as_deref() == Some(player_name))
+        .collect()
+}
+
+fn first_hero_push_trigger(
+    hero_actions: &[&tracker_parser_core::models::HandActionEvent],
+    hero_stack: i64,
+) -> Option<KoAttemptTrigger> {
+    hero_actions.iter().find_map(|action| {
+        let all_in_raise = matches!(action.action_type, ActionType::Bet | ActionType::RaiseTo)
+            && action
+                .to_amount
+                .unwrap_or(action.amount.unwrap_or_default()) as f64
+                >= hero_stack as f64 * 0.9;
+        (action.is_all_in || all_in_raise).then_some(KoAttemptTrigger {
+            sequence_no: action.seq as i32,
+            street: action.street,
+            is_forced_all_in: false,
+        })
+    })
+}
+
+fn target_seat_rows(
+    hand: &CanonicalParsedHand,
+    hero_name: &str,
+    hero_stack: i64,
+) -> Vec<(i32, String, i64)> {
+    hand.seats
+        .iter()
+        .filter(|seat| seat.player_name != hero_name)
+        .filter(|seat| seat.starting_stack > 0)
+        .filter(|seat| hero_stack >= seat.starting_stack)
+        .map(|seat| (i32::from(seat.seat_no), seat.player_name.clone(), seat.starting_stack))
+        .collect()
+}
+
+fn target_action_facts(
+    target_actions: &[&tracker_parser_core::models::HandActionEvent],
+    target_stack: i64,
+) -> KoTargetActionFacts {
+    let fold_sequence_no = target_actions
+        .iter()
+        .find(|action| action.action_type == ActionType::Fold)
+        .map(|action| action.seq as i32);
+    let all_in_action = target_actions.iter().find(|action| {
+        action.is_all_in
+            && matches!(
+                action.action_type,
+                ActionType::Call | ActionType::Bet | ActionType::RaiseTo
+            )
+            && !action.forced_all_in_preflop
+            && !matches!(
+                action.all_in_reason,
+                Some(tracker_parser_core::models::AllInReason::BlindExhausted)
+                    | Some(tracker_parser_core::models::AllInReason::AnteExhausted)
+            )
+    });
+
+    let mut forced_commit_total = 0_i64;
+    let mut forced_auto_all_in_sequence_no = None;
+    let mut forced_auto_all_in_street = None;
+    for action in target_actions.iter().filter(|action| {
+        matches!(
+            action.action_type,
+            ActionType::PostAnte | ActionType::PostSb | ActionType::PostBb | ActionType::PostDead
+        )
+    }) {
+        forced_commit_total += action.amount.unwrap_or(action.to_amount.unwrap_or_default());
+        if forced_auto_all_in_sequence_no.is_none() && forced_commit_total >= target_stack {
+            forced_auto_all_in_sequence_no = Some(action.seq as i32);
+            forced_auto_all_in_street = Some(action.street);
+        }
+    }
+
+    KoTargetActionFacts {
+        fold_sequence_no,
+        all_in_sequence_no: all_in_action.map(|action| action.seq as i32),
+        all_in_street: all_in_action.map(|action| action.street),
+        forced_auto_all_in_sequence_no: all_in_action
+            .is_none()
+            .then_some(forced_auto_all_in_sequence_no)
+            .flatten(),
+        forced_auto_all_in_street: all_in_action
+            .is_none()
+            .then_some(forced_auto_all_in_street)
+            .flatten(),
+    }
+}
+
+fn target_can_still_confront_after_push(
+    hero_push_sequence_no: i32,
+    target_facts: &KoTargetActionFacts,
+) -> bool {
+    let target_folded_before_push = target_facts
+        .fold_sequence_no
+        .is_some_and(|fold_seq| fold_seq < hero_push_sequence_no);
+
+    !target_folded_before_push
+        && (target_facts.all_in_sequence_no.is_some()
+            || target_facts.forced_auto_all_in_sequence_no.is_some())
+}
+
+fn hero_responded_after_all_in(
+    hero_actions: &[&tracker_parser_core::models::HandActionEvent],
+    target_all_in_sequence_no: i32,
+) -> bool {
+    hero_actions.iter().any(|action| {
+        action.seq as i32 > target_all_in_sequence_no
+            && (matches!(
+                action.action_type,
+                ActionType::Call | ActionType::Bet | ActionType::RaiseTo
+            ) || action.is_all_in)
+    })
 }
 
 fn build_hand_pot_eligibility_rows(
@@ -3077,8 +3443,9 @@ mod tests {
         expected_big_ko_bucket_probabilities, expected_hero_mystery_cents,
     };
     use mbr_stats_runtime::{
-        CanonicalStatNumericValue, CanonicalStatState, MysteryEnvelope, SeedStatsFilters,
-        query_canonical_stats, query_seed_stats,
+        CanonicalStatNumericValue, CanonicalStatState, FtDashboardDataState,
+        FtDashboardFilters, FtValueState, MysteryEnvelope, SeedStatsFilters,
+        query_canonical_stats, query_ft_dashboard, query_seed_stats,
     };
     use std::{
         io::Write,
@@ -3676,6 +4043,167 @@ mod tests {
                 ],
             ]
         );
+    }
+
+    #[test]
+    fn builds_per_target_attempt_rows_for_multiway_hero_push() {
+        let hand = manual_attempt_test_hand(
+            vec![
+                ("Hero", 1, 1_000),
+                ("ShortOne", 2, 400),
+                ("ShortTwo", 3, 300),
+            ],
+            vec![
+                manual_action(
+                    1,
+                    Street::Preflop,
+                    Some("Hero"),
+                    ActionType::RaiseTo,
+                    Some(1_000),
+                    Some(1_000),
+                    true,
+                    Some(tracker_parser_core::models::AllInReason::Voluntary),
+                    false,
+                    "Hero: raises to 1000 and is all-in",
+                ),
+                manual_action(
+                    2,
+                    Street::Preflop,
+                    Some("ShortOne"),
+                    ActionType::Call,
+                    Some(400),
+                    None,
+                    true,
+                    Some(tracker_parser_core::models::AllInReason::CallExhausted),
+                    false,
+                    "ShortOne: calls 400 and is all-in",
+                ),
+                manual_action(
+                    3,
+                    Street::Preflop,
+                    Some("ShortTwo"),
+                    ActionType::Call,
+                    Some(300),
+                    None,
+                    true,
+                    Some(tracker_parser_core::models::AllInReason::CallExhausted),
+                    false,
+                    "ShortTwo: calls 300 and is all-in",
+                ),
+            ],
+        );
+
+        let attempts = build_hand_ko_attempt_rows(&hand);
+        let opportunities = build_hand_ko_opportunity_rows(&hand);
+
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(opportunities.len(), 2);
+        assert_eq!(
+            attempts
+                .iter()
+                .map(|row| (row.target_seat_no, row.attempt_kind.as_str(), row.street.as_str()))
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                (2_i32, "hero_push", "preflop"),
+                (3_i32, "hero_push", "preflop"),
+            ])
+        );
+    }
+
+    #[test]
+    fn builds_forced_auto_all_in_attempt_and_opportunity_rows_from_edge_matrix_fixture() {
+        let hands = all_hands_from_fixture("GG20260325-phase0-exact-core-edge-matrix.txt");
+        let ante_exhausted = hands
+            .iter()
+            .find(|hand| hand.header.hand_id == "BRCM0403")
+            .unwrap();
+        let blind_exhausted = hands
+            .iter()
+            .find(|hand| hand.header.hand_id == "BRCM0404")
+            .unwrap();
+
+        let ante_attempts = build_hand_ko_attempt_rows(ante_exhausted);
+        let ante_opportunities = build_hand_ko_opportunity_rows(ante_exhausted);
+        let blind_attempts = build_hand_ko_attempt_rows(blind_exhausted);
+        let blind_opportunities = build_hand_ko_opportunity_rows(blind_exhausted);
+
+        assert_eq!(ante_attempts.len(), 1);
+        assert_eq!(ante_opportunities.len(), 1);
+        assert_eq!(ante_attempts[0].target_player_name, "ShortAnte");
+        assert_eq!(ante_attempts[0].attempt_kind, "forced_auto_all_in");
+        assert_eq!(ante_attempts[0].street, "preflop");
+        assert!(ante_attempts[0].is_forced_all_in);
+        assert_eq!(ante_opportunities[0].opportunity_kind, "forced_auto_all_in");
+        assert!(ante_opportunities[0].is_forced_all_in);
+
+        assert_eq!(blind_attempts.len(), 1);
+        assert_eq!(blind_opportunities.len(), 1);
+        assert_eq!(blind_attempts[0].target_player_name, "ShortBb");
+        assert_eq!(blind_attempts[0].attempt_kind, "forced_auto_all_in");
+        assert_eq!(blind_attempts[0].street, "preflop");
+        assert!(blind_attempts[0].is_forced_all_in);
+        assert_eq!(blind_opportunities[0].opportunity_kind, "forced_auto_all_in");
+        assert!(blind_opportunities[0].is_forced_all_in);
+    }
+
+    #[test]
+    fn does_not_create_attempt_or_opportunity_without_confrontation() {
+        let hands = all_hands_from_fixture("GG20260325-phase0-exact-core-edge-matrix.txt");
+        let no_confrontation = hands
+            .iter()
+            .find(|hand| hand.header.hand_id == "BRCM0405")
+            .unwrap();
+
+        assert!(build_hand_ko_attempt_rows(no_confrontation).is_empty());
+        assert!(build_hand_ko_opportunity_rows(no_confrontation).is_empty());
+    }
+
+    #[test]
+    fn caps_attempts_and_opportunities_to_one_row_per_target() {
+        let hand = manual_attempt_test_hand(
+            vec![("Hero", 1, 1_000), ("Target", 2, 400)],
+            vec![
+                manual_action(
+                    1,
+                    Street::Preflop,
+                    Some("Hero"),
+                    ActionType::RaiseTo,
+                    Some(1_000),
+                    Some(1_000),
+                    true,
+                    Some(tracker_parser_core::models::AllInReason::Voluntary),
+                    false,
+                    "Hero: raises to 1000 and is all-in",
+                ),
+                manual_action(
+                    2,
+                    Street::Preflop,
+                    Some("Target"),
+                    ActionType::Call,
+                    Some(400),
+                    None,
+                    true,
+                    Some(tracker_parser_core::models::AllInReason::CallExhausted),
+                    false,
+                    "Target: calls 400 and is all-in",
+                ),
+                manual_action(
+                    3,
+                    Street::Turn,
+                    Some("Target"),
+                    ActionType::Bet,
+                    Some(0),
+                    Some(0),
+                    true,
+                    Some(tracker_parser_core::models::AllInReason::RaiseExhausted),
+                    false,
+                    "Target: impossible duplicate all-in marker",
+                ),
+            ],
+        );
+
+        assert_eq!(build_hand_ko_attempt_rows(&hand).len(), 1);
+        assert_eq!(build_hand_ko_opportunity_rows(&hand).len(), 1);
     }
 
     #[test]
@@ -5207,6 +5735,125 @@ mod tests {
                 "idx_import_jobs_claim".to_string(),
                 "uniq_import_jobs_bundle_file_ingest".to_string(),
                 "uniq_import_jobs_bundle_finalize".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0027_adds_hand_ko_attempt_and_opportunity_contracts() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_core_schema_migrations(&mut client);
+
+        let tables = client
+            .query(
+                "SELECT table_name
+                 FROM information_schema.tables
+                 WHERE table_schema = 'derived'
+                   AND table_name IN ('hand_ko_attempts', 'hand_ko_opportunities')
+                 ORDER BY table_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            tables,
+            vec![
+                "hand_ko_attempts".to_string(),
+                "hand_ko_opportunities".to_string(),
+            ]
+        );
+
+        let columns = client
+            .query(
+                "SELECT table_name, column_name
+                 FROM information_schema.columns
+                 WHERE table_schema = 'derived'
+                   AND (
+                        (table_name = 'hand_ko_attempts' AND column_name IN (
+                            'hand_id',
+                            'player_profile_id',
+                            'hero_seat_no',
+                            'target_seat_no',
+                            'target_player_name',
+                            'attempt_kind',
+                            'street',
+                            'source_sequence_no',
+                            'is_forced_all_in'
+                        ))
+                        OR
+                        (table_name = 'hand_ko_opportunities' AND column_name IN (
+                            'hand_id',
+                            'player_profile_id',
+                            'hero_seat_no',
+                            'target_seat_no',
+                            'target_player_name',
+                            'opportunity_kind',
+                            'street',
+                            'source_sequence_no',
+                            'is_forced_all_in'
+                        ))
+                   )
+                 ORDER BY table_name, column_name",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            columns,
+            vec![
+                ("hand_ko_attempts".to_string(), "attempt_kind".to_string()),
+                ("hand_ko_attempts".to_string(), "hand_id".to_string()),
+                ("hand_ko_attempts".to_string(), "hero_seat_no".to_string()),
+                ("hand_ko_attempts".to_string(), "is_forced_all_in".to_string()),
+                ("hand_ko_attempts".to_string(), "player_profile_id".to_string()),
+                ("hand_ko_attempts".to_string(), "source_sequence_no".to_string()),
+                ("hand_ko_attempts".to_string(), "street".to_string()),
+                ("hand_ko_attempts".to_string(), "target_player_name".to_string()),
+                ("hand_ko_attempts".to_string(), "target_seat_no".to_string()),
+                (
+                    "hand_ko_opportunities".to_string(),
+                    "hand_id".to_string()
+                ),
+                (
+                    "hand_ko_opportunities".to_string(),
+                    "hero_seat_no".to_string()
+                ),
+                (
+                    "hand_ko_opportunities".to_string(),
+                    "is_forced_all_in".to_string()
+                ),
+                (
+                    "hand_ko_opportunities".to_string(),
+                    "opportunity_kind".to_string()
+                ),
+                (
+                    "hand_ko_opportunities".to_string(),
+                    "player_profile_id".to_string()
+                ),
+                (
+                    "hand_ko_opportunities".to_string(),
+                    "source_sequence_no".to_string()
+                ),
+                ("hand_ko_opportunities".to_string(), "street".to_string()),
+                (
+                    "hand_ko_opportunities".to_string(),
+                    "target_player_name".to_string()
+                ),
+                (
+                    "hand_ko_opportunities".to_string(),
+                    "target_seat_no".to_string()
+                ),
             ]
         );
     }
@@ -7570,6 +8217,206 @@ mod tests {
 
     #[test]
     #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn runtime_reads_canonical_attempt_tables_even_after_hand_actions_are_deleted() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_core_schema_migrations(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+        let ts_path = fixture_path(
+            "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        );
+        let hh_path =
+            fixture_path("../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+
+        let ts_report = import_path(&ts_path).unwrap();
+        let _hh_report = import_path(&hh_path).unwrap();
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let organization_id = dev_org_id(&mut client);
+        let player_profile_id = dev_player_profile_id(&mut client);
+        let hand_with_attempt = client
+            .query_one(
+                "SELECT hand_id, COUNT(*)::bigint
+                 FROM derived.hand_ko_attempts
+                 WHERE player_profile_id = $1
+                 GROUP BY hand_id
+                 ORDER BY COUNT(*) DESC, hand_id
+                 LIMIT 1",
+                &[&player_profile_id],
+            )
+            .unwrap();
+        let first_ft_hand_id: Uuid = hand_with_attempt.get(0);
+        let expected_hand_attempt_count: i64 = hand_with_attempt.get(1);
+        assert!(expected_hand_attempt_count > 0);
+
+        let expected_exact_ft_attempt_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.hand_ko_attempts attempts
+                 INNER JOIN derived.mbr_stage_resolution msr
+                   ON msr.hand_id = attempts.hand_id
+                  AND msr.player_profile_id = attempts.player_profile_id
+                 WHERE attempts.player_profile_id = $1
+                   AND msr.ft_players_remaining_exact IS NOT NULL",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+
+        let expected_transition_attempt_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.hand_ko_attempts attempts
+                 INNER JOIN derived.mbr_stage_resolution msr
+                   ON msr.hand_id = attempts.hand_id
+                  AND msr.player_profile_id = attempts.player_profile_id
+                 INNER JOIN core.hands h
+                   ON h.id = attempts.hand_id
+                 INNER JOIN derived.mbr_tournament_ft_helper helper
+                   ON helper.tournament_id = h.tournament_id
+                  AND helper.player_profile_id = attempts.player_profile_id
+                 WHERE attempts.player_profile_id = $1
+                   AND helper.boundary_resolution_state = 'exact'
+                   AND COALESCE(msr.is_boundary_hand, FALSE) IS TRUE",
+                &[&player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+
+        let first_ft_players: Option<i32> = client
+            .query_one(
+                "SELECT first_ft_table_size
+                 FROM derived.mbr_tournament_ft_helper
+                 WHERE tournament_id = $1
+                   AND player_profile_id = $2",
+                &[&ts_report.tournament_id, &player_profile_id],
+            )
+            .unwrap()
+            .get(0);
+
+        client
+            .execute(
+                "DELETE FROM core.hand_actions
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+
+        materialize_player_hand_features(&mut client, organization_id, player_profile_id).unwrap();
+        let canonical_stats = query_canonical_stats(
+            &mut client,
+            SeedStatsFilters {
+                organization_id,
+                player_profile_id,
+                buyin_total_cents: Some(vec![2_500]),
+            },
+        )
+        .unwrap();
+
+        let hand_attempt_feature = client
+            .query_one(
+                "SELECT value::text
+                 FROM analytics.player_hand_num_features
+                 WHERE player_profile_id = $1
+                   AND hand_id = $2
+                   AND feature_key = 'hero_ko_attempt_count'",
+                &[&player_profile_id, &first_ft_hand_id],
+            )
+            .unwrap();
+
+        assert_eq!(
+            hand_attempt_feature
+                .get::<_, Option<String>>(0)
+                .as_deref(),
+            Some(format!("{expected_hand_attempt_count}.000000").as_str())
+        );
+        assert_eq!(
+            canonical_stats.values["avg_ko_attempts_per_ft"].value,
+            Some(CanonicalStatNumericValue::Float(
+                expected_exact_ft_attempt_count as f64,
+            ))
+        );
+        assert_eq!(
+            canonical_stats.values["pre_ft_attempts"].value,
+            Some(CanonicalStatNumericValue::Float(
+                expected_transition_attempt_count as f64
+                    * transition_stage_weight(first_ft_players),
+            ))
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn ft_dashboard_reads_canonical_attempt_tables_even_after_hand_actions_are_deleted() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_core_schema_migrations(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+        let ts_path = fixture_path(
+            "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        );
+        let hh_path =
+            fixture_path("../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+
+        import_path(&ts_path).unwrap();
+        import_path(&hh_path).unwrap();
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let organization_id = dev_org_id(&mut client);
+        let player_profile_id = dev_player_profile_id(&mut client);
+
+        client
+            .execute(
+                "DELETE FROM core.hand_actions
+                 WHERE hand_id IN (
+                     SELECT id FROM core.hands WHERE player_profile_id = $1
+                 )",
+                &[&player_profile_id],
+            )
+            .unwrap();
+
+        materialize_player_hand_features(&mut client, organization_id, player_profile_id).unwrap();
+        let snapshot = query_ft_dashboard(
+            &mut client,
+            FtDashboardFilters {
+                organization_id,
+                player_profile_id,
+                buyin_total_cents: Some(vec![2_500]),
+                bundle_id: None,
+                date_from_local: None,
+                date_to_local: None,
+                timezone_name: "Asia/Krasnoyarsk".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.data_state, FtDashboardDataState::Ready);
+        assert_eq!(snapshot.charts["ko_attempts"].state, FtValueState::Ready);
+        assert!(
+            snapshot.charts["ko_attempts"]
+                .variants
+                .values()
+                .flat_map(|variant| variant.bars.iter())
+                .any(|bar| bar.sample_size > 0)
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
     fn import_local_persists_summary_seat_results_to_postgres() {
         let _guard = db_test_guard();
         let database_url = env::var("CHECK_MATE_DATABASE_URL")
@@ -9889,6 +10736,76 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
             .collect()
     }
 
+    fn manual_attempt_test_hand(
+        seats: Vec<(&str, u8, i64)>,
+        actions: Vec<tracker_parser_core::models::HandActionEvent>,
+    ) -> CanonicalParsedHand {
+        CanonicalParsedHand {
+            header: tracker_parser_core::models::HandHeader {
+                hand_id: "TEST-KO-ATTEMPT".to_string(),
+                tournament_id: 42,
+                game_name: "Mystery Battle Royale".to_string(),
+                level_name: "Level1".to_string(),
+                small_blind: 50,
+                big_blind: 100,
+                ante: 0,
+                played_at: "2026/03/28 12:00:00".to_string(),
+                table_name: "1".to_string(),
+                max_players: seats.len() as u8,
+                button_seat: 1,
+            },
+            hero_name: Some("Hero".to_string()),
+            seats: seats
+                .into_iter()
+                .map(|(player_name, seat_no, starting_stack)| tracker_parser_core::models::ParsedHandSeat {
+                    seat_no,
+                    player_name: player_name.to_string(),
+                    starting_stack,
+                    is_sitting_out: false,
+                })
+                .collect(),
+            actions,
+            board_final: vec![],
+            summary_total_pot: None,
+            summary_rake_amount: None,
+            summary_board: vec![],
+            hero_hole_cards: None,
+            showdown_hands: BTreeMap::new(),
+            summary_seat_outcomes: vec![],
+            collected_amounts: BTreeMap::new(),
+            raw_hand_text: String::new(),
+            parse_issues: vec![],
+        }
+    }
+
+    fn manual_action(
+        seq: usize,
+        street: Street,
+        player_name: Option<&str>,
+        action_type: ActionType,
+        amount: Option<i64>,
+        to_amount: Option<i64>,
+        is_all_in: bool,
+        all_in_reason: Option<tracker_parser_core::models::AllInReason>,
+        forced_all_in_preflop: bool,
+        raw_line: &str,
+    ) -> tracker_parser_core::models::HandActionEvent {
+        tracker_parser_core::models::HandActionEvent {
+            seq,
+            street,
+            player_name: player_name.map(str::to_string),
+            action_type,
+            is_forced: false,
+            is_all_in,
+            all_in_reason,
+            forced_all_in_preflop,
+            amount,
+            to_amount,
+            cards: None,
+            raw_line: raw_line.to_string(),
+        }
+    }
+
     fn fixture_path(relative_from_crate: &str) -> String {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join(relative_from_crate)
@@ -10004,6 +10921,10 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
             client,
             &fixture_path("../../migrations/0026_preflop_matrix_filters.sql"),
         );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0027_mbr_ko_attempts.sql"),
+        );
     }
 
     fn dev_player_profile_id(client: &mut Client) -> Uuid {
@@ -10020,6 +10941,29 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
             )
             .unwrap()
             .get(0)
+    }
+
+    fn dev_org_id(client: &mut Client) -> Uuid {
+        client
+            .query_one(
+                "SELECT id
+                 FROM org.organizations
+                 WHERE name = $1",
+                &[&DEV_ORG_NAME],
+            )
+            .unwrap()
+            .get(0)
+    }
+
+    fn transition_stage_weight(first_ft_table_size: Option<i32>) -> f64 {
+        match first_ft_table_size {
+            Some(8) => 0.40,
+            Some(7) => 0.50,
+            Some(6) | Some(5) => 0.60,
+            Some(4) => 0.65,
+            Some(3) | Some(2) => 0.70,
+            _ => 0.0,
+        }
     }
 
     fn reset_dev_player_data(client: &mut Client) {
@@ -10103,6 +11047,42 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
                             OR hand_id IN (
                                 SELECT id FROM core.hands WHERE player_profile_id = $1
                             )",
+                        &[&player_profile_id],
+                    )
+                    .unwrap();
+            }
+            if client
+                .query_one(
+                    "SELECT to_regclass('derived.hand_ko_attempts') IS NOT NULL",
+                    &[],
+                )
+                .unwrap()
+                .get::<_, bool>(0)
+            {
+                client
+                    .execute(
+                        "DELETE FROM derived.hand_ko_attempts
+                         WHERE hand_id IN (
+                             SELECT id FROM core.hands WHERE player_profile_id = $1
+                         )",
+                        &[&player_profile_id],
+                    )
+                    .unwrap();
+            }
+            if client
+                .query_one(
+                    "SELECT to_regclass('derived.hand_ko_opportunities') IS NOT NULL",
+                    &[],
+                )
+                .unwrap()
+                .get::<_, bool>(0)
+            {
+                client
+                    .execute(
+                        "DELETE FROM derived.hand_ko_opportunities
+                         WHERE hand_id IN (
+                             SELECT id FROM core.hands WHERE player_profile_id = $1
+                         )",
                         &[&player_profile_id],
                     )
                     .unwrap();

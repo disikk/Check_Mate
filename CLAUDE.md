@@ -348,19 +348,21 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - this split-bounty adapter is still intentionally conservative: it does not prove a room-specific odd-cent rule, but the canonical stat runtime can now use its exact-share outputs together with official envelope frequencies for estimated KO-money stats;
   - the runtime query library now exposes the canonical query-time stat surface through `mbr_stats_runtime::query_canonical_stats(...)`, using `CanonicalStatSnapshot` / `CanonicalStatPoint` as the single stat-surface contract for the full catalog migration;
   - the currently mapped canonical query-time stats are:
-    - seed-safe base metrics: `roi_pct`, `avg_finish_place`, `final_table_reach_percent`, `total_ko_event_count`, `avg_ko_event_per_tournament`, `early_ft_ko_event_count`, `early_ft_ko_event_per_tournament`;
-    - Phase A tournament / FT-helper / summary-money metrics: `avg_finish_place_ft`, `avg_finish_place_no_ft`, `avg_ft_initial_stack_chips`, `avg_ft_initial_stack_bb`, `incomplete_ft_percent`, `itm_percent`, `roi_on_ft_pct`, `winnings_from_itm`, `deep_ft_reach_percent`, `deep_ft_avg_stack_chips`, `deep_ft_avg_stack_bb`, `deep_ft_roi_pct`;
-    - Phase B stage / conversion metrics: `early_ft_bust_count`, `early_ft_bust_per_tournament`, `ko_stage_2_3_event_count`, `ko_stage_2_3_attempts_per_tournament`, `ko_stage_3_4_event_count`, `ko_stage_3_4_attempts_per_tournament`, `ko_stage_4_5_event_count`, `ko_stage_4_5_attempts_per_tournament`, `ko_stage_5_6_event_count`, `ko_stage_5_6_attempts_per_tournament`, `ko_stage_6_9_event_count`, `ko_stage_7_9_event_count`, `ko_stage_7_9_attempts_per_tournament`, `pre_ft_ko_count`, `ft_stack_conversion`, `avg_ko_attempts_per_ft`, `ko_attempts_success_rate`, `ft_stack_conversion_7_9`, `ft_stack_conversion_7_9_attempts`, `ft_stack_conversion_5_6`, `ft_stack_conversion_5_6_attempts`, `ft_stack_conversion_3_4`, `ft_stack_conversion_3_4_attempts`;
-    - Phase C query-time KO-money / adjusted metrics: `winnings_from_ko_total`, `ko_contribution_percent`, `ko_contribution_adjusted_percent`, `ko_luck_money_delta`, `roi_adj_pct`, `ko_stage_2_3_money_total`, `ko_stage_3_4_money_total`, `ko_stage_4_5_money_total`, `ko_stage_5_6_money_total`, `ko_stage_6_9_money_total`, `ko_stage_7_9_money_total`, `pre_ft_chipev`, `big_ko_x1_5_count`, `big_ko_x2_count`, `big_ko_x10_count`, `big_ko_x100_count`, `big_ko_x1000_count`, `big_ko_x10000_count`;
+    - base metrics: `roi_pct`, `avg_finish_place`, `final_table_reach_percent`;
+    - TS/FT helper metrics: `avg_finish_place_ft`, `avg_finish_place_no_ft`, `avg_ft_initial_stack_chips`, `avg_ft_initial_stack_bb`, `incomplete_ft_percent`, `itm_percent`, `roi_on_ft_pct`, `winnings_from_itm`, `winnings_from_ko`, `ko_contribution`, `deep_ft_reach_percent`, `deep_ft_avg_stack_chips`, `deep_ft_avg_stack_bb`, `deep_ft_roi_pct`;
+    - share-based KO / transition metrics: `total_ko`, `avg_ko_per_tournament`, `early_ft_ko`, `early_ft_ko_per_tournament`, `pre_ft_ko`, `pre_ft_attempts`, `pre_ft_chips`, `early_ft_bust_count`, `early_ft_bust_per_tournament`;
+    - stage FT KO / money metrics: `ko_stage_2_3`, `ko_stage_2_3_money_total`, `ko_stage_3_4`, `ko_stage_3_4_money_total`, `ko_stage_4_5`, `ko_stage_4_5_money_total`, `ko_stage_5_6`, `ko_stage_5_6_money_total`, `ko_stage_6_9`, `ko_stage_6_9_money_total`, `ko_stage_7_9`, `ko_stage_7_9_money_total`;
+    - FT conversion family: `ft_stack_conversion`, `avg_ko_attempts_per_ft`, `ft_ko_success_rate`, `ft_stack_conversion_7_9`, `ko_attempts_per_ft_7_9`, `ko_success_rate_7_9`, `ft_stack_conversion_5_6`, `ko_attempts_per_ft_5_6`, `ko_success_rate_5_6`, `ft_stack_conversion_3_4`, `ko_attempts_per_ft_3_4`, `ko_success_rate_3_4`;
+    - KO-money / adjusted metrics: `ko_contribution_adj`, `ko_luck`, `roi_adj`, `big_ko_x1_5_count`, `big_ko_x2_count`, `big_ko_x10_count`, `big_ko_x100_count`, `big_ko_x1000_count`, `big_ko_x10000_count`;
   - buy-in filtering for query-time stats now resolves the allowed tournament set from `core.tournaments.buyin_total`, so HH-covered denominators no longer accidentally collapse to summary-covered tournaments when a tournament has HH but no TS row;
   - `avg_finish_place`-family metrics now exclude `NULL finish_place` from both numerator and denominator while still preserving the broader summary coverage counter;
-  - the current Phase B attempt model is query-time and exact-core-first:
-    - an exact KO attempt is counted per `(hand_id, target_seat)` when the target has an explicit all-in action, Hero covers the target by starting stack, and Hero plus target still share at least one eligible pot;
-    - the runtime derives attempts directly from `core.hand_actions`, `core.hand_pot_eligibility`, `core.hand_seats.starting_stack`, and formal stage predicates, without persisted attempt stats or legacy `players_count` shortcuts;
-    - `pre_ft_ko_count` still excludes boundary-zone hands and keys off `derived.mbr_tournament_ft_helper.first_ft_hand_started_local`;
-    - tournament-level realized mystery totals are exposed query-time from `core.tournament_entries.mystery_money_total` and `core.tournament_entries.total_payout_money`;
-    - per-event and adjusted KO-money surfaces are also query-time now, but they are explicitly `estimated`: the runtime combines official `ref.mbr_mystery_envelopes.frequency_per_100m` weights with supported exact Hero KO-share events, and it never backfills money from raw event counts or persists stat values in the database;
-    - the true room-specific posterior reconstruction problem still remains deferred; current Big KO and adjusted-money stats are official-frequency-weighted estimates, not posterior-conditioned reconstructions of realized tournament mystery totals;
+  - the current attempt model is deterministic and legacy-compatible, but now materialized as a formal per-hand surface:
+    - canonical raw source-of-truth lives in `derived.hand_ko_attempts` and `derived.hand_ko_opportunities`, written by `parser_worker::local_import` during hand import;
+    - runtime/materializer no longer re-derives attempt logic from `core.hand_actions` or pot-eligibility joins and only aggregates the canonical derived rows;
+    - `hero_ko_attempt_count` / `hero_ko_opportunity_count` are derived per hand, per opponent, across all streets;
+    - attempt requires a real confrontation line, Hero coverage by starting stack, and Hero staying live in the credit pot; forced auto all-ins count when Hero remains in line;
+    - transition `pre_ft_*` stats are not raw hand facts: they are tournament-level weighted projections over the single rush->FT transition hand and use the frozen short-handed coefficient table keyed by the first exact FT table size;
+    - tournament-level mystery totals still come from TS payout decomposition, while event-level adjusted KO-money and `big_ko` use exact Hero KO shares plus official envelope frequencies.
   - `SeedStatSnapshot` still exists as a backward-compatible narrow projection, and always carries both `summary_tournament_count` and `hand_tournament_count` so callers can see the coverage basis explicitly.
 - Current stat-layer handoff artifact:
   - `docs/stat_catalog/mbr_stats_inventory.yml` inventories all 31 legacy `MBR_Stats` modules with `status: mapped` and active P0/P1 blocker references from the 2026-03-25 audit;
@@ -370,12 +372,12 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `docs/stat_catalog/mbr_stats_inventory.yml` remains the inventory map, but no longer serves as the semantic source of truth by itself;
   - `docs/mbr.md` and `docs/mbr.yml` contain the 2026-03-25 independent audit with phased remediation plan (F0–F4) and 7 identified problems (2×P0, 5×P1).
 - Current spec parity gate:
-  - `backend/crates/mbr_stats_runtime/tests/spec_parity.rs` enforces that frozen spec `mbr_stats_spec_v1.yml` and runtime `CANONICAL_STAT_KEYS` match exactly: 31 modules, 60 unique keys, zero missing/extra;
+  - `backend/crates/mbr_stats_runtime/tests/spec_parity.rs` enforces that frozen spec `mbr_stats_spec_v1.yml` and runtime `CANONICAL_STAT_KEYS` match exactly: 31 modules, 59 unique keys, zero missing/extra;
   - `models.rs` exports `CANONICAL_STAT_KEYS`, `EXPECTED_MODULE_COUNT`, and `EXPECTED_KEY_COUNT` as the authoritative runtime key enumeration;
   - `backend/scripts/run_backend_checks.sh` now includes an explicit spec parity gate step.
-- CM-P0-02 fix (`pre_ft_chipev` bias bug):
-  - `load_pre_ft_chip_facts` in `queries.rs` no longer uses `COALESCE(..., 1000)` fallback; tournaments without an exact pre-FT snapshot are now excluded from the denominator via `AND pre_ft_snapshot.hero_final_stack IS NOT NULL` instead of synthesizing a zero chip-delta;
-  - this ensures `pre_ft_chipev` only averages over tournaments with a real pre-FT hand snapshot.
+- CM-P0-02 carry-forward (`pre_ft_chips` contract):
+  - public key renamed from `pre_ft_chipev` to `pre_ft_chips`;
+  - runtime no longer reads legacy exact pre-FT snapshot deltas for this card and instead preserves the frozen legacy formula `sum(ft_entry_stack_chips over FT tournaments) / count(HH-covered tournaments) - 1000`.
 - Current reproducibility gate:
   - `backend/fixtures/mbr/hh` and `backend/fixtures/mbr/ts` are now committed sanitized golden fixtures, not local-only artifacts;
   - `tracker_parser_core` now contains a full-pack HH/TS sweep over the committed `9 HH + 9 TS` GG corpus;
@@ -402,7 +404,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - 11 new unit tests added across `parser_worker`, `mbr_stats_runtime/registry`, and `mbr_stats_runtime/split_bounty`;
   - covers: no-FT tournament, single-candidate exact boundary, multi-seat-count stage predicates, incomplete FT start, deepest FT tracking, split bounty zero/full/half/ugly-cent edge cases, FT stage bucket exhaustive boundaries.
 - Golden canonical snapshot gate (F3-T2):
-  - `tests/canonical_snapshot_golden.rs` verifies full 60-key `CanonicalStatSnapshot` against golden JSON file;
+  - `tests/canonical_snapshot_golden.rs` verifies full 59-key `CanonicalStatSnapshot` against golden JSON file;
   - supports `UPDATE_GOLDENS=1` env var for intentional golden updates;
   - diff-friendly output shows old vs new values per key on mismatch;
   - added to `backend/scripts/run_backend_checks.sh`.

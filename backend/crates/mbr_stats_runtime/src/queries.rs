@@ -5,7 +5,7 @@ use postgres::GenericClient;
 use uuid::Uuid;
 
 use crate::big_ko::{
-    MysteryEnvelope, expected_big_ko_bucket_probabilities, expected_hero_mystery_cents,
+    MysteryEnvelope, expected_hero_mystery_cents, posterior_big_ko_bucket_counts,
 };
 use crate::models::{
     CanonicalStatPoint, CanonicalStatSnapshot, SeedStatCoverage, SeedStatSnapshot, SeedStatsFilters,
@@ -30,17 +30,21 @@ pub(crate) struct SummaryTournamentFact {
 pub(crate) struct TournamentFtHelperFact {
     pub(crate) tournament_id: Uuid,
     pub(crate) reached_ft_exact: bool,
+    pub(crate) first_ft_table_size: Option<i32>,
     pub(crate) ft_started_incomplete: Option<bool>,
     pub(crate) deepest_ft_size_reached: Option<i32>,
     pub(crate) hero_ft_entry_stack_chips: Option<i64>,
     pub(crate) hero_ft_entry_stack_bb: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TournamentKoEventFact {
     pub(crate) tournament_id: Uuid,
     pub(crate) total_exact_ko_event_count: u64,
     pub(crate) early_ft_exact_ko_event_count: u64,
+    pub(crate) total_exact_ko_share_total: f64,
+    pub(crate) exact_ft_ko_share_total: f64,
+    pub(crate) early_ft_exact_ko_share_total: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,22 +54,25 @@ pub(crate) struct DeepFtEntryFact {
     pub(crate) hero_stack_bb: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TournamentStageEventFact {
     pub(crate) tournament_id: Uuid,
     pub(crate) early_ft_bust_count: u64,
-    pub(crate) ko_stage_2_3_event_count: u64,
-    pub(crate) ko_stage_3_4_event_count: u64,
-    pub(crate) ko_stage_4_5_event_count: u64,
-    pub(crate) ko_stage_5_6_event_count: u64,
-    pub(crate) ko_stage_6_9_event_count: u64,
-    pub(crate) ko_stage_7_9_event_count: u64,
-    pub(crate) pre_ft_ko_count: u64,
+    pub(crate) ko_stage_2_3_share_total: f64,
+    pub(crate) ko_stage_3_4_share_total: f64,
+    pub(crate) ko_stage_4_5_share_total: f64,
+    pub(crate) ko_stage_5_6_share_total: f64,
+    pub(crate) ko_stage_6_9_share_total: f64,
+    pub(crate) ko_stage_7_9_share_total: f64,
+    pub(crate) transition_exact_ko_share_total: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TournamentStageAttemptFact {
     pub(crate) tournament_id: Uuid,
+    pub(crate) exact_ft_attempt_count: u64,
+    pub(crate) transition_exact_attempt_count: u64,
+    pub(crate) transition_exact_opportunity_count: u64,
     pub(crate) ko_stage_2_3_attempt_count: u64,
     pub(crate) ko_stage_3_4_attempt_count: u64,
     pub(crate) ko_stage_4_5_attempt_count: u64,
@@ -82,8 +89,12 @@ pub(crate) struct TournamentStageEntryFact {
     pub(crate) reached_stage_4_5: bool,
     pub(crate) reached_stage_5_6: bool,
     pub(crate) reached_stage_7_9: bool,
+    pub(crate) hero_stage_5_6_stack_chips: Option<i64>,
     pub(crate) hero_stage_5_6_stack_bb: Option<f64>,
+    pub(crate) hero_stage_5_6_entry_players: Option<i32>,
+    pub(crate) hero_stage_3_4_stack_chips: Option<i64>,
     pub(crate) hero_stage_3_4_stack_bb: Option<f64>,
+    pub(crate) hero_stage_3_4_entry_players: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -373,6 +384,7 @@ fn load_tournament_ft_helper_facts(
         "SELECT
             helper.tournament_id,
             helper.reached_ft_exact,
+            helper.first_ft_table_size,
             helper.ft_started_incomplete,
             helper.deepest_ft_size_reached,
             helper.hero_ft_entry_stack_chips,
@@ -390,10 +402,11 @@ fn load_tournament_ft_helper_facts(
         .map(|row| TournamentFtHelperFact {
             tournament_id: row.get(0),
             reached_ft_exact: row.get(1),
-            ft_started_incomplete: row.get(2),
-            deepest_ft_size_reached: row.get(3),
-            hero_ft_entry_stack_chips: row.get(4),
-            hero_ft_entry_stack_bb: row.get(5),
+            first_ft_table_size: row.get(2),
+            ft_started_incomplete: row.get(3),
+            deepest_ft_size_reached: row.get(4),
+            hero_ft_entry_stack_chips: row.get(5),
+            hero_ft_entry_stack_bb: row.get(6),
         })
         .collect())
 }
@@ -407,24 +420,55 @@ fn load_tournament_ko_event_facts(
         "SELECT
             h.tournament_id,
             COUNT(*) FILTER (
-                WHERE hero_winner.hand_id IS NOT NULL
+                WHERE COALESCE(hero_share.hero_share_fraction, 0) > 0
                   AND he.ko_certainty_state = 'exact'
             )::bigint AS total_exact_ko_event_count,
             COUNT(*) FILTER (
-                WHERE hero_winner.hand_id IS NOT NULL
+                WHERE COALESCE(hero_share.hero_share_fraction, 0) > 0
                   AND he.ko_certainty_state = 'exact'
                   AND msr.is_stage_6_9
-            )::bigint AS early_ft_exact_ko_event_count
+            )::bigint AS early_ft_exact_ko_event_count,
+            COALESCE(SUM(
+                CASE
+                    WHEN COALESCE(hero_share.hero_share_fraction, 0) > 0
+                     AND he.ko_certainty_state = 'exact'
+                    THEN hero_share.hero_share_fraction
+                    ELSE 0
+                END
+            ), 0)::double precision AS total_exact_ko_share_total,
+            COALESCE(SUM(
+                CASE
+                    WHEN COALESCE(hero_share.hero_share_fraction, 0) > 0
+                     AND he.ko_certainty_state = 'exact'
+                     AND msr.ft_players_remaining_exact IS NOT NULL
+                    THEN hero_share.hero_share_fraction
+                    ELSE 0
+                END
+            ), 0)::double precision AS exact_ft_ko_share_total,
+            COALESCE(SUM(
+                CASE
+                    WHEN COALESCE(hero_share.hero_share_fraction, 0) > 0
+                     AND he.ko_certainty_state = 'exact'
+                     AND msr.is_stage_6_9
+                    THEN hero_share.hero_share_fraction
+                    ELSE 0
+                END
+            ), 0)::double precision AS early_ft_exact_ko_share_total
          FROM core.hands h
          LEFT JOIN derived.mbr_stage_resolution msr
            ON msr.hand_id = h.id
           AND msr.player_profile_id = h.player_profile_id
          LEFT JOIN derived.hand_eliminations he
            ON he.hand_id = h.id
-         LEFT JOIN core.hand_seats hero_winner
-           ON hero_winner.hand_id = he.hand_id
-          AND hero_winner.is_hero IS TRUE
-          AND hero_winner.player_name = ANY(he.ko_winner_set)
+         LEFT JOIN core.hand_seats hero_seat
+           ON hero_seat.hand_id = h.id
+          AND hero_seat.is_hero IS TRUE
+         LEFT JOIN LATERAL (
+            SELECT SUM((share->>'share_fraction')::double precision) AS hero_share_fraction
+            FROM jsonb_array_elements(he.ko_share_fraction_by_winner) share
+            WHERE (share->>'seat_no')::int = hero_seat.seat_no
+         ) hero_share
+           ON TRUE
          WHERE h.organization_id = $1
            AND h.player_profile_id = $2
          GROUP BY h.tournament_id",
@@ -437,6 +481,9 @@ fn load_tournament_ko_event_facts(
             tournament_id: row.get(0),
             total_exact_ko_event_count: row.get::<_, i64>(1) as u64,
             early_ft_exact_ko_event_count: row.get::<_, i64>(2) as u64,
+            total_exact_ko_share_total: row.get(3),
+            exact_ft_ko_share_total: row.get(4),
+            early_ft_exact_ko_share_total: row.get(5),
         })
         .collect())
 }
@@ -489,74 +536,133 @@ fn load_stage_event_facts(
     player_profile_id: Uuid,
 ) -> Result<Vec<TournamentStageEventFact>> {
     let rows = client.query(
-        "SELECT
-            h.tournament_id,
-            COUNT(*) FILTER (
-                WHERE he.elimination_certainty_state = 'exact'
-                  AND eliminated_seat.is_hero IS TRUE
-                  AND msr.is_stage_6_9
-            )::bigint AS early_ft_bust_count,
-            COUNT(*) FILTER (
-                WHERE hero_winner.hand_id IS NOT NULL
-                  AND he.ko_certainty_state = 'exact'
-                  AND msr.ft_players_remaining_exact IN (2, 3)
-            )::bigint AS ko_stage_2_3_event_count,
-            COUNT(*) FILTER (
-                WHERE hero_winner.hand_id IS NOT NULL
-                  AND he.ko_certainty_state = 'exact'
-                  AND msr.is_stage_3_4
-            )::bigint AS ko_stage_3_4_event_count,
-            COUNT(*) FILTER (
-                WHERE hero_winner.hand_id IS NOT NULL
-                  AND he.ko_certainty_state = 'exact'
-                  AND msr.is_stage_4_5
-            )::bigint AS ko_stage_4_5_event_count,
-            COUNT(*) FILTER (
-                WHERE hero_winner.hand_id IS NOT NULL
-                  AND he.ko_certainty_state = 'exact'
-                  AND msr.is_stage_5_6
-            )::bigint AS ko_stage_5_6_event_count,
-            COUNT(*) FILTER (
-                WHERE hero_winner.hand_id IS NOT NULL
-                  AND he.ko_certainty_state = 'exact'
-                  AND msr.is_stage_6_9
-            )::bigint AS ko_stage_6_9_event_count,
-            COUNT(*) FILTER (
-                WHERE hero_winner.hand_id IS NOT NULL
-                  AND he.ko_certainty_state = 'exact'
-                  AND msr.ft_players_remaining_exact IN (7, 8, 9)
-            )::bigint AS ko_stage_7_9_event_count,
-            COUNT(*) FILTER (
-                WHERE hero_winner.hand_id IS NOT NULL
-                  AND he.ko_certainty_state = 'exact'
-                  AND helper.first_ft_hand_id IS NOT NULL
-                  AND h.tournament_hand_order IS NOT NULL
-                  AND COALESCE(msr.is_boundary_hand, FALSE) IS FALSE
-                  AND h.tournament_hand_order < (
-                      SELECT fh.tournament_hand_order
-                      FROM core.hands fh
-                      WHERE fh.id = helper.first_ft_hand_id
-                  )
-            )::bigint AS pre_ft_ko_count
-         FROM core.hands h
-         LEFT JOIN derived.mbr_stage_resolution msr
-           ON msr.hand_id = h.id
-          AND msr.player_profile_id = h.player_profile_id
-         LEFT JOIN derived.hand_eliminations he
-           ON he.hand_id = h.id
-         LEFT JOIN core.hand_seats eliminated_seat
-           ON eliminated_seat.hand_id = he.hand_id
-          AND eliminated_seat.seat_no = he.eliminated_seat_no
-         LEFT JOIN core.hand_seats hero_winner
-           ON hero_winner.hand_id = he.hand_id
-          AND hero_winner.is_hero IS TRUE
-          AND hero_winner.player_name = ANY(he.ko_winner_set)
-         LEFT JOIN derived.mbr_tournament_ft_helper helper
-           ON helper.tournament_id = h.tournament_id
-          AND helper.player_profile_id = h.player_profile_id
-         WHERE h.organization_id = $1
-           AND h.player_profile_id = $2
-         GROUP BY h.tournament_id",
+        "WITH tournament_scope AS (
+            SELECT DISTINCT h.tournament_id
+            FROM core.hands h
+            WHERE h.organization_id = $1
+              AND h.player_profile_id = $2
+         ),
+         stage_event_counts AS (
+            SELECT
+                h.tournament_id,
+                COUNT(*) FILTER (
+                    WHERE he.elimination_certainty_state = 'exact'
+                      AND eliminated_seat.is_hero IS TRUE
+                      AND msr.is_stage_6_9
+                )::bigint AS early_ft_bust_count,
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(hero_share.hero_share_fraction, 0) > 0
+                         AND he.ko_certainty_state = 'exact'
+                         AND msr.ft_players_remaining_exact IN (2, 3)
+                        THEN hero_share.hero_share_fraction
+                        ELSE 0
+                    END
+                ), 0)::double precision AS ko_stage_2_3_share_total,
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(hero_share.hero_share_fraction, 0) > 0
+                         AND he.ko_certainty_state = 'exact'
+                         AND msr.is_stage_3_4
+                        THEN hero_share.hero_share_fraction
+                        ELSE 0
+                    END
+                ), 0)::double precision AS ko_stage_3_4_share_total,
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(hero_share.hero_share_fraction, 0) > 0
+                         AND he.ko_certainty_state = 'exact'
+                         AND msr.is_stage_4_5
+                        THEN hero_share.hero_share_fraction
+                        ELSE 0
+                    END
+                ), 0)::double precision AS ko_stage_4_5_share_total,
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(hero_share.hero_share_fraction, 0) > 0
+                         AND he.ko_certainty_state = 'exact'
+                         AND msr.is_stage_5_6
+                        THEN hero_share.hero_share_fraction
+                        ELSE 0
+                    END
+                ), 0)::double precision AS ko_stage_5_6_share_total,
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(hero_share.hero_share_fraction, 0) > 0
+                         AND he.ko_certainty_state = 'exact'
+                         AND msr.is_stage_6_9
+                        THEN hero_share.hero_share_fraction
+                        ELSE 0
+                    END
+                ), 0)::double precision AS ko_stage_6_9_share_total,
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(hero_share.hero_share_fraction, 0) > 0
+                         AND he.ko_certainty_state = 'exact'
+                         AND msr.ft_players_remaining_exact IN (7, 8, 9)
+                        THEN hero_share.hero_share_fraction
+                        ELSE 0
+                    END
+                ), 0)::double precision AS ko_stage_7_9_share_total
+             FROM core.hands h
+             LEFT JOIN derived.mbr_stage_resolution msr
+               ON msr.hand_id = h.id
+              AND msr.player_profile_id = h.player_profile_id
+             LEFT JOIN derived.hand_eliminations he
+               ON he.hand_id = h.id
+             LEFT JOIN core.hand_seats hero_seat
+               ON hero_seat.hand_id = h.id
+              AND hero_seat.is_hero IS TRUE
+             LEFT JOIN LATERAL (
+                SELECT SUM((share->>'share_fraction')::double precision) AS hero_share_fraction
+                FROM jsonb_array_elements(he.ko_share_fraction_by_winner) share
+                WHERE (share->>'seat_no')::int = hero_seat.seat_no
+             ) hero_share
+               ON TRUE
+             LEFT JOIN core.hand_seats eliminated_seat
+               ON eliminated_seat.hand_id = he.hand_id
+              AND eliminated_seat.seat_no = he.eliminated_seat_no
+             WHERE h.organization_id = $1
+               AND h.player_profile_id = $2
+             GROUP BY h.tournament_id
+         ),
+         transition_counts AS (
+            SELECT
+                h.tournament_id,
+                COALESCE(SUM(
+                    CASE
+                        WHEN helper.boundary_resolution_state = 'exact'
+                         AND COALESCE(msr.is_boundary_hand, FALSE) IS TRUE
+                        THEN COALESCE(msr.boundary_ko_ev::double precision, 0)
+                        ELSE 0
+                    END
+                ), 0)::double precision AS transition_exact_ko_share_total
+             FROM core.hands h
+             LEFT JOIN derived.mbr_stage_resolution msr
+               ON msr.hand_id = h.id
+              AND msr.player_profile_id = h.player_profile_id
+             LEFT JOIN derived.mbr_tournament_ft_helper helper
+               ON helper.tournament_id = h.tournament_id
+              AND helper.player_profile_id = h.player_profile_id
+             WHERE h.organization_id = $1
+               AND h.player_profile_id = $2
+             GROUP BY h.tournament_id
+         )
+         SELECT
+            scope.tournament_id,
+            COALESCE(stage.early_ft_bust_count, 0)::bigint AS early_ft_bust_count,
+            COALESCE(stage.ko_stage_2_3_share_total, 0)::double precision AS ko_stage_2_3_share_total,
+            COALESCE(stage.ko_stage_3_4_share_total, 0)::double precision AS ko_stage_3_4_share_total,
+            COALESCE(stage.ko_stage_4_5_share_total, 0)::double precision AS ko_stage_4_5_share_total,
+            COALESCE(stage.ko_stage_5_6_share_total, 0)::double precision AS ko_stage_5_6_share_total,
+            COALESCE(stage.ko_stage_6_9_share_total, 0)::double precision AS ko_stage_6_9_share_total,
+            COALESCE(stage.ko_stage_7_9_share_total, 0)::double precision AS ko_stage_7_9_share_total,
+            COALESCE(transition.transition_exact_ko_share_total, 0)::double precision AS transition_exact_ko_share_total
+         FROM tournament_scope scope
+         LEFT JOIN stage_event_counts stage
+           ON stage.tournament_id = scope.tournament_id
+         LEFT JOIN transition_counts transition
+           ON transition.tournament_id = scope.tournament_id",
         &[&organization_id, &player_profile_id],
     )?;
 
@@ -565,13 +671,13 @@ fn load_stage_event_facts(
         .map(|row| TournamentStageEventFact {
             tournament_id: row.get(0),
             early_ft_bust_count: row.get::<_, i64>(1) as u64,
-            ko_stage_2_3_event_count: row.get::<_, i64>(2) as u64,
-            ko_stage_3_4_event_count: row.get::<_, i64>(3) as u64,
-            ko_stage_4_5_event_count: row.get::<_, i64>(4) as u64,
-            ko_stage_5_6_event_count: row.get::<_, i64>(5) as u64,
-            ko_stage_6_9_event_count: row.get::<_, i64>(6) as u64,
-            ko_stage_7_9_event_count: row.get::<_, i64>(7) as u64,
-            pre_ft_ko_count: row.get::<_, i64>(8) as u64,
+            ko_stage_2_3_share_total: row.get(2),
+            ko_stage_3_4_share_total: row.get(3),
+            ko_stage_4_5_share_total: row.get(4),
+            ko_stage_5_6_share_total: row.get(5),
+            ko_stage_6_9_share_total: row.get(6),
+            ko_stage_7_9_share_total: row.get(7),
+            transition_exact_ko_share_total: row.get(8),
         })
         .collect())
 }
@@ -581,84 +687,88 @@ fn load_stage_attempt_facts(
     organization_id: Uuid,
     player_profile_id: Uuid,
 ) -> Result<Vec<TournamentStageAttemptFact>> {
-    // Formal KO attempt contract (F1-T3):
-    // A KO attempt is counted per (hand_id, target_seat) when ALL of:
-    //   1. target has an explicit all-in action
-    //   2. hero starting_stack >= target starting_stack (hero covers)
-    //   3. hero is eligible for the target's credit pot (highest pot_no)
-    //   4. hero did NOT fold in this hand (hero remains live until resolution)
     let rows = client.query(
-        "WITH attempt_targets AS (
-            SELECT DISTINCT
+        "WITH attempt_counts AS (
+            SELECT
                 h.tournament_id,
-                h.id AS hand_id,
-                target.seat_no AS target_seat_no
-             FROM core.hands h
-             INNER JOIN core.hand_seats hero_seat
-               ON hero_seat.hand_id = h.id
-              AND hero_seat.is_hero IS TRUE
-             INNER JOIN core.hand_seats target
-               ON target.hand_id = h.id
-              AND target.is_hero IS FALSE
-              AND target.starting_stack > 0
-              AND hero_seat.starting_stack >= target.starting_stack
+                COUNT(*) FILTER (
+                    WHERE msr.ft_players_remaining_exact IS NOT NULL
+                )::bigint AS exact_ft_attempt_count,
+                COUNT(*) FILTER (
+                    WHERE helper.boundary_resolution_state = 'exact'
+                      AND COALESCE(msr.is_boundary_hand, FALSE) IS TRUE
+                )::bigint AS transition_exact_attempt_count,
+                COUNT(*) FILTER (
+                    WHERE msr.ft_players_remaining_exact IN (2, 3)
+                )::bigint AS ko_stage_2_3_attempt_count,
+                COUNT(*) FILTER (
+                    WHERE msr.is_stage_3_4
+                )::bigint AS ko_stage_3_4_attempt_count,
+                COUNT(*) FILTER (
+                    WHERE msr.is_stage_4_5
+                )::bigint AS ko_stage_4_5_attempt_count,
+                COUNT(*) FILTER (
+                    WHERE msr.is_stage_5_6
+                )::bigint AS ko_stage_5_6_attempt_count,
+                COUNT(*) FILTER (
+                    WHERE msr.is_stage_6_9
+                )::bigint AS ko_stage_6_9_attempt_count,
+                COUNT(*) FILTER (
+                    WHERE msr.ft_players_remaining_exact IN (7, 8, 9)
+                )::bigint AS ko_stage_7_9_attempt_count
+             FROM derived.hand_ko_attempts attempts
+             INNER JOIN core.hands h
+               ON h.id = attempts.hand_id
+             LEFT JOIN derived.mbr_stage_resolution msr
+               ON msr.hand_id = attempts.hand_id
+              AND msr.player_profile_id = attempts.player_profile_id
+             LEFT JOIN derived.mbr_tournament_ft_helper helper
+               ON helper.tournament_id = h.tournament_id
+              AND helper.player_profile_id = attempts.player_profile_id
              WHERE h.organization_id = $1
-               AND h.player_profile_id = $2
-               -- target went all-in
-               AND EXISTS (
-                   SELECT 1
-                   FROM core.hand_actions target_action
-                   WHERE target_action.hand_id = h.id
-                     AND target_action.seat_no = target.seat_no
-                     AND target_action.is_all_in IS TRUE
-               )
-               -- hero is eligible for target's credit pot (highest pot_no)
-               AND EXISTS (
-                   SELECT 1
-                   FROM core.hand_pot_eligibility hero_pe
-                   WHERE hero_pe.hand_id = h.id
-                     AND hero_pe.seat_no = hero_seat.seat_no
-                     AND hero_pe.pot_no = (
-                         SELECT MAX(target_pe.pot_no)
-                         FROM core.hand_pot_eligibility target_pe
-                         WHERE target_pe.hand_id = h.id
-                           AND target_pe.seat_no = target.seat_no
-                     )
-               )
-               -- hero did NOT fold (remains live until resolution)
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM core.hand_actions hero_fold
-                   WHERE hero_fold.hand_id = h.id
-                     AND hero_fold.seat_no = hero_seat.seat_no
-                     AND hero_fold.action_type = 'fold'
-               )
+               AND attempts.player_profile_id = $2
+             GROUP BY h.tournament_id
+         ),
+         opportunity_counts AS (
+            SELECT
+                h.tournament_id,
+                COUNT(*) FILTER (
+                    WHERE helper.boundary_resolution_state = 'exact'
+                      AND COALESCE(msr.is_boundary_hand, FALSE) IS TRUE
+                )::bigint AS transition_exact_opportunity_count
+             FROM derived.hand_ko_opportunities opportunities
+             INNER JOIN core.hands h
+               ON h.id = opportunities.hand_id
+             LEFT JOIN derived.mbr_stage_resolution msr
+               ON msr.hand_id = opportunities.hand_id
+              AND msr.player_profile_id = opportunities.player_profile_id
+             LEFT JOIN derived.mbr_tournament_ft_helper helper
+               ON helper.tournament_id = h.tournament_id
+              AND helper.player_profile_id = opportunities.player_profile_id
+             WHERE h.organization_id = $1
+               AND opportunities.player_profile_id = $2
+             GROUP BY h.tournament_id
          )
          SELECT
-            attempts.tournament_id,
-            COUNT(*) FILTER (
-                WHERE msr.ft_players_remaining_exact IN (2, 3)
-            )::bigint AS ko_stage_2_3_attempt_count,
-            COUNT(*) FILTER (
-                WHERE msr.is_stage_3_4
-            )::bigint AS ko_stage_3_4_attempt_count,
-            COUNT(*) FILTER (
-                WHERE msr.is_stage_4_5
-            )::bigint AS ko_stage_4_5_attempt_count,
-            COUNT(*) FILTER (
-                WHERE msr.is_stage_5_6
-            )::bigint AS ko_stage_5_6_attempt_count,
-            COUNT(*) FILTER (
-                WHERE msr.is_stage_6_9
-            )::bigint AS ko_stage_6_9_attempt_count,
-            COUNT(*) FILTER (
-                WHERE msr.ft_players_remaining_exact IN (7, 8, 9)
-            )::bigint AS ko_stage_7_9_attempt_count
-         FROM attempt_targets attempts
-         INNER JOIN derived.mbr_stage_resolution msr
-           ON msr.hand_id = attempts.hand_id
-          AND msr.player_profile_id = $2
-         GROUP BY attempts.tournament_id",
+            all_tournaments.tournament_id,
+            COALESCE(attempt_counts.exact_ft_attempt_count, 0)::bigint,
+            COALESCE(attempt_counts.transition_exact_attempt_count, 0)::bigint,
+            COALESCE(opportunity_counts.transition_exact_opportunity_count, 0)::bigint,
+            COALESCE(attempt_counts.ko_stage_2_3_attempt_count, 0)::bigint,
+            COALESCE(attempt_counts.ko_stage_3_4_attempt_count, 0)::bigint,
+            COALESCE(attempt_counts.ko_stage_4_5_attempt_count, 0)::bigint,
+            COALESCE(attempt_counts.ko_stage_5_6_attempt_count, 0)::bigint,
+            COALESCE(attempt_counts.ko_stage_6_9_attempt_count, 0)::bigint,
+            COALESCE(attempt_counts.ko_stage_7_9_attempt_count, 0)::bigint
+         FROM (
+            SELECT tournament_id FROM attempt_counts
+            UNION
+            SELECT tournament_id FROM opportunity_counts
+         ) all_tournaments
+         LEFT JOIN attempt_counts
+           ON attempt_counts.tournament_id = all_tournaments.tournament_id
+         LEFT JOIN opportunity_counts
+           ON opportunity_counts.tournament_id = all_tournaments.tournament_id",
         &[&organization_id, &player_profile_id],
     )?;
 
@@ -666,12 +776,15 @@ fn load_stage_attempt_facts(
         .into_iter()
         .map(|row| TournamentStageAttemptFact {
             tournament_id: row.get(0),
-            ko_stage_2_3_attempt_count: row.get::<_, i64>(1) as u64,
-            ko_stage_3_4_attempt_count: row.get::<_, i64>(2) as u64,
-            ko_stage_4_5_attempt_count: row.get::<_, i64>(3) as u64,
-            ko_stage_5_6_attempt_count: row.get::<_, i64>(4) as u64,
-            ko_stage_6_9_attempt_count: row.get::<_, i64>(5) as u64,
-            ko_stage_7_9_attempt_count: row.get::<_, i64>(6) as u64,
+            exact_ft_attempt_count: row.get::<_, i64>(1) as u64,
+            transition_exact_attempt_count: row.get::<_, i64>(2) as u64,
+            transition_exact_opportunity_count: row.get::<_, i64>(3) as u64,
+            ko_stage_2_3_attempt_count: row.get::<_, i64>(4) as u64,
+            ko_stage_3_4_attempt_count: row.get::<_, i64>(5) as u64,
+            ko_stage_4_5_attempt_count: row.get::<_, i64>(6) as u64,
+            ko_stage_5_6_attempt_count: row.get::<_, i64>(7) as u64,
+            ko_stage_6_9_attempt_count: row.get::<_, i64>(8) as u64,
+            ko_stage_7_9_attempt_count: row.get::<_, i64>(9) as u64,
         })
         .collect())
 }
@@ -685,11 +798,11 @@ fn load_stage_entry_facts(
         "WITH stage_reach AS (
             SELECT
                 h.tournament_id,
-                BOOL_OR(msr.ft_players_remaining_exact IN (2, 3)) AS reached_stage_2_3,
-                BOOL_OR(msr.is_stage_3_4) AS reached_stage_3_4,
-                BOOL_OR(msr.is_stage_4_5) AS reached_stage_4_5,
-                BOOL_OR(msr.is_stage_5_6) AS reached_stage_5_6,
-                BOOL_OR(msr.ft_players_remaining_exact IN (7, 8, 9)) AS reached_stage_7_9
+                COALESCE(BOOL_OR(msr.ft_players_remaining_exact IN (2, 3)), FALSE) AS reached_stage_2_3,
+                COALESCE(BOOL_OR(msr.is_stage_3_4), FALSE) AS reached_stage_3_4,
+                COALESCE(BOOL_OR(msr.is_stage_4_5), FALSE) AS reached_stage_4_5,
+                COALESCE(BOOL_OR(msr.is_stage_5_6), FALSE) AS reached_stage_5_6,
+                COALESCE(BOOL_OR(msr.ft_players_remaining_exact IN (7, 8, 9)), FALSE) AS reached_stage_7_9
              FROM core.hands h
              INNER JOIN derived.mbr_stage_resolution msr
                ON msr.hand_id = h.id
@@ -701,11 +814,13 @@ fn load_stage_entry_facts(
          first_stage_5_6_entries AS (
             SELECT DISTINCT ON (h.tournament_id)
                 h.tournament_id,
+                hs.starting_stack AS hero_stage_5_6_stack_chips,
                 CASE
                     WHEN h.big_blind > 0
                     THEN hs.starting_stack::double precision / h.big_blind::double precision
                     ELSE NULL
-                END AS hero_stage_5_6_stack_bb
+                END AS hero_stage_5_6_stack_bb,
+                msr.ft_players_remaining_exact AS hero_stage_5_6_entry_players
              FROM core.hands h
              INNER JOIN derived.mbr_stage_resolution msr
                ON msr.hand_id = h.id
@@ -724,11 +839,13 @@ fn load_stage_entry_facts(
          first_stage_3_4_entries AS (
             SELECT DISTINCT ON (h.tournament_id)
                 h.tournament_id,
+                hs.starting_stack AS hero_stage_3_4_stack_chips,
                 CASE
                     WHEN h.big_blind > 0
                     THEN hs.starting_stack::double precision / h.big_blind::double precision
                     ELSE NULL
-                END AS hero_stage_3_4_stack_bb
+                END AS hero_stage_3_4_stack_bb,
+                msr.ft_players_remaining_exact AS hero_stage_3_4_entry_players
              FROM core.hands h
              INNER JOIN derived.mbr_stage_resolution msr
                ON msr.hand_id = h.id
@@ -751,8 +868,12 @@ fn load_stage_entry_facts(
             reach.reached_stage_4_5,
             reach.reached_stage_5_6,
             reach.reached_stage_7_9,
+            stage_5_6.hero_stage_5_6_stack_chips,
             stage_5_6.hero_stage_5_6_stack_bb,
-            stage_3_4.hero_stage_3_4_stack_bb
+            stage_5_6.hero_stage_5_6_entry_players,
+            stage_3_4.hero_stage_3_4_stack_chips,
+            stage_3_4.hero_stage_3_4_stack_bb,
+            stage_3_4.hero_stage_3_4_entry_players
          FROM stage_reach reach
          LEFT JOIN first_stage_5_6_entries stage_5_6
            ON stage_5_6.tournament_id = reach.tournament_id
@@ -770,8 +891,12 @@ fn load_stage_entry_facts(
             reached_stage_4_5: row.get(3),
             reached_stage_5_6: row.get(4),
             reached_stage_7_9: row.get(5),
-            hero_stage_5_6_stack_bb: row.get(6),
-            hero_stage_3_4_stack_bb: row.get(7),
+            hero_stage_5_6_stack_chips: row.get(6),
+            hero_stage_5_6_stack_bb: row.get(7),
+            hero_stage_5_6_entry_players: row.get(8),
+            hero_stage_3_4_stack_chips: row.get(9),
+            hero_stage_3_4_stack_bb: row.get(10),
+            hero_stage_3_4_entry_players: row.get(11),
         })
         .collect())
 }
@@ -997,7 +1122,6 @@ pub(crate) fn build_canonical_stat_snapshot(
     let stage_entry_facts = &inputs.stage_entry_facts;
     let ko_money_event_facts = &inputs.ko_money_event_facts;
     let mystery_envelope_facts = &inputs.mystery_envelope_facts;
-    let pre_ft_chip_facts = &inputs.pre_ft_chip_facts;
 
     let seed_snapshot = build_seed_stat_snapshot(build_seed_stat_accumulator(
         summary_facts,
@@ -1005,7 +1129,23 @@ pub(crate) fn build_canonical_stat_snapshot(
         ft_helper_facts,
         ko_event_facts,
     ));
-    let mut canonical = seed_snapshot.to_canonical_snapshot();
+    let mut canonical = CanonicalStatSnapshot {
+        coverage: seed_snapshot.coverage.clone(),
+        values: BTreeMap::new(),
+    };
+    canonical.values.insert(
+        "roi_pct".to_string(),
+        CanonicalStatPoint::from_optional_float(seed_snapshot.roi_pct),
+    );
+    canonical.values.insert(
+        "avg_finish_place".to_string(),
+        CanonicalStatPoint::from_optional_float(seed_snapshot.avg_finish_place),
+    );
+    canonical.values.insert(
+        "final_table_reach_percent".to_string(),
+        CanonicalStatPoint::from_optional_float(seed_snapshot.final_table_reach_percent),
+    );
+
     let ft_helper_by_tournament = ft_helper_facts
         .iter()
         .copied()
@@ -1074,7 +1214,6 @@ pub(crate) fn build_canonical_stat_snapshot(
     let mut ko_stage_7_9_money_cents = 0.0;
     let mut adjusted_support_tournament_count = 0_u64;
     let mut adjusted_total_buyin_cents = 0_i64;
-    let mut adjusted_total_payout_cents = 0_i64;
     let mut adjusted_regular_prize_cents = 0_i64;
     let mut actual_supported_ko_cents = 0_i64;
     let mut estimated_supported_ko_cents = 0.0;
@@ -1091,6 +1230,8 @@ pub(crate) fn build_canonical_stat_snapshot(
     let mut total_payout_cents = 0_i64;
     let mut deep_ft_buyin_cents = 0_i64;
     let mut deep_ft_payout_cents = 0_i64;
+    let mut early_ft_bust_count = 0_u64;
+    let mut early_ft_bust_result_supported_count = 0_u64;
 
     for (tournament_id, events) in &ko_money_events_by_tournament {
         let Some(buyin_total_cents) = tournament_buyin_by_tournament.get(tournament_id) else {
@@ -1099,7 +1240,6 @@ pub(crate) fn build_canonical_stat_snapshot(
         let Some(envelopes) = envelopes_by_buyin.get(buyin_total_cents) else {
             continue;
         };
-        let bucket_probabilities = expected_big_ko_bucket_probabilities(envelopes);
 
         for event in events {
             let Some(expected_cents) = expected_hero_mystery_cents(event.share_micros, envelopes)
@@ -1125,12 +1265,6 @@ pub(crate) fn build_canonical_stat_snapshot(
             if event.is_stage_7_9 {
                 ko_stage_7_9_money_cents += expected_cents;
             }
-
-            for (bucket_key, probability) in &bucket_probabilities {
-                if let Some(total) = big_ko_bucket_counts.get_mut(bucket_key) {
-                    *total += probability;
-                }
-            }
         }
     }
 
@@ -1147,6 +1281,10 @@ pub(crate) fn build_canonical_stat_snapshot(
                 if let Some(finish_place) = summary_fact.finish_place {
                     ft_finish_place_sum += i64::from(finish_place);
                     ft_finish_place_count += 1;
+                    early_ft_bust_result_supported_count += 1;
+                    if (6..=9).contains(&finish_place) {
+                        early_ft_bust_count += 1;
+                    }
                 }
                 ft_buyin_cents += summary_fact.buyin_total_cents;
                 ft_payout_cents += summary_fact.payout_cents;
@@ -1167,11 +1305,37 @@ pub(crate) fn build_canonical_stat_snapshot(
         {
             adjusted_support_tournament_count += 1;
             adjusted_total_buyin_cents += summary_fact.buyin_total_cents;
-            adjusted_total_payout_cents += summary_fact.payout_cents;
             adjusted_regular_prize_cents += summary_fact.regular_prize_cents;
             actual_supported_ko_cents +=
                 summary_fact.payout_cents - summary_fact.regular_prize_cents;
             estimated_supported_ko_cents += *estimated_ko_cents;
+        }
+
+        if let Some(buyin_total_cents) = tournament_buyin_by_tournament.get(&summary_fact.tournament_id)
+            && let Some(envelopes) = envelopes_by_buyin.get(buyin_total_cents)
+        {
+            let mystery_money_cents = summary_fact.payout_cents - summary_fact.regular_prize_cents;
+            let hero_shares = ko_money_events_by_tournament
+                .get(&summary_fact.tournament_id)
+                .map(|events| {
+                    events
+                        .iter()
+                        .map(|event| crate::big_ko::HeroKoShare {
+                            share_micros: event.share_micros,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let posterior_counts = posterior_big_ko_bucket_counts(
+                mystery_money_cents,
+                &hero_shares,
+                envelopes,
+            );
+            for (bucket_key, value) in posterior_counts {
+                if let Some(total) = big_ko_bucket_counts.get_mut(&bucket_key) {
+                    *total += value;
+                }
+            }
         }
     }
 
@@ -1233,39 +1397,60 @@ pub(crate) fn build_canonical_stat_snapshot(
             .filter(|fact| fact.hero_stack_bb.is_some())
             .count() as u64,
     );
-    let early_ft_bust_count = stage_event_facts
+    let stage_early_ft_bust_count = stage_event_facts
         .iter()
         .map(|fact| fact.early_ft_bust_count)
         .sum::<u64>();
-    let ko_stage_2_3_event_count = stage_event_facts
+    let early_ft_bust_count = early_ft_bust_count.max(stage_early_ft_bust_count);
+    let ko_stage_2_3_total = stage_event_facts
         .iter()
-        .map(|fact| fact.ko_stage_2_3_event_count)
-        .sum::<u64>();
-    let ko_stage_3_4_event_count = stage_event_facts
+        .map(|fact| fact.ko_stage_2_3_share_total)
+        .sum::<f64>();
+    let ko_stage_3_4_total = stage_event_facts
         .iter()
-        .map(|fact| fact.ko_stage_3_4_event_count)
-        .sum::<u64>();
-    let ko_stage_4_5_event_count = stage_event_facts
+        .map(|fact| fact.ko_stage_3_4_share_total)
+        .sum::<f64>();
+    let ko_stage_4_5_total = stage_event_facts
         .iter()
-        .map(|fact| fact.ko_stage_4_5_event_count)
-        .sum::<u64>();
-    let ko_stage_5_6_event_count = stage_event_facts
+        .map(|fact| fact.ko_stage_4_5_share_total)
+        .sum::<f64>();
+    let ko_stage_5_6_total = stage_event_facts
         .iter()
-        .map(|fact| fact.ko_stage_5_6_event_count)
-        .sum::<u64>();
-    let ko_stage_6_9_event_count = stage_event_facts
+        .map(|fact| fact.ko_stage_5_6_share_total)
+        .sum::<f64>();
+    let ko_stage_6_9_total = stage_event_facts
         .iter()
-        .map(|fact| fact.ko_stage_6_9_event_count)
-        .sum::<u64>();
-    let ko_stage_7_9_event_count = stage_event_facts
+        .map(|fact| fact.ko_stage_6_9_share_total)
+        .sum::<f64>();
+    let ko_stage_7_9_total = stage_event_facts
         .iter()
-        .map(|fact| fact.ko_stage_7_9_event_count)
-        .sum::<u64>();
-    let pre_ft_ko_count = stage_event_facts
+        .map(|fact| fact.ko_stage_7_9_share_total)
+        .sum::<f64>();
+    let pre_ft_ko_total = stage_event_facts
         .iter()
-        .map(|fact| fact.pre_ft_ko_count)
-        .sum::<u64>();
-    let ko_stage_2_3_attempt_count = stage_attempt_facts
+        .map(|fact| {
+            fact.transition_exact_ko_share_total
+                * transition_stage_weight(
+                    ft_helper_by_tournament
+                        .get(&fact.tournament_id)
+                        .and_then(|helper| helper.first_ft_table_size),
+                )
+        })
+        .sum::<f64>();
+    let total_exact_ko_share_total = ko_event_facts
+        .iter()
+        .map(|fact| fact.total_exact_ko_share_total)
+        .sum::<f64>();
+    let exact_ft_ko_share_total = ko_event_facts
+        .iter()
+        .map(|fact| fact.exact_ft_ko_share_total)
+        .sum::<f64>();
+    let early_ft_ko_total = ko_event_facts
+        .iter()
+        .map(|fact| fact.early_ft_exact_ko_share_total)
+        .sum::<f64>();
+    let total_ko_total = total_exact_ko_share_total + pre_ft_ko_total;
+    let _ko_stage_2_3_attempt_count = stage_attempt_facts
         .iter()
         .map(|fact| fact.ko_stage_2_3_attempt_count)
         .sum::<u64>();
@@ -1273,7 +1458,7 @@ pub(crate) fn build_canonical_stat_snapshot(
         .iter()
         .map(|fact| fact.ko_stage_3_4_attempt_count)
         .sum::<u64>();
-    let ko_stage_4_5_attempt_count = stage_attempt_facts
+    let _ko_stage_4_5_attempt_count = stage_attempt_facts
         .iter()
         .map(|fact| fact.ko_stage_4_5_attempt_count)
         .sum::<u64>();
@@ -1281,7 +1466,7 @@ pub(crate) fn build_canonical_stat_snapshot(
         .iter()
         .map(|fact| fact.ko_stage_5_6_attempt_count)
         .sum::<u64>();
-    let ko_stage_6_9_attempt_count = stage_attempt_facts
+    let _ko_stage_6_9_attempt_count = stage_attempt_facts
         .iter()
         .map(|fact| fact.ko_stage_6_9_attempt_count)
         .sum::<u64>();
@@ -1289,44 +1474,68 @@ pub(crate) fn build_canonical_stat_snapshot(
         .iter()
         .map(|fact| fact.ko_stage_7_9_attempt_count)
         .sum::<u64>();
-    let stage_2_3_tournament_count = stage_entry_facts
+    let exact_ft_attempt_count = stage_attempt_facts
         .iter()
-        .filter(|fact| fact.reached_stage_2_3)
-        .count() as u64;
-    let stage_3_4_tournament_count = stage_entry_facts
+        .map(|fact| fact.exact_ft_attempt_count)
+        .sum::<u64>();
+    let pre_ft_attempts_total = stage_attempt_facts
         .iter()
-        .filter(|fact| fact.reached_stage_3_4)
-        .count() as u64;
-    let stage_4_5_tournament_count = stage_entry_facts
-        .iter()
-        .filter(|fact| fact.reached_stage_4_5)
-        .count() as u64;
-    let stage_5_6_tournament_count = stage_entry_facts
-        .iter()
-        .filter(|fact| fact.reached_stage_5_6)
-        .count() as u64;
-    let stage_7_9_tournament_count = stage_entry_facts
-        .iter()
-        .filter(|fact| fact.reached_stage_7_9)
-        .count() as u64;
-    let ft_entry_stack_bb_total = ft_helper_facts
+        .map(|fact| {
+            fact.transition_exact_attempt_count as f64
+                * transition_stage_weight(
+                    ft_helper_by_tournament
+                        .get(&fact.tournament_id)
+                        .and_then(|helper| helper.first_ft_table_size),
+                )
+        })
+        .sum::<f64>();
+    let expected_ft_ko_total = ft_helper_facts
         .iter()
         .filter(|fact| fact.reached_ft_exact)
-        .filter_map(|fact| fact.hero_ft_entry_stack_bb)
+        .filter_map(|fact| {
+            let stack_chips = fact.hero_ft_entry_stack_chips?;
+            let players = fact.first_ft_table_size?;
+            (players > 1).then_some(stack_chips as f64 / 18_000.0 * (players - 1) as f64)
+        })
         .sum::<f64>();
-    let stage_5_6_entry_stack_bb_total = stage_entry_facts
+    let expected_stage_7_9_ko_total = ft_helper_facts
         .iter()
-        .filter_map(|fact| fact.hero_stage_5_6_stack_bb)
+        .filter(|fact| fact.reached_ft_exact)
+        .filter_map(|fact| {
+            let stack_chips = fact.hero_ft_entry_stack_chips?;
+            let players = fact.first_ft_table_size?;
+            (players > 6).then_some(stack_chips as f64 / 18_000.0 * (players - 6) as f64)
+        })
         .sum::<f64>();
-    let stage_3_4_entry_stack_bb_total = stage_entry_facts
+    let expected_stage_5_6_ko_total = stage_entry_facts
         .iter()
-        .filter_map(|fact| fact.hero_stage_3_4_stack_bb)
+        .filter_map(|fact| {
+            let stack_chips = fact.hero_stage_5_6_stack_chips?;
+            let players = fact.hero_stage_5_6_entry_players?;
+            (players > 4).then_some(stack_chips as f64 / 18_000.0 * (players - 4) as f64)
+        })
         .sum::<f64>();
-    let pre_ft_chip_delta_sum = pre_ft_chip_facts
+    let expected_stage_3_4_ko_total = stage_entry_facts
         .iter()
-        .map(|fact| fact.chip_delta)
-        .sum::<i64>();
-    let pre_ft_tournament_count = pre_ft_chip_facts.len() as u64;
+        .filter_map(|fact| {
+            let stack_chips = fact.hero_stage_3_4_stack_chips?;
+            let players = fact.hero_stage_3_4_entry_players?;
+            (players > 2).then_some(stack_chips as f64 / 18_000.0 * (players - 2) as f64)
+        })
+        .sum::<f64>();
+    let pre_ft_chips = if hand_covered_tournaments.is_empty() {
+        None
+    } else {
+        Some(
+            ft_helper_facts
+                .iter()
+                .filter(|fact| fact.reached_ft_exact)
+                .filter_map(|fact| fact.hero_ft_entry_stack_chips)
+                .sum::<i64>() as f64
+                / hand_covered_tournaments.len() as f64
+                - 1_000.0,
+        )
+    };
 
     canonical.values.insert(
         "avg_finish_place_ft".to_string(),
@@ -1373,11 +1582,11 @@ pub(crate) fn build_canonical_stat_snapshot(
         CanonicalStatPoint::from_optional_float(Some(cents_to_money(winnings_from_itm_cents))),
     );
     canonical.values.insert(
-        "winnings_from_ko_total".to_string(),
+        "winnings_from_ko".to_string(),
         CanonicalStatPoint::from_optional_float(Some(cents_to_money(winnings_from_ko_cents))),
     );
     canonical.values.insert(
-        "ko_contribution_percent".to_string(),
+        "ko_contribution".to_string(),
         CanonicalStatPoint::from_optional_float(portion_to_percent(
             winnings_from_ko_cents,
             total_payout_cents,
@@ -1406,184 +1615,200 @@ pub(crate) fn build_canonical_stat_snapshot(
         )),
     );
     canonical.values.insert(
+        "total_ko".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(total_ko_total)),
+    );
+    canonical.values.insert(
+        "avg_ko_per_tournament".to_string(),
+        CanonicalStatPoint::from_optional_float(average_f64(
+            total_ko_total,
+            hand_covered_tournaments.len() as u64,
+        )),
+    );
+    canonical.values.insert(
+        "early_ft_ko".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(early_ft_ko_total)),
+    );
+    canonical.values.insert(
+        "early_ft_ko_per_tournament".to_string(),
+        CanonicalStatPoint::from_optional_float(average_f64(early_ft_ko_total, ft_reached_count)),
+    );
+    canonical.values.insert(
         "early_ft_bust_count".to_string(),
         CanonicalStatPoint::from_integer(early_ft_bust_count),
     );
     canonical.values.insert(
         "early_ft_bust_per_tournament".to_string(),
-        CanonicalStatPoint::from_optional_float(average_u64(early_ft_bust_count, ft_reached_count)),
+        CanonicalStatPoint::from_optional_float(average_u64(
+            early_ft_bust_count,
+            early_ft_bust_result_supported_count,
+        )),
     );
     canonical.values.insert(
-        "ko_stage_2_3_event_count".to_string(),
-        CanonicalStatPoint::from_integer(ko_stage_2_3_event_count),
+        "ko_stage_2_3".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(ko_stage_2_3_total)),
     );
     canonical.values.insert(
         "ko_stage_2_3_money_total".to_string(),
         CanonicalStatPoint::from_optional_float(Some(cents_to_money_f64(ko_stage_2_3_money_cents))),
     );
     canonical.values.insert(
-        "ko_stage_2_3_attempts_per_tournament".to_string(),
-        CanonicalStatPoint::from_optional_float(average_u64(
-            ko_stage_2_3_attempt_count,
-            stage_2_3_tournament_count,
-        )),
-    );
-    canonical.values.insert(
-        "ko_stage_3_4_event_count".to_string(),
-        CanonicalStatPoint::from_integer(ko_stage_3_4_event_count),
+        "ko_stage_3_4".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(ko_stage_3_4_total)),
     );
     canonical.values.insert(
         "ko_stage_3_4_money_total".to_string(),
         CanonicalStatPoint::from_optional_float(Some(cents_to_money_f64(ko_stage_3_4_money_cents))),
     );
     canonical.values.insert(
-        "ko_stage_3_4_attempts_per_tournament".to_string(),
+        "ko_attempts_per_ft_3_4".to_string(),
         CanonicalStatPoint::from_optional_float(average_u64(
             ko_stage_3_4_attempt_count,
-            stage_3_4_tournament_count,
+            ft_reached_count,
         )),
     );
     canonical.values.insert(
-        "ko_stage_4_5_event_count".to_string(),
-        CanonicalStatPoint::from_integer(ko_stage_4_5_event_count),
+        "ko_stage_4_5".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(ko_stage_4_5_total)),
     );
     canonical.values.insert(
         "ko_stage_4_5_money_total".to_string(),
         CanonicalStatPoint::from_optional_float(Some(cents_to_money_f64(ko_stage_4_5_money_cents))),
     );
     canonical.values.insert(
-        "ko_stage_4_5_attempts_per_tournament".to_string(),
-        CanonicalStatPoint::from_optional_float(average_u64(
-            ko_stage_4_5_attempt_count,
-            stage_4_5_tournament_count,
-        )),
-    );
-    canonical.values.insert(
-        "ko_stage_5_6_event_count".to_string(),
-        CanonicalStatPoint::from_integer(ko_stage_5_6_event_count),
+        "ko_stage_5_6".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(ko_stage_5_6_total)),
     );
     canonical.values.insert(
         "ko_stage_5_6_money_total".to_string(),
         CanonicalStatPoint::from_optional_float(Some(cents_to_money_f64(ko_stage_5_6_money_cents))),
     );
     canonical.values.insert(
-        "ko_stage_5_6_attempts_per_tournament".to_string(),
+        "ko_attempts_per_ft_5_6".to_string(),
         CanonicalStatPoint::from_optional_float(average_u64(
             ko_stage_5_6_attempt_count,
-            stage_5_6_tournament_count,
+            ft_reached_count,
         )),
     );
     canonical.values.insert(
-        "ko_stage_6_9_event_count".to_string(),
-        CanonicalStatPoint::from_integer(ko_stage_6_9_event_count),
+        "ko_stage_6_9".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(ko_stage_6_9_total)),
     );
     canonical.values.insert(
         "ko_stage_6_9_money_total".to_string(),
         CanonicalStatPoint::from_optional_float(Some(cents_to_money_f64(ko_stage_6_9_money_cents))),
     );
     canonical.values.insert(
-        "ko_stage_7_9_event_count".to_string(),
-        CanonicalStatPoint::from_integer(ko_stage_7_9_event_count),
+        "ko_stage_7_9".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(ko_stage_7_9_total)),
     );
     canonical.values.insert(
         "ko_stage_7_9_money_total".to_string(),
         CanonicalStatPoint::from_optional_float(Some(cents_to_money_f64(ko_stage_7_9_money_cents))),
     );
     canonical.values.insert(
-        "ko_stage_7_9_attempts_per_tournament".to_string(),
+        "ko_attempts_per_ft_7_9".to_string(),
         CanonicalStatPoint::from_optional_float(average_u64(
             ko_stage_7_9_attempt_count,
-            stage_7_9_tournament_count,
+            ft_reached_count,
         )),
     );
     canonical.values.insert(
-        "pre_ft_ko_count".to_string(),
-        CanonicalStatPoint::from_integer(pre_ft_ko_count),
+        "pre_ft_ko".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(pre_ft_ko_total)),
+    );
+    canonical.values.insert(
+        "pre_ft_attempts".to_string(),
+        CanonicalStatPoint::from_optional_float(Some(pre_ft_attempts_total)),
+    );
+    canonical.values.insert(
+        "pre_ft_chips".to_string(),
+        CanonicalStatPoint::from_optional_float(pre_ft_chips),
     );
     canonical.values.insert(
         "ft_stack_conversion".to_string(),
-        CanonicalStatPoint::from_optional_float(ratio_to_float(
-            ko_stage_6_9_event_count,
-            ft_entry_stack_bb_total,
+        CanonicalStatPoint::from_optional_float(ratio_to_float_f64(
+            exact_ft_ko_share_total,
+            expected_ft_ko_total,
         )),
     );
     canonical.values.insert(
         "avg_ko_attempts_per_ft".to_string(),
         CanonicalStatPoint::from_optional_float(average_u64(
-            ko_stage_6_9_attempt_count,
+            exact_ft_attempt_count,
             ft_reached_count,
         )),
     );
     canonical.values.insert(
-        "ko_attempts_success_rate".to_string(),
-        CanonicalStatPoint::from_optional_float(ratio_to_fraction(
-            ko_stage_6_9_event_count,
-            ko_stage_6_9_attempt_count,
+        "ft_ko_success_rate".to_string(),
+        CanonicalStatPoint::from_optional_float(ratio_to_fraction_f64_u64(
+            exact_ft_ko_share_total,
+            exact_ft_attempt_count,
         )),
     );
     canonical.values.insert(
         "ft_stack_conversion_7_9".to_string(),
-        CanonicalStatPoint::from_optional_float(ratio_to_float(
-            ko_stage_6_9_event_count,
-            ft_entry_stack_bb_total,
-        )),
-    );
-    canonical.values.insert(
-        "ft_stack_conversion_7_9_attempts".to_string(),
-        CanonicalStatPoint::from_optional_float(average_u64(
-            ko_stage_6_9_attempt_count,
-            ft_reached_count,
+        CanonicalStatPoint::from_optional_float(ratio_to_float_f64(
+            ko_stage_7_9_total,
+            expected_stage_7_9_ko_total,
         )),
     );
     canonical.values.insert(
         "ft_stack_conversion_5_6".to_string(),
-        CanonicalStatPoint::from_optional_float(ratio_to_float(
-            ko_stage_5_6_event_count,
-            stage_5_6_entry_stack_bb_total,
-        )),
-    );
-    canonical.values.insert(
-        "ft_stack_conversion_5_6_attempts".to_string(),
-        CanonicalStatPoint::from_optional_float(average_u64(
-            ko_stage_5_6_attempt_count,
-            stage_5_6_tournament_count,
+        CanonicalStatPoint::from_optional_float(ratio_to_float_f64(
+            ko_stage_5_6_total,
+            expected_stage_5_6_ko_total,
         )),
     );
     canonical.values.insert(
         "ft_stack_conversion_3_4".to_string(),
-        CanonicalStatPoint::from_optional_float(ratio_to_float(
-            ko_stage_3_4_event_count,
-            stage_3_4_entry_stack_bb_total,
+        CanonicalStatPoint::from_optional_float(ratio_to_float_f64(
+            ko_stage_3_4_total,
+            expected_stage_3_4_ko_total,
         )),
     );
     canonical.values.insert(
-        "ft_stack_conversion_3_4_attempts".to_string(),
-        CanonicalStatPoint::from_optional_float(average_u64(
+        "ko_success_rate_3_4".to_string(),
+        CanonicalStatPoint::from_optional_float(ratio_to_fraction_f64_u64(
+            ko_stage_3_4_total,
             ko_stage_3_4_attempt_count,
-            stage_3_4_tournament_count,
         )),
     );
     canonical.values.insert(
-        "ko_contribution_adjusted_percent".to_string(),
+        "ko_success_rate_5_6".to_string(),
+        CanonicalStatPoint::from_optional_float(ratio_to_fraction_f64_u64(
+            ko_stage_5_6_total,
+            ko_stage_5_6_attempt_count,
+        )),
+    );
+    canonical.values.insert(
+        "ko_success_rate_7_9".to_string(),
+        CanonicalStatPoint::from_optional_float(ratio_to_fraction_f64_u64(
+            ko_stage_7_9_total,
+            ko_stage_7_9_attempt_count,
+        )),
+    );
+    canonical.values.insert(
+        "ko_contribution_adj".to_string(),
         CanonicalStatPoint::from_optional_float(
             (adjusted_support_tournament_count > 0)
                 .then(|| {
-                    portion_to_percent_f64(
+                    portion_to_percent_f64_f64(
                         estimated_supported_ko_cents,
-                        adjusted_total_payout_cents,
+                        adjusted_regular_prize_cents as f64 + estimated_supported_ko_cents,
                     )
                 })
                 .flatten(),
         ),
     );
     canonical.values.insert(
-        "ko_luck_money_delta".to_string(),
+        "ko_luck".to_string(),
         CanonicalStatPoint::from_optional_float((adjusted_support_tournament_count > 0).then(
             || cents_to_money_f64(actual_supported_ko_cents as f64 - estimated_supported_ko_cents),
         )),
     );
     canonical.values.insert(
-        "roi_adj_pct".to_string(),
+        "roi_adj".to_string(),
         CanonicalStatPoint::from_optional_float(
             (adjusted_support_tournament_count > 0)
                 .then(|| {
@@ -1595,13 +1820,6 @@ pub(crate) fn build_canonical_stat_snapshot(
                 })
                 .flatten(),
         ),
-    );
-    canonical.values.insert(
-        "pre_ft_chipev".to_string(),
-        CanonicalStatPoint::from_optional_float(average_i64(
-            pre_ft_chip_delta_sum,
-            pre_ft_tournament_count,
-        )),
     );
     for (bucket_key, bucket_count) in big_ko_bucket_counts {
         canonical.values.insert(
@@ -1678,24 +1896,24 @@ fn average_u64(sum: u64, count: u64) -> Option<f64> {
     (count > 0).then_some(sum as f64 / count as f64)
 }
 
+fn ratio_to_float_f64(numerator: f64, denominator: f64) -> Option<f64> {
+    (denominator > 0.0).then_some(numerator / denominator)
+}
+
 fn ratio_to_percent(numerator: u64, denominator: u64) -> Option<f64> {
     (denominator > 0).then_some(numerator as f64 / denominator as f64 * 100.0)
 }
 
-fn ratio_to_fraction(numerator: u64, denominator: u64) -> Option<f64> {
-    (denominator > 0).then_some(numerator as f64 / denominator as f64)
-}
-
-fn ratio_to_float(numerator: u64, denominator: f64) -> Option<f64> {
-    (denominator > 0.0).then_some(numerator as f64 / denominator)
+fn ratio_to_fraction_f64_u64(numerator: f64, denominator: u64) -> Option<f64> {
+    (denominator > 0).then_some(numerator / denominator as f64)
 }
 
 fn portion_to_percent(numerator: i64, denominator: i64) -> Option<f64> {
     (denominator > 0).then_some(numerator as f64 / denominator as f64 * 100.0)
 }
 
-fn portion_to_percent_f64(numerator: f64, denominator: i64) -> Option<f64> {
-    (denominator > 0).then_some(numerator / denominator as f64 * 100.0)
+fn portion_to_percent_f64_f64(numerator: f64, denominator: f64) -> Option<f64> {
+    (denominator > 0.0).then_some(numerator / denominator * 100.0)
 }
 
 fn roi_from_totals(total_payout_cents: i64, total_buyin_cents: i64) -> Option<f64> {
@@ -1714,6 +1932,19 @@ fn cents_to_money_f64(cents: f64) -> f64 {
     cents / 100.0
 }
 
+fn transition_stage_weight(first_ft_table_size: Option<i32>) -> f64 {
+    match first_ft_table_size {
+        Some(8) => 0.40,
+        Some(7) => 0.50,
+        Some(6) => 0.60,
+        Some(5) => 0.60,
+        Some(4) => 0.65,
+        Some(3) => 0.70,
+        Some(2) => 0.70,
+        _ => 0.0,
+    }
+}
+
 fn roi_from_adjusted_components(
     regular_prize_cents: i64,
     estimated_ko_cents: f64,
@@ -1730,13 +1961,241 @@ fn roi_from_adjusted_components(
 mod tests {
     use super::{
         CanonicalQueryInputs, DeepFtEntryFact, MysteryEnvelopeFact, SeedStatAccumulator,
-        SummaryTournamentFact, TournamentBuyinFact, TournamentFtHelperFact,
+        SummaryTournamentFact, TournamentBuyinFact, TournamentFtHelperFact, TournamentKoEventFact,
         TournamentKoMoneyEventFact, TournamentPreFtChipFact, TournamentStageAttemptFact,
         TournamentStageEntryFact, TournamentStageEventFact, build_canonical_stat_snapshot,
         build_seed_stat_snapshot,
     };
     use crate::models::CanonicalStatPoint;
     use uuid::Uuid;
+
+    #[test]
+    fn canonical_snapshot_uses_share_based_ft_and_transition_contract_v2() {
+        let tournament_1 = Uuid::from_u128(101);
+        let tournament_2 = Uuid::from_u128(102);
+        let tournament_3 = Uuid::from_u128(103);
+
+        let canonical = build_canonical_stat_snapshot(&CanonicalQueryInputs {
+            tournament_buyin_facts: vec![],
+            summary_facts: vec![
+                SummaryTournamentFact {
+                    tournament_id: tournament_1,
+                    buyin_total_cents: 2_500,
+                    payout_cents: 10_000,
+                    regular_prize_cents: 4_000,
+                    finish_place: Some(4),
+                },
+                SummaryTournamentFact {
+                    tournament_id: tournament_2,
+                    buyin_total_cents: 2_500,
+                    payout_cents: 0,
+                    regular_prize_cents: 0,
+                    finish_place: Some(7),
+                },
+            ],
+            hand_covered_tournaments: vec![tournament_1, tournament_2, tournament_3],
+            ft_helper_facts: vec![
+                TournamentFtHelperFact {
+                    tournament_id: tournament_1,
+                    reached_ft_exact: true,
+                    first_ft_table_size: Some(8),
+                    ft_started_incomplete: Some(true),
+                    deepest_ft_size_reached: Some(3),
+                    hero_ft_entry_stack_chips: Some(2_000),
+                    hero_ft_entry_stack_bb: Some(20.0),
+                },
+                TournamentFtHelperFact {
+                    tournament_id: tournament_2,
+                    reached_ft_exact: true,
+                    first_ft_table_size: Some(7),
+                    ft_started_incomplete: Some(true),
+                    deepest_ft_size_reached: Some(6),
+                    hero_ft_entry_stack_chips: Some(1_000),
+                    hero_ft_entry_stack_bb: Some(10.0),
+                },
+                TournamentFtHelperFact {
+                    tournament_id: tournament_3,
+                    reached_ft_exact: false,
+                    first_ft_table_size: None,
+                    ft_started_incomplete: None,
+                    deepest_ft_size_reached: None,
+                    hero_ft_entry_stack_chips: None,
+                    hero_ft_entry_stack_bb: None,
+                },
+            ],
+            ko_event_facts: vec![
+                TournamentKoEventFact {
+                    tournament_id: tournament_1,
+                    total_exact_ko_event_count: 3,
+                    early_ft_exact_ko_event_count: 2,
+                    total_exact_ko_share_total: 2.5,
+                    exact_ft_ko_share_total: 2.5,
+                    early_ft_exact_ko_share_total: 1.5,
+                },
+                TournamentKoEventFact {
+                    tournament_id: tournament_2,
+                    total_exact_ko_event_count: 1,
+                    early_ft_exact_ko_event_count: 1,
+                    total_exact_ko_share_total: 1.0,
+                    exact_ft_ko_share_total: 1.0,
+                    early_ft_exact_ko_share_total: 0.5,
+                },
+            ],
+            deep_ft_entry_facts: vec![],
+            stage_event_facts: vec![
+                TournamentStageEventFact {
+                    tournament_id: tournament_1,
+                    early_ft_bust_count: 0,
+                    ko_stage_2_3_share_total: 0.5,
+                    ko_stage_3_4_share_total: 1.0,
+                    ko_stage_4_5_share_total: 0.0,
+                    ko_stage_5_6_share_total: 1.0,
+                    ko_stage_6_9_share_total: 1.5,
+                    ko_stage_7_9_share_total: 1.0,
+                    transition_exact_ko_share_total: 1.0,
+                },
+                TournamentStageEventFact {
+                    tournament_id: tournament_2,
+                    early_ft_bust_count: 0,
+                    ko_stage_2_3_share_total: 0.0,
+                    ko_stage_3_4_share_total: 1.5,
+                    ko_stage_4_5_share_total: 0.5,
+                    ko_stage_5_6_share_total: 0.0,
+                    ko_stage_6_9_share_total: 0.5,
+                    ko_stage_7_9_share_total: 0.5,
+                    transition_exact_ko_share_total: 0.0,
+                },
+            ],
+            stage_attempt_facts: vec![
+                TournamentStageAttemptFact {
+                    tournament_id: tournament_1,
+                    exact_ft_attempt_count: 8,
+                    transition_exact_attempt_count: 2,
+                    transition_exact_opportunity_count: 3,
+                    ko_stage_2_3_attempt_count: 1,
+                    ko_stage_3_4_attempt_count: 1,
+                    ko_stage_4_5_attempt_count: 0,
+                    ko_stage_5_6_attempt_count: 2,
+                    ko_stage_6_9_attempt_count: 4,
+                    ko_stage_7_9_attempt_count: 4,
+                },
+                TournamentStageAttemptFact {
+                    tournament_id: tournament_2,
+                    exact_ft_attempt_count: 4,
+                    transition_exact_attempt_count: 0,
+                    transition_exact_opportunity_count: 1,
+                    ko_stage_2_3_attempt_count: 0,
+                    ko_stage_3_4_attempt_count: 3,
+                    ko_stage_4_5_attempt_count: 1,
+                    ko_stage_5_6_attempt_count: 1,
+                    ko_stage_6_9_attempt_count: 2,
+                    ko_stage_7_9_attempt_count: 2,
+                },
+            ],
+            stage_entry_facts: vec![
+                TournamentStageEntryFact {
+                    tournament_id: tournament_1,
+                    reached_stage_2_3: true,
+                    reached_stage_3_4: true,
+                    reached_stage_4_5: true,
+                    reached_stage_5_6: true,
+                    reached_stage_7_9: true,
+                    hero_stage_5_6_stack_chips: Some(1_800),
+                    hero_stage_5_6_stack_bb: Some(18.0),
+                    hero_stage_5_6_entry_players: Some(6),
+                    hero_stage_3_4_stack_chips: Some(900),
+                    hero_stage_3_4_stack_bb: Some(9.0),
+                    hero_stage_3_4_entry_players: Some(4),
+                },
+                TournamentStageEntryFact {
+                    tournament_id: tournament_2,
+                    reached_stage_2_3: false,
+                    reached_stage_3_4: true,
+                    reached_stage_4_5: true,
+                    reached_stage_5_6: true,
+                    reached_stage_7_9: true,
+                    hero_stage_5_6_stack_chips: Some(1_200),
+                    hero_stage_5_6_stack_bb: Some(12.0),
+                    hero_stage_5_6_entry_players: Some(5),
+                    hero_stage_3_4_stack_chips: Some(600),
+                    hero_stage_3_4_stack_bb: Some(6.0),
+                    hero_stage_3_4_entry_players: Some(3),
+                },
+            ],
+            ko_money_event_facts: vec![],
+            mystery_envelope_facts: vec![],
+            pre_ft_chip_facts: vec![],
+        });
+
+        assert_eq!(
+            canonical.values["pre_ft_ko"],
+            CanonicalStatPoint::from_optional_float(Some(0.4))
+        );
+        assert_eq!(
+            canonical.values["pre_ft_attempts"],
+            CanonicalStatPoint::from_optional_float(Some(0.8))
+        );
+        assert_eq!(
+            canonical.values["pre_ft_chips"],
+            CanonicalStatPoint::from_optional_float(Some(0.0))
+        );
+        assert_eq!(
+            canonical.values["early_ft_ko"],
+            CanonicalStatPoint::from_optional_float(Some(2.0))
+        );
+        assert_eq!(
+            canonical.values["early_ft_ko_per_tournament"],
+            CanonicalStatPoint::from_optional_float(Some(1.0))
+        );
+        assert_eq!(
+            canonical.values["avg_ko_attempts_per_ft"],
+            CanonicalStatPoint::from_optional_float(Some(6.0))
+        );
+        assert_eq!(
+            canonical.values["ft_ko_success_rate"],
+            CanonicalStatPoint::from_optional_float(Some(3.5 / 12.0))
+        );
+        assert_eq!(
+            canonical.values["ft_stack_conversion"],
+            CanonicalStatPoint::from_optional_float(Some(3.1500000000000004))
+        );
+        assert_eq!(
+            canonical.values["ft_stack_conversion_7_9"],
+            CanonicalStatPoint::from_optional_float(Some(1.5 / (5.0 / 18.0)))
+        );
+        assert_eq!(
+            canonical.values["ft_stack_conversion_5_6"],
+            CanonicalStatPoint::from_optional_float(Some(1.0 / (4.8 / 18.0)))
+        );
+        assert_eq!(
+            canonical.values["ft_stack_conversion_3_4"],
+            CanonicalStatPoint::from_optional_float(Some(2.5 / (2.4 / 18.0)))
+        );
+        assert_eq!(
+            canonical.values["ko_attempts_per_ft_7_9"],
+            CanonicalStatPoint::from_optional_float(Some(3.0))
+        );
+        assert_eq!(
+            canonical.values["ko_attempts_per_ft_5_6"],
+            CanonicalStatPoint::from_optional_float(Some(1.5))
+        );
+        assert_eq!(
+            canonical.values["ko_attempts_per_ft_3_4"],
+            CanonicalStatPoint::from_optional_float(Some(2.0))
+        );
+        assert_eq!(
+            canonical.values["ko_success_rate_7_9"],
+            CanonicalStatPoint::from_optional_float(Some(0.25))
+        );
+        assert_eq!(
+            canonical.values["ko_success_rate_5_6"],
+            CanonicalStatPoint::from_optional_float(Some(1.0 / 3.0))
+        );
+        assert_eq!(
+            canonical.values["ko_success_rate_3_4"],
+            CanonicalStatPoint::from_optional_float(Some(0.625))
+        );
+    }
 
     #[test]
     fn applies_formulae_and_zero_denominator_rules() {
@@ -1818,6 +2277,7 @@ mod tests {
                 TournamentFtHelperFact {
                     tournament_id: tournament_1,
                     reached_ft_exact: true,
+                    first_ft_table_size: Some(9),
                     ft_started_incomplete: Some(false),
                     deepest_ft_size_reached: Some(4),
                     hero_ft_entry_stack_chips: Some(1_800),
@@ -1826,6 +2286,7 @@ mod tests {
                 TournamentFtHelperFact {
                     tournament_id: tournament_2,
                     reached_ft_exact: false,
+                    first_ft_table_size: None,
                     ft_started_incomplete: None,
                     deepest_ft_size_reached: None,
                     hero_ft_entry_stack_chips: None,
@@ -1834,6 +2295,7 @@ mod tests {
                 TournamentFtHelperFact {
                     tournament_id: tournament_4,
                     reached_ft_exact: true,
+                    first_ft_table_size: Some(7),
                     ft_started_incomplete: Some(true),
                     deepest_ft_size_reached: Some(5),
                     hero_ft_entry_stack_chips: Some(2_700),
@@ -1896,11 +2358,11 @@ mod tests {
             CanonicalStatPoint::from_optional_float(Some(60.0))
         );
         assert_eq!(
-            canonical.values["winnings_from_ko_total"],
+            canonical.values["winnings_from_ko"],
             CanonicalStatPoint::from_optional_float(Some(60.0))
         );
         assert_eq!(
-            canonical.values["ko_contribution_percent"],
+            canonical.values["ko_contribution"],
             CanonicalStatPoint::from_optional_float(Some(50.0))
         );
         assert_eq!(
@@ -1935,6 +2397,7 @@ mod tests {
                 TournamentFtHelperFact {
                     tournament_id: tournament_1,
                     reached_ft_exact: true,
+                    first_ft_table_size: Some(8),
                     ft_started_incomplete: Some(false),
                     deepest_ft_size_reached: Some(3),
                     hero_ft_entry_stack_chips: Some(1_500),
@@ -1943,6 +2406,7 @@ mod tests {
                 TournamentFtHelperFact {
                     tournament_id: tournament_2,
                     reached_ft_exact: true,
+                    first_ft_table_size: Some(7),
                     ft_started_incomplete: Some(true),
                     deepest_ft_size_reached: Some(6),
                     hero_ft_entry_stack_chips: Some(1_200),
@@ -1951,6 +2415,7 @@ mod tests {
                 TournamentFtHelperFact {
                     tournament_id: tournament_3,
                     reached_ft_exact: false,
+                    first_ft_table_size: None,
                     ft_started_incomplete: None,
                     deepest_ft_size_reached: None,
                     hero_ft_entry_stack_chips: None,
@@ -1963,24 +2428,24 @@ mod tests {
                 TournamentStageEventFact {
                     tournament_id: tournament_1,
                     early_ft_bust_count: 1,
-                    ko_stage_2_3_event_count: 1,
-                    ko_stage_3_4_event_count: 1,
-                    ko_stage_4_5_event_count: 0,
-                    ko_stage_5_6_event_count: 1,
-                    ko_stage_6_9_event_count: 2,
-                    ko_stage_7_9_event_count: 1,
-                    pre_ft_ko_count: 1,
+                    ko_stage_2_3_share_total: 1.0,
+                    ko_stage_3_4_share_total: 1.0,
+                    ko_stage_4_5_share_total: 0.0,
+                    ko_stage_5_6_share_total: 1.0,
+                    ko_stage_6_9_share_total: 2.0,
+                    ko_stage_7_9_share_total: 1.0,
+                    transition_exact_ko_share_total: 1.0,
                 },
                 TournamentStageEventFact {
                     tournament_id: tournament_2,
                     early_ft_bust_count: 0,
-                    ko_stage_2_3_event_count: 0,
-                    ko_stage_3_4_event_count: 2,
-                    ko_stage_4_5_event_count: 1,
-                    ko_stage_5_6_event_count: 0,
-                    ko_stage_6_9_event_count: 1,
-                    ko_stage_7_9_event_count: 1,
-                    pre_ft_ko_count: 0,
+                    ko_stage_2_3_share_total: 0.0,
+                    ko_stage_3_4_share_total: 2.0,
+                    ko_stage_4_5_share_total: 1.0,
+                    ko_stage_5_6_share_total: 0.0,
+                    ko_stage_6_9_share_total: 1.0,
+                    ko_stage_7_9_share_total: 1.0,
+                    transition_exact_ko_share_total: 0.0,
                 },
             ],
             stage_attempt_facts: vec![],
@@ -1996,202 +2461,35 @@ mod tests {
         );
         assert_eq!(
             canonical.values["early_ft_bust_per_tournament"],
-            CanonicalStatPoint::from_optional_float(Some(0.5))
-        );
-        assert_eq!(
-            canonical.values["ko_stage_2_3_event_count"],
-            CanonicalStatPoint::from_integer(1)
-        );
-        assert_eq!(
-            canonical.values["ko_stage_3_4_event_count"],
-            CanonicalStatPoint::from_integer(3)
-        );
-        assert_eq!(
-            canonical.values["ko_stage_4_5_event_count"],
-            CanonicalStatPoint::from_integer(1)
-        );
-        assert_eq!(
-            canonical.values["ko_stage_5_6_event_count"],
-            CanonicalStatPoint::from_integer(1)
-        );
-        assert_eq!(
-            canonical.values["ko_stage_6_9_event_count"],
-            CanonicalStatPoint::from_integer(3)
-        );
-        assert_eq!(
-            canonical.values["ko_stage_7_9_event_count"],
-            CanonicalStatPoint::from_integer(2)
-        );
-        assert_eq!(
-            canonical.values["pre_ft_ko_count"],
-            CanonicalStatPoint::from_integer(1)
-        );
-    }
-
-    #[test]
-    fn canonical_snapshot_combines_phase_b_conversion_metrics() {
-        let tournament_1 = Uuid::from_u128(21);
-        let tournament_2 = Uuid::from_u128(22);
-        let tournament_3 = Uuid::from_u128(23);
-
-        let canonical = build_canonical_stat_snapshot(&CanonicalQueryInputs {
-            tournament_buyin_facts: vec![],
-            summary_facts: vec![],
-            hand_covered_tournaments: vec![tournament_1, tournament_2, tournament_3],
-            ft_helper_facts: vec![
-                TournamentFtHelperFact {
-                    tournament_id: tournament_1,
-                    reached_ft_exact: true,
-                    ft_started_incomplete: Some(false),
-                    deepest_ft_size_reached: Some(3),
-                    hero_ft_entry_stack_chips: Some(2_000),
-                    hero_ft_entry_stack_bb: Some(20.0),
-                },
-                TournamentFtHelperFact {
-                    tournament_id: tournament_2,
-                    reached_ft_exact: true,
-                    ft_started_incomplete: Some(false),
-                    deepest_ft_size_reached: Some(4),
-                    hero_ft_entry_stack_chips: Some(1_000),
-                    hero_ft_entry_stack_bb: Some(10.0),
-                },
-                TournamentFtHelperFact {
-                    tournament_id: tournament_3,
-                    reached_ft_exact: false,
-                    ft_started_incomplete: None,
-                    deepest_ft_size_reached: None,
-                    hero_ft_entry_stack_chips: None,
-                    hero_ft_entry_stack_bb: None,
-                },
-            ],
-            ko_event_facts: vec![],
-            deep_ft_entry_facts: vec![],
-            stage_event_facts: vec![
-                TournamentStageEventFact {
-                    tournament_id: tournament_1,
-                    early_ft_bust_count: 0,
-                    ko_stage_2_3_event_count: 0,
-                    ko_stage_3_4_event_count: 1,
-                    ko_stage_4_5_event_count: 0,
-                    ko_stage_5_6_event_count: 1,
-                    ko_stage_6_9_event_count: 2,
-                    ko_stage_7_9_event_count: 1,
-                    pre_ft_ko_count: 0,
-                },
-                TournamentStageEventFact {
-                    tournament_id: tournament_2,
-                    early_ft_bust_count: 0,
-                    ko_stage_2_3_event_count: 0,
-                    ko_stage_3_4_event_count: 2,
-                    ko_stage_4_5_event_count: 0,
-                    ko_stage_5_6_event_count: 0,
-                    ko_stage_6_9_event_count: 1,
-                    ko_stage_7_9_event_count: 1,
-                    pre_ft_ko_count: 0,
-                },
-            ],
-            stage_attempt_facts: vec![
-                TournamentStageAttemptFact {
-                    tournament_id: tournament_1,
-                    ko_stage_2_3_attempt_count: 0,
-                    ko_stage_3_4_attempt_count: 1,
-                    ko_stage_4_5_attempt_count: 0,
-                    ko_stage_5_6_attempt_count: 2,
-                    ko_stage_6_9_attempt_count: 4,
-                    ko_stage_7_9_attempt_count: 3,
-                },
-                TournamentStageAttemptFact {
-                    tournament_id: tournament_2,
-                    ko_stage_2_3_attempt_count: 0,
-                    ko_stage_3_4_attempt_count: 3,
-                    ko_stage_4_5_attempt_count: 0,
-                    ko_stage_5_6_attempt_count: 1,
-                    ko_stage_6_9_attempt_count: 2,
-                    ko_stage_7_9_attempt_count: 1,
-                },
-            ],
-            stage_entry_facts: vec![
-                TournamentStageEntryFact {
-                    tournament_id: tournament_1,
-                    reached_stage_2_3: false,
-                    reached_stage_3_4: true,
-                    reached_stage_4_5: true,
-                    reached_stage_5_6: true,
-                    reached_stage_7_9: true,
-                    hero_stage_5_6_stack_bb: Some(10.0),
-                    hero_stage_3_4_stack_bb: Some(5.0),
-                },
-                TournamentStageEntryFact {
-                    tournament_id: tournament_2,
-                    reached_stage_2_3: false,
-                    reached_stage_3_4: true,
-                    reached_stage_4_5: false,
-                    reached_stage_5_6: true,
-                    reached_stage_7_9: true,
-                    hero_stage_5_6_stack_bb: Some(8.0),
-                    hero_stage_3_4_stack_bb: Some(4.0),
-                },
-            ],
-            ko_money_event_facts: vec![],
-            mystery_envelope_facts: vec![],
-            pre_ft_chip_facts: vec![],
-        });
-
-        assert_eq!(
-            canonical.values["ft_stack_conversion"],
-            CanonicalStatPoint::from_optional_float(Some(0.1))
-        );
-        assert_eq!(
-            canonical.values["avg_ko_attempts_per_ft"],
-            CanonicalStatPoint::from_optional_float(Some(3.0))
-        );
-        assert_eq!(
-            canonical.values["ko_attempts_success_rate"],
-            CanonicalStatPoint::from_optional_float(Some(0.5))
-        );
-        assert_eq!(
-            canonical.values["ft_stack_conversion_7_9"],
-            CanonicalStatPoint::from_optional_float(Some(0.1))
-        );
-        assert_eq!(
-            canonical.values["ft_stack_conversion_7_9_attempts"],
-            CanonicalStatPoint::from_optional_float(Some(3.0))
-        );
-        assert_eq!(
-            canonical.values["ft_stack_conversion_5_6"],
-            CanonicalStatPoint::from_optional_float(Some(1.0 / 18.0))
-        );
-        assert_eq!(
-            canonical.values["ft_stack_conversion_5_6_attempts"],
-            CanonicalStatPoint::from_optional_float(Some(1.5))
-        );
-        assert_eq!(
-            canonical.values["ft_stack_conversion_3_4"],
-            CanonicalStatPoint::from_optional_float(Some(3.0 / 9.0))
-        );
-        assert_eq!(
-            canonical.values["ft_stack_conversion_3_4_attempts"],
-            CanonicalStatPoint::from_optional_float(Some(2.0))
-        );
-        assert_eq!(
-            canonical.values["ko_stage_2_3_attempts_per_tournament"],
             CanonicalStatPoint::from_optional_float(None)
         );
         assert_eq!(
-            canonical.values["ko_stage_3_4_attempts_per_tournament"],
+            canonical.values["ko_stage_2_3"],
+            CanonicalStatPoint::from_optional_float(Some(1.0))
+        );
+        assert_eq!(
+            canonical.values["ko_stage_3_4"],
+            CanonicalStatPoint::from_optional_float(Some(3.0))
+        );
+        assert_eq!(
+            canonical.values["ko_stage_4_5"],
+            CanonicalStatPoint::from_optional_float(Some(1.0))
+        );
+        assert_eq!(
+            canonical.values["ko_stage_5_6"],
+            CanonicalStatPoint::from_optional_float(Some(1.0))
+        );
+        assert_eq!(
+            canonical.values["ko_stage_6_9"],
+            CanonicalStatPoint::from_optional_float(Some(3.0))
+        );
+        assert_eq!(
+            canonical.values["ko_stage_7_9"],
             CanonicalStatPoint::from_optional_float(Some(2.0))
         );
         assert_eq!(
-            canonical.values["ko_stage_4_5_attempts_per_tournament"],
-            CanonicalStatPoint::from_optional_float(Some(0.0))
-        );
-        assert_eq!(
-            canonical.values["ko_stage_5_6_attempts_per_tournament"],
-            CanonicalStatPoint::from_optional_float(Some(1.5))
-        );
-        assert_eq!(
-            canonical.values["ko_stage_7_9_attempts_per_tournament"],
-            CanonicalStatPoint::from_optional_float(Some(2.0))
+            canonical.values["pre_ft_ko"],
+            CanonicalStatPoint::from_optional_float(Some(0.4))
         );
     }
 
@@ -2248,20 +2546,20 @@ mod tests {
             CanonicalStatPoint::from_optional_float(Some(0.0))
         );
         assert_eq!(
-            canonical.values["ko_contribution_adjusted_percent"],
+            canonical.values["ko_contribution_adj"],
             CanonicalStatPoint::from_optional_float(None)
         );
         assert_eq!(
-            canonical.values["ko_luck_money_delta"],
+            canonical.values["ko_luck"],
             CanonicalStatPoint::from_optional_float(None)
         );
         assert_eq!(
-            canonical.values["roi_adj_pct"],
+            canonical.values["roi_adj"],
             CanonicalStatPoint::from_optional_float(None)
         );
         assert_eq!(
-            canonical.values["pre_ft_chipev"],
-            CanonicalStatPoint::from_optional_float(None)
+            canonical.values["pre_ft_chips"],
+            CanonicalStatPoint::from_optional_float(Some(-1_000.0))
         );
         assert_eq!(
             canonical.values["big_ko_x1_5_count"],
@@ -2367,20 +2665,20 @@ mod tests {
             CanonicalStatPoint::from_optional_float(Some(40.0))
         );
         assert_eq!(
-            canonical.values["ko_contribution_adjusted_percent"],
-            CanonicalStatPoint::from_optional_float(Some(75.0))
+            canonical.values["ko_contribution_adj"],
+            CanonicalStatPoint::from_optional_float(Some(85.71428571428571))
         );
         assert_eq!(
-            canonical.values["ko_luck_money_delta"],
+            canonical.values["ko_luck"],
             CanonicalStatPoint::from_optional_float(Some(10.0))
         );
         assert_eq!(
-            canonical.values["roi_adj_pct"],
+            canonical.values["roi_adj"],
             CanonicalStatPoint::from_optional_float(Some(600.0))
         );
         assert_eq!(
-            canonical.values["pre_ft_chipev"],
-            CanonicalStatPoint::from_optional_float(Some(1_500.0))
+            canonical.values["pre_ft_chips"],
+            CanonicalStatPoint::from_optional_float(Some(-1_000.0))
         );
         assert_eq!(
             canonical.values["big_ko_x10_count"],
@@ -2388,7 +2686,148 @@ mod tests {
         );
         assert_eq!(
             canonical.values["big_ko_x2_count"],
-            CanonicalStatPoint::from_optional_float(Some(1.5))
+            CanonicalStatPoint::from_optional_float(Some(1.0))
+        );
+    }
+
+    #[test]
+    fn canonical_snapshot_uses_short_handed_ft_start_for_7_9_expected_denominator() {
+        let tournament_1 = Uuid::from_u128(51);
+        let tournament_2 = Uuid::from_u128(52);
+
+        let canonical = build_canonical_stat_snapshot(&CanonicalQueryInputs {
+            tournament_buyin_facts: vec![],
+            summary_facts: vec![],
+            hand_covered_tournaments: vec![tournament_1, tournament_2],
+            ft_helper_facts: vec![
+                TournamentFtHelperFact {
+                    tournament_id: tournament_1,
+                    reached_ft_exact: true,
+                    first_ft_table_size: Some(8),
+                    ft_started_incomplete: Some(true),
+                    deepest_ft_size_reached: Some(6),
+                    hero_ft_entry_stack_chips: Some(1_800),
+                    hero_ft_entry_stack_bb: Some(18.0),
+                },
+                TournamentFtHelperFact {
+                    tournament_id: tournament_2,
+                    reached_ft_exact: true,
+                    first_ft_table_size: Some(6),
+                    ft_started_incomplete: Some(true),
+                    deepest_ft_size_reached: Some(5),
+                    hero_ft_entry_stack_chips: Some(1_800),
+                    hero_ft_entry_stack_bb: Some(18.0),
+                },
+            ],
+            ko_event_facts: vec![],
+            deep_ft_entry_facts: vec![],
+            stage_event_facts: vec![
+                TournamentStageEventFact {
+                    tournament_id: tournament_1,
+                    early_ft_bust_count: 0,
+                    ko_stage_2_3_share_total: 0.0,
+                    ko_stage_3_4_share_total: 0.0,
+                    ko_stage_4_5_share_total: 0.0,
+                    ko_stage_5_6_share_total: 0.0,
+                    ko_stage_6_9_share_total: 1.0,
+                    ko_stage_7_9_share_total: 1.0,
+                    transition_exact_ko_share_total: 0.0,
+                },
+                TournamentStageEventFact {
+                    tournament_id: tournament_2,
+                    early_ft_bust_count: 0,
+                    ko_stage_2_3_share_total: 0.0,
+                    ko_stage_3_4_share_total: 0.0,
+                    ko_stage_4_5_share_total: 0.0,
+                    ko_stage_5_6_share_total: 0.0,
+                    ko_stage_6_9_share_total: 0.0,
+                    ko_stage_7_9_share_total: 0.0,
+                    transition_exact_ko_share_total: 0.0,
+                },
+            ],
+            stage_attempt_facts: vec![],
+            stage_entry_facts: vec![],
+            ko_money_event_facts: vec![],
+            mystery_envelope_facts: vec![],
+            pre_ft_chip_facts: vec![],
+        });
+
+        assert_eq!(
+            canonical.values["ft_stack_conversion_7_9"],
+            CanonicalStatPoint::from_optional_float(Some(5.0))
+        );
+    }
+
+    #[test]
+    fn canonical_snapshot_keeps_stage_success_rates_when_stage_entry_snapshots_are_missing() {
+        let tournament_1 = Uuid::from_u128(61);
+
+        let canonical = build_canonical_stat_snapshot(&CanonicalQueryInputs {
+            tournament_buyin_facts: vec![],
+            summary_facts: vec![],
+            hand_covered_tournaments: vec![tournament_1],
+            ft_helper_facts: vec![TournamentFtHelperFact {
+                tournament_id: tournament_1,
+                reached_ft_exact: true,
+                first_ft_table_size: Some(7),
+                ft_started_incomplete: Some(true),
+                deepest_ft_size_reached: Some(3),
+                hero_ft_entry_stack_chips: Some(1_500),
+                hero_ft_entry_stack_bb: Some(15.0),
+            }],
+            ko_event_facts: vec![TournamentKoEventFact {
+                tournament_id: tournament_1,
+                total_exact_ko_event_count: 2,
+                early_ft_exact_ko_event_count: 1,
+                total_exact_ko_share_total: 2.0,
+                exact_ft_ko_share_total: 2.0,
+                early_ft_exact_ko_share_total: 1.0,
+            }],
+            deep_ft_entry_facts: vec![],
+            stage_event_facts: vec![TournamentStageEventFact {
+                tournament_id: tournament_1,
+                early_ft_bust_count: 0,
+                ko_stage_2_3_share_total: 0.0,
+                ko_stage_3_4_share_total: 1.5,
+                ko_stage_4_5_share_total: 0.0,
+                ko_stage_5_6_share_total: 1.0,
+                ko_stage_6_9_share_total: 1.0,
+                ko_stage_7_9_share_total: 1.0,
+                transition_exact_ko_share_total: 0.0,
+            }],
+            stage_attempt_facts: vec![TournamentStageAttemptFact {
+                tournament_id: tournament_1,
+                exact_ft_attempt_count: 6,
+                transition_exact_attempt_count: 0,
+                transition_exact_opportunity_count: 0,
+                ko_stage_2_3_attempt_count: 0,
+                ko_stage_3_4_attempt_count: 3,
+                ko_stage_4_5_attempt_count: 0,
+                ko_stage_5_6_attempt_count: 2,
+                ko_stage_6_9_attempt_count: 1,
+                ko_stage_7_9_attempt_count: 1,
+            }],
+            stage_entry_facts: vec![],
+            ko_money_event_facts: vec![],
+            mystery_envelope_facts: vec![],
+            pre_ft_chip_facts: vec![],
+        });
+
+        assert_eq!(
+            canonical.values["ft_stack_conversion_5_6"],
+            CanonicalStatPoint::from_optional_float(None)
+        );
+        assert_eq!(
+            canonical.values["ft_stack_conversion_3_4"],
+            CanonicalStatPoint::from_optional_float(None)
+        );
+        assert_eq!(
+            canonical.values["ko_success_rate_5_6"],
+            CanonicalStatPoint::from_optional_float(Some(0.5))
+        );
+        assert_eq!(
+            canonical.values["ko_success_rate_3_4"],
+            CanonicalStatPoint::from_optional_float(Some(0.5))
         );
     }
 }

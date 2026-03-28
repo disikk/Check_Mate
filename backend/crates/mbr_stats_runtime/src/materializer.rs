@@ -94,7 +94,23 @@ fn load_hand_feature_facts(
     player_profile_id: Uuid,
 ) -> Result<Vec<HandFeatureFacts>> {
     let rows = client.query(
-        "SELECT
+        "WITH hand_attempt_counts AS (
+            SELECT
+                hand_id,
+                COUNT(*)::bigint AS ko_attempt_count
+             FROM derived.hand_ko_attempts
+             WHERE player_profile_id = $2
+             GROUP BY hand_id
+         ),
+         hand_opportunity_counts AS (
+            SELECT
+                hand_id,
+                COUNT(*)::bigint AS ko_opportunity_count
+             FROM derived.hand_ko_opportunities
+             WHERE player_profile_id = $2
+             GROUP BY hand_id
+         )
+         SELECT
             h.id,
             h.tournament_id,
             CASE
@@ -135,7 +151,9 @@ fn load_hand_feature_facts(
                     THEN 1
                     ELSE 0
                 END
-            ), 0)::bigint AS sidepot_ko_count
+            ), 0)::bigint AS sidepot_ko_count,
+            COALESCE(hand_attempt_counts.ko_attempt_count, 0)::bigint AS ko_attempt_count,
+            COALESCE(hand_opportunity_counts.ko_opportunity_count, 0)::bigint AS ko_opportunity_count
          FROM core.hands h
          LEFT JOIN derived.mbr_stage_resolution msr
            ON msr.hand_id = h.id
@@ -146,6 +164,10 @@ fn load_hand_feature_facts(
            ON hero_winner.hand_id = he.hand_id
           AND hero_winner.is_hero IS TRUE
           AND hero_winner.player_name = ANY(he.ko_winner_set)
+         LEFT JOIN hand_attempt_counts
+           ON hand_attempt_counts.hand_id = h.id
+         LEFT JOIN hand_opportunity_counts
+           ON hand_opportunity_counts.hand_id = h.id
          WHERE h.organization_id = $1
            AND h.player_profile_id = $2
          GROUP BY
@@ -154,7 +176,9 @@ fn load_hand_feature_facts(
             msr.played_ft_hand,
             msr.played_ft_hand_state,
             msr.ft_table_size,
-            msr.is_boundary_hand
+            msr.is_boundary_hand,
+            hand_attempt_counts.ko_attempt_count,
+            hand_opportunity_counts.ko_opportunity_count
          ORDER BY h.id",
         &[&organization_id, &player_profile_id],
     )?;
@@ -172,6 +196,8 @@ fn row_to_hand_feature_facts(row: Row) -> HandFeatureFacts {
         exact_ko_count: row.get::<_, i64>(5) as u32,
         split_ko_count: row.get::<_, i64>(6) as u32,
         sidepot_ko_count: row.get::<_, i64>(7) as u32,
+        ko_attempt_count: row.get::<_, i64>(8) as u32,
+        ko_opportunity_count: row.get::<_, i64>(9) as u32,
     }
 }
 
@@ -334,6 +360,11 @@ pub(crate) fn build_feature_rows(facts: &[HandFeatureFacts]) -> Vec<Materialized
                 "has_sidepot_ko_event".to_string(),
                 fact.sidepot_ko_count > 0,
             );
+            bool_values.insert("has_ko_attempt".to_string(), fact.ko_attempt_count > 0);
+            bool_values.insert(
+                "has_ko_opportunity".to_string(),
+                fact.ko_opportunity_count > 0,
+            );
 
             let mut num_values = BTreeMap::new();
             num_values.insert(
@@ -355,6 +386,14 @@ pub(crate) fn build_feature_rows(facts: &[HandFeatureFacts]) -> Vec<Materialized
             num_values.insert(
                 "hero_sidepot_ko_event_count".to_string(),
                 Some(fact.sidepot_ko_count as f64),
+            );
+            num_values.insert(
+                "hero_ko_attempt_count".to_string(),
+                Some(fact.ko_attempt_count as f64),
+            );
+            num_values.insert(
+                "hero_ko_opportunity_count".to_string(),
+                Some(fact.ko_opportunity_count as f64),
             );
 
             let mut enum_values = BTreeMap::new();
@@ -672,6 +711,8 @@ mod tests {
             exact_ko_count: 0,
             split_ko_count: 0,
             sidepot_ko_count: 0,
+            ko_attempt_count: 0,
+            ko_opportunity_count: 0,
         }]);
 
         assert_eq!(rows.len(), 1);
@@ -698,6 +739,8 @@ mod tests {
             exact_ko_count: 2,
             split_ko_count: 1,
             sidepot_ko_count: 1,
+            ko_attempt_count: 0,
+            ko_opportunity_count: 0,
         }]);
 
         assert!(rows[0].bool_values["played_ft_hand"]);
@@ -725,6 +768,8 @@ mod tests {
             exact_ko_count: 0,
             split_ko_count: 0,
             sidepot_ko_count: 0,
+            ko_attempt_count: 0,
+            ko_opportunity_count: 0,
         }]);
 
         assert!(rows[0].bool_values["is_ft_hand"]);
@@ -747,6 +792,8 @@ mod tests {
             exact_ko_count: 1,
             split_ko_count: 0,
             sidepot_ko_count: 0,
+            ko_attempt_count: 2,
+            ko_opportunity_count: 3,
         }]);
 
         let hand_bool_keys = feature_registry()
@@ -812,6 +859,27 @@ mod tests {
         let mut expected_enum_keys = hand_enum_keys;
         expected_enum_keys.sort_unstable();
         assert_eq!(actual_enum_keys, expected_enum_keys);
+    }
+
+    #[test]
+    fn emits_attempt_and_opportunity_hand_features_for_runtime_contract_v2() {
+        let rows = build_feature_rows(&[HandFeatureFacts {
+            hand_id: Uuid::nil(),
+            tournament_id: Uuid::nil(),
+            played_ft_hand: true,
+            ft_table_size: Some(7),
+            is_boundary_hand: true,
+            exact_ko_count: 1,
+            split_ko_count: 0,
+            sidepot_ko_count: 0,
+            ko_attempt_count: 2,
+            ko_opportunity_count: 3,
+        }]);
+
+        assert!(rows[0].bool_values["has_ko_attempt"]);
+        assert!(rows[0].bool_values["has_ko_opportunity"]);
+        assert_eq!(rows[0].num_values["hero_ko_attempt_count"], Some(2.0));
+        assert_eq!(rows[0].num_values["hero_ko_opportunity_count"], Some(3.0));
     }
 
     #[test]

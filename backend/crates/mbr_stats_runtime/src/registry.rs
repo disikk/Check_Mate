@@ -1,4 +1,4 @@
-pub const FEATURE_VERSION: &str = "mbr_runtime_v1";
+pub const FEATURE_VERSION: &str = "mbr_runtime_v2";
 
 /// GG MBR: финальный стол начинается, когда max_players == 9.
 /// Единая константа для FT detection — заменяет разбросанные по коду магические `9`.
@@ -45,7 +45,7 @@ pub struct FeatureSpec {
     pub grain: FeatureGrain,
 }
 
-const FEATURE_REGISTRY: [FeatureSpec; 27] = [
+const FEATURE_REGISTRY: [FeatureSpec; 31] = [
     FeatureSpec {
         key: "played_ft_hand",
         table_family: FeatureTableFamily::Bool,
@@ -102,6 +102,16 @@ const FEATURE_REGISTRY: [FeatureSpec; 27] = [
         grain: FeatureGrain::Hand,
     },
     FeatureSpec {
+        key: "has_ko_attempt",
+        table_family: FeatureTableFamily::Bool,
+        grain: FeatureGrain::Hand,
+    },
+    FeatureSpec {
+        key: "has_ko_opportunity",
+        table_family: FeatureTableFamily::Bool,
+        grain: FeatureGrain::Hand,
+    },
+    FeatureSpec {
         key: "ft_table_size",
         table_family: FeatureTableFamily::Num,
         grain: FeatureGrain::Hand,
@@ -123,6 +133,16 @@ const FEATURE_REGISTRY: [FeatureSpec; 27] = [
     },
     FeatureSpec {
         key: "hero_sidepot_ko_event_count",
+        table_family: FeatureTableFamily::Num,
+        grain: FeatureGrain::Hand,
+    },
+    FeatureSpec {
+        key: "hero_ko_attempt_count",
+        table_family: FeatureTableFamily::Num,
+        grain: FeatureGrain::Hand,
+    },
+    FeatureSpec {
+        key: "hero_ko_opportunity_count",
         table_family: FeatureTableFamily::Num,
         grain: FeatureGrain::Hand,
     },
@@ -211,8 +231,8 @@ mod tests {
     #[test]
     fn freezes_feature_version_and_registry_mapping() {
         let registry = feature_registry();
-        assert_eq!(FEATURE_VERSION, "mbr_runtime_v1");
-        assert_eq!(registry.len(), 27);
+        assert_eq!(FEATURE_VERSION, "mbr_runtime_v2");
+        assert_eq!(registry.len(), 31);
 
         let hand_bool_keys = registry
             .iter()
@@ -236,6 +256,8 @@ mod tests {
                 "has_exact_ko_event",
                 "has_split_ko_event",
                 "has_sidepot_ko_event",
+                "has_ko_attempt",
+                "has_ko_opportunity",
             ]
         );
 
@@ -255,6 +277,8 @@ mod tests {
                 "hero_exact_ko_event_count",
                 "hero_split_ko_event_count",
                 "hero_sidepot_ko_event_count",
+                "hero_ko_attempt_count",
+                "hero_ko_opportunity_count",
             ]
         );
 

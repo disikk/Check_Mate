@@ -26,6 +26,33 @@ const TS_TAIL_EXTRA: &str = include_str!(
 );
 const TS_TAIL_CONFLICT: &str =
     include_str!("../../../fixtures/mbr/ts/GG20260325 - Tournament #271770266 - Tail conflict.txt");
+const TS_WINNER_FRACTIONAL_TAIL: &str = r#"Tournament #206882713, Mystery Battle Royale $10, Hold'em No Limit
+Buy-in: $5+$0.8+$4.2
+18 Players
+Total Prize Pool: $165.6
+Tournament started 2025/05/15 11:13:36
+1st : Hero, $57.5
+You finished the tournament in 1st place.
+You received a total of $57.5.
+"#;
+const HH_LEGACY_HEADER_WITH_ANTE_IN_ACTIONS: &str = r#"Poker Hand #BR727555280: Tournament #206881479, Mystery Battle Royale $10 Hold'em No Limit - Level4(40/80) - 2025/05/15 11:05:11
+Table '52' 5-max Seat #1 is the button
+Seat 1: 9099365c (582 in chips)
+Seat 2: 738a57ba (1,686 in chips)
+Seat 3: 2a089a47 (770 in chips)
+Seat 4: 2d655e5e (1,751 in chips)
+Seat 5: Hero (836 in chips)
+2d655e5e: posts the ante 16
+738a57ba: posts the ante 16
+Hero: posts the ante 16
+9099365c: posts the ante 16
+2a089a47: posts the ante 16
+738a57ba: posts small blind 40
+2a089a47: posts big blind 80
+*** HOLE CARDS ***
+Dealt to Hero [Js Jh]
+Hero: folds
+"#;
 
 const HH_FIXTURE_FILES: &[&str] = &[
     "GG20260316-0307 - Mystery Battle Royale 25.txt",
@@ -117,6 +144,33 @@ fn surfaces_tournament_summary_tail_conflicts_as_validation_issues() {
             ParseIssueCode::TsTailTotalReceivedMismatch,
         ]
     );
+}
+
+#[test]
+fn parses_fractional_tournament_summary_tail_payout_with_sentence_period() {
+    let summary = parse_tournament_summary(TS_WINNER_FRACTIONAL_TAIL).unwrap();
+
+    assert_eq!(summary.finish_place, 1);
+    assert_eq!(summary.payout_cents, 5_750);
+    assert_eq!(summary.confirmed_finish_place, Some(1));
+    assert_eq!(summary.confirmed_payout_cents, Some(5_750));
+    assert!(summary.parse_issues.is_empty());
+}
+
+#[test]
+fn parses_legacy_hand_header_without_inline_ante_by_inferring_from_actions() {
+    let header = parse_hand_header(HH_LEGACY_HEADER_WITH_ANTE_IN_ACTIONS).unwrap();
+
+    assert_eq!(header.hand_id, "BR727555280");
+    assert_eq!(header.tournament_id, 206_881_479);
+    assert_eq!(header.level_name, "Level4");
+    assert_eq!(header.small_blind, 40);
+    assert_eq!(header.big_blind, 80);
+    assert_eq!(header.ante, 16);
+    assert_eq!(header.played_at, "2025/05/15 11:05:11");
+    assert_eq!(header.table_name, "52");
+    assert_eq!(header.max_players, 5);
+    assert_eq!(header.button_seat, 1);
 }
 
 #[test]

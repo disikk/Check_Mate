@@ -161,7 +161,7 @@ fn find_confirmation_finish_place<'a>(
 fn find_confirmation_payout<'a>(
     mut tail_lines: impl Iterator<Item = &'a str>,
 ) -> Result<Option<i64>, ParserError> {
-    let payout_regex = Regex::new(r"^You received a total of (?P<payout>\$[\d.,]+)\.?$")
+    let payout_regex = Regex::new(r"^You received a total of (?P<payout>\$[\d,]+(?:\.\d+)?)\.?$")
         .expect("payout confirmation regex must compile");
 
     tail_lines
