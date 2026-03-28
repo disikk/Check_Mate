@@ -118,7 +118,22 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 - `surfaces_unsatisfied_collect_mapping_as_invariant_error_without_guessing_winners`
 - `keeps_full_pack_invariants_green_for_all_committed_hands`
 
-### 3. Pot slicing
+### 3. Money-state safety
+
+Правило:
+- impossible debit/refund не имеет права мутировать money-state ни в parser annotation, ни в legality replay, ни в normalizer replay;
+- для impossible debit materialize-ится `action_amount_exceeds_stack`;
+- для impossible refund materialize-ятся `refund_exceeds_committed` и/или `refund_exceeds_betting_round_contrib`;
+- если refund surface конфликтует с allowed overage, сохраняются существующие `uncalled_return_actor_mismatch` / `uncalled_return_amount_mismatch`, но money-state всё равно не мутируется;
+- любая такая fail-safe ситуация переводит settlement в `Inconsistent` с code `replay_state_invalid` и убирает exact `selected_allocation`.
+
+Защищающие тесты:
+- `malformed_money_surface_enters_fail_safe_without_negative_outputs`
+- `money_state::tests::rejects_debit_above_stack_without_mutating_balance`
+- `money_state::tests::rejects_refund_above_committed_and_round_without_mutating_counters`
+- `money_state::tests::rejects_refund_above_round_contrib_without_optional_committed_guards`
+
+### 4. Pot slicing
 
 Правило:
 - банки строятся по лестнице distinct positive commitment levels;
@@ -132,7 +147,7 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 - `resolves_joint_ko_across_main_and_side_pots_with_different_winners`
 - `resolves_odd_chip_split_from_collect_totals_without_guessing_bonus_chip`
 
-### 4. Eligibility
+### 5. Eligibility
 
 Правило:
 - eligible player обязан быть contributor соответствующего pot slice;
@@ -145,14 +160,14 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 - `excludes_inactive_and_sitting_out_seats_from_position_facts`
 - `excludes_sitting_out_seats_from_active_order`
 
-### 5. Actor order и legality
+### 6. Actor order и legality
 
 Правило:
 - position engine работает только по active seats;
 - допустим active-count от 2 до 9;
 - в HU preflop первым действует `BTN`, postflop первым действует `BB`;
 - в multiway preflop opener считается по computed preflop order, postflop по computed postflop order;
-- illegal actor order, non-reopen после short all-in и premature street close surface-ятся как invariant issues, а не исправляются молча.
+- illegal actor order, non-reopen после short all-in, premature street close и fail-safe money guards surface-ятся как invariant issues, а не исправляются молча.
 
 Защищающие тесты:
 - `computes_position_facts_for_two_to_nine_active_seats`
@@ -163,11 +178,12 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 - `allows_reraise_after_full_raise_reopens_action`
 - `surfaces_premature_street_close_when_pending_actor_is_skipped`
 
-### 6. Forced all-in semantics
+### 7. Forced all-in semantics
 
 Правило:
 - canonical action surface хранит `is_all_in`, `all_in_reason`, `forced_all_in_preflop`;
 - exhausted ante/blind all-ins не зависят только от буквального текста `and is all-in`, а подтверждаются через стек/forced-post semantics;
+- parser all-in annotation использует тот же safe debit/refund layer и не имеет права выводить exhausted-stack из rejected mutation;
 - forced all-in является parser-level фактом, а не downstream догадкой.
 
 Защищающие тесты:
@@ -175,11 +191,13 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 - `handles_blind_exhausted_all_in_without_legality_errors`
 - `handles_ante_exhausted_all_in_without_legality_errors`
 
-### 7. Return-uncalled semantics
+### 8. Return-uncalled semantics
 
 Правило:
 - `ReturnUncalled` уменьшает `committed_total` и round contribution того же игрока;
 - возврат возвращает фишки в стек и materialize-ится как `HandReturn { reason = "uncalled" }`;
+- refund применяется только если одновременно проходят surface-guard по allowed overage и money-guard по committed/round contribution;
+- при fail-safe refund остаётся наблюдаемым action/return surface, но money-state не мутируется;
 - если contested terminal all-in node уже был зафиксирован до refund, последующий `ReturnUncalled` не отменяет этот snapshot;
 - uncalled return не должен создавать terminal all-in snapshot "задним числом".
 
@@ -187,7 +205,7 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 - `handles_uncalled_return_without_creating_fake_snapshot`
 - `accepts_uncalled_return_after_failed_call_chain_without_legality_errors`
 
-### 8. Terminal snapshot semantics
+### 9. Terminal snapshot semantics
 
 Правило:
 - `snapshot` materialize-ится только для terminal all-in node;
@@ -206,7 +224,7 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 - `handles_uncalled_return_without_creating_fake_snapshot`
 - `simple_bet_fold_does_not_create_snapshot`
 
-### 9. Winner resolution, uncertainty и inconsistency
+### 10. Winner resolution, uncertainty и inconsistency
 
 Правило:
 - exact winners materialize-ятся только если settlement можно доказать по текущему evidence surface;
@@ -220,7 +238,7 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 Семантика состояний:
 - `Exact`: settlement доказан текущим surface.
 - `Uncertain`: есть допустимые ambiguity branches, exact settlement не доказан.
-- `Inconsistent`: факты противоречат друг другу или нарушают арифметику.
+- `Inconsistent`: факты противоречат друг другу, нарушают арифметику или были принудительно переведены в fail-safe через `replay_state_invalid`.
 - `Estimated`: зарезервирован enum-level, но для текущего hand-level settlement contract не является рабочим happy-path состоянием.
 
 Защищающие тесты:
@@ -233,7 +251,7 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 - `treats_conflicting_odd_chip_collect_and_summary_evidence_as_inconsistent`
 - `leaves_odd_chip_aggregate_ambiguity_unresolved_when_multiple_exact_allocations_fit`
 
-### 10. KO semantics v2
+### 11. KO semantics v2
 
 `HandElimination` теперь является действующим canonical KO/elimination contract.
 

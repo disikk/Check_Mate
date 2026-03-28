@@ -1,5 +1,6 @@
 use crate::{
     ParserError,
+    money_state::{apply_debit, apply_refund},
     models::{
         ActionType, AllInReason, CanonicalParsedHand, HandActionEvent, HandHeader, HandRecord,
         ParseIssue, ParseIssueCode, ParsedHandSeat, Street, SummarySeatMarker, SummarySeatOutcome,
@@ -1113,10 +1114,9 @@ fn annotate_action_all_in_metadata(
             }
             ActionType::ReturnUncalled => {
                 let refund = action.amount.unwrap_or(0);
-                *stack_current.entry(player_name.clone()).or_default() += refund;
-                *betting_round_contrib
-                    .entry(player_name.clone())
-                    .or_default() -= refund;
+                let stack_current = stack_current.get_mut(player_name).unwrap();
+                let betting_round_contrib = betting_round_contrib.get_mut(player_name).unwrap();
+                let _ = apply_refund(stack_current, None, None, betting_round_contrib, refund);
                 continue;
             }
             ActionType::Fold
@@ -1127,11 +1127,9 @@ fn annotate_action_all_in_metadata(
         }
 
         if delta > 0 {
-            *stack_current.entry(player_name.clone()).or_default() -= delta;
-            if contributes_to_betting_round {
-                *betting_round_contrib
-                    .entry(player_name.clone())
-                    .or_default() += delta;
+            let stack_current = stack_current.get_mut(player_name).unwrap();
+            if apply_debit(stack_current, delta).is_ok() && contributes_to_betting_round {
+                *betting_round_contrib.get_mut(player_name).unwrap() += delta;
             }
         }
 

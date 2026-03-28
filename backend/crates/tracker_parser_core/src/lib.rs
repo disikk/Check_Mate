@@ -1,6 +1,7 @@
 pub mod betting_rules;
 mod error;
 mod file_kind;
+mod money_state;
 pub mod models;
 pub mod normalizer;
 pub mod parsers;

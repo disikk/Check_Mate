@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     ParserError,
+    money_state::{MoneyMutationFailure, apply_debit, apply_refund, validate_refund},
     models::{
         ActionType, CanonicalParsedHand, HandActionEvent, InvariantIssue, PlayerStatus, Street,
     },
@@ -156,7 +157,7 @@ impl LegalityEngine {
 
         let before_contrib = self.betting_round_contrib[player_name];
         let before_stack = self.stack_current[player_name];
-        self.validate_actor_surface(player_name, event, before_contrib);
+        let allow_return_mutation = self.validate_actor_surface(player_name, event, before_contrib);
 
         let aggression = if is_voluntary_action(event.action_type) {
             self.ensure_street_initialized();
@@ -166,7 +167,7 @@ impl LegalityEngine {
             AggressionKind::None
         };
 
-        self.apply_stack_and_status(player_name, event)?;
+        self.apply_stack_and_status(player_name, event, allow_return_mutation)?;
 
         if is_forced_betting_post(event.action_type)
             && matches!(self.current_street, Street::Preflop)
@@ -255,7 +256,7 @@ impl LegalityEngine {
         player_name: &str,
         event: &HandActionEvent,
         before_contrib: i64,
-    ) {
+    ) -> bool {
         match event.action_type {
             ActionType::PostSb => {
                 if let Some(expected_actor) = self.expected_small_blind_actor()
@@ -267,6 +268,7 @@ impl LegalityEngine {
                         actual_actor: player_name.to_string(),
                     });
                 }
+                true
             }
             ActionType::PostBb => {
                 if let Some(expected_actor) = self.expected_big_blind_actor()
@@ -278,6 +280,7 @@ impl LegalityEngine {
                         actual_actor: player_name.to_string(),
                     });
                 }
+                true
             }
             ActionType::ReturnUncalled => {
                 let highest_other_contrib = self
@@ -295,6 +298,7 @@ impl LegalityEngine {
                         seq: event.seq,
                         player_name: player_name.to_string(),
                     });
+                    false
                 } else if refund > overage {
                     self.push_issue(InvariantIssue::UncalledReturnAmountMismatch {
                         seq: event.seq,
@@ -302,6 +306,9 @@ impl LegalityEngine {
                         allowed_refund: overage,
                         actual_refund: refund,
                     });
+                    false
+                } else {
+                    true
                 }
             }
             ActionType::PostAnte
@@ -313,7 +320,7 @@ impl LegalityEngine {
             | ActionType::RaiseTo
             | ActionType::Collect
             | ActionType::Show
-            | ActionType::Muck => {}
+            | ActionType::Muck => true,
         }
     }
 
@@ -471,6 +478,7 @@ impl LegalityEngine {
         &mut self,
         player_name: &str,
         event: &HandActionEvent,
+        allow_return_mutation: bool,
     ) -> Result<(), ParserError> {
         let mut delta = 0_i64;
         let before_contrib = self.betting_round_contrib[player_name];
@@ -505,28 +513,55 @@ impl LegalityEngine {
             }
             ActionType::ReturnUncalled => {
                 let refund = event.amount.unwrap_or(0);
-                *self
-                    .stack_current
-                    .entry(player_name.to_string())
-                    .or_default() += refund;
-                *self
-                    .betting_round_contrib
-                    .entry(player_name.to_string())
-                    .or_default() -= refund;
+                let refund_failures =
+                    validate_refund(None, self.betting_round_contrib[player_name], refund);
+                for failure in refund_failures {
+                    self.push_issue(invariant_issue_from_money_failure(
+                        player_name,
+                        event,
+                        failure,
+                    ));
+                }
+
+                let has_refund_money_issue = self.issues.iter().any(|issue| {
+                    matches!(
+                        issue,
+                        InvariantIssue::RefundExceedsCommitted { seq, player_name: issue_player, .. }
+                            | InvariantIssue::RefundExceedsBettingRoundContrib { seq, player_name: issue_player, .. }
+                            if *seq == event.seq && issue_player == player_name
+                    )
+                });
+
+                if allow_return_mutation && !has_refund_money_issue {
+                    let stack_current = self.stack_current.get_mut(player_name).unwrap();
+                    let betting_round_contrib =
+                        self.betting_round_contrib.get_mut(player_name).unwrap();
+                    if let Err(failures) =
+                        apply_refund(stack_current, None, None, betting_round_contrib, refund)
+                    {
+                        for failure in failures {
+                            self.push_issue(invariant_issue_from_money_failure(
+                                player_name,
+                                event,
+                                failure,
+                            ));
+                        }
+                    }
+                }
             }
             ActionType::Collect | ActionType::Show | ActionType::Muck => {}
         }
 
         if delta > 0 {
-            *self
-                .stack_current
-                .entry(player_name.to_string())
-                .or_default() -= delta;
-            if contributes_to_betting_round {
-                *self
-                    .betting_round_contrib
-                    .entry(player_name.to_string())
-                    .or_default() += delta;
+            let stack_current = self.stack_current.get_mut(player_name).unwrap();
+            if let Err(failure) = apply_debit(stack_current, delta) {
+                self.push_issue(invariant_issue_from_money_failure(
+                    player_name,
+                    event,
+                    failure,
+                ));
+            } else if contributes_to_betting_round {
+                *self.betting_round_contrib.get_mut(player_name).unwrap() += delta;
             }
         }
 
@@ -702,6 +737,45 @@ fn is_betting_street(street: Street) -> bool {
         street,
         Street::Preflop | Street::Flop | Street::Turn | Street::River
     )
+}
+
+fn invariant_issue_from_money_failure(
+    player_name: &str,
+    event: &HandActionEvent,
+    failure: MoneyMutationFailure,
+) -> InvariantIssue {
+    match failure {
+        MoneyMutationFailure::ActionAmountExceedsStack {
+            available_stack,
+            attempted_amount,
+        } => InvariantIssue::ActionAmountExceedsStack {
+            street: event.street,
+            seq: event.seq,
+            player_name: player_name.to_string(),
+            available_stack,
+            attempted_amount,
+        },
+        MoneyMutationFailure::RefundExceedsCommitted {
+            committed_total,
+            attempted_refund,
+        } => InvariantIssue::RefundExceedsCommitted {
+            street: event.street,
+            seq: event.seq,
+            player_name: player_name.to_string(),
+            committed_total,
+            actual_refund: attempted_refund,
+        },
+        MoneyMutationFailure::RefundExceedsBettingRoundContrib {
+            betting_round_contrib,
+            attempted_refund,
+        } => InvariantIssue::RefundExceedsBettingRoundContrib {
+            street: event.street,
+            seq: event.seq,
+            player_name: player_name.to_string(),
+            betting_round_contrib,
+            actual_refund: attempted_refund,
+        },
+    }
 }
 
 fn is_forced_betting_post(action_type: ActionType) -> bool {

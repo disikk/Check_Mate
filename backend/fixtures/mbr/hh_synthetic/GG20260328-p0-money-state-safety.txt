@@ -1,0 +1,154 @@
+Poker Hand #P0MS001: Tournament #999301, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/28 11:00:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Hero (70 in chips)
+Seat 2: Villain (1,000 in chips)
+Hero: posts small blind 50
+Villain: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealt to Villain
+Hero: calls 100
+Villain: checks
+*** FLOP *** [2c 7d 9h]
+Villain: checks
+Hero: checks
+*** TURN *** [2c 7d 9h] [Qs]
+Villain: checks
+Hero: checks
+*** RIVER *** [2c 7d 9h Qs] [3c]
+Villain: checks
+Hero: checks
+*** SHOWDOWN ***
+Hero: shows [Ah Ad]
+Villain: shows [Kd Kh]
+Hero collected 200 from pot
+*** SUMMARY ***
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and won (200)
+Seat 2: Villain (big blind) showed [Kd Kh] and lost
+
+Poker Hand #P0MS002: Tournament #999302, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/28 11:05:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Hero (150 in chips)
+Seat 2: Villain (1,000 in chips)
+Hero: posts small blind 50
+Villain: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealt to Villain
+Hero: calls 50
+Villain: checks
+*** FLOP *** [2c 7d 9h]
+Hero: bets 80
+Villain: calls 80
+*** TURN *** [2c 7d 9h] [Qs]
+Villain: checks
+Hero: checks
+*** RIVER *** [2c 7d 9h Qs] [3c]
+Villain: checks
+Hero: checks
+*** SHOWDOWN ***
+Hero: shows [Ah Ad]
+Villain: shows [Kd Kh]
+Hero collected 360 from pot
+*** SUMMARY ***
+Total pot 360 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and won (360)
+Seat 2: Villain (big blind) showed [Kd Kh] and lost
+
+Poker Hand #P0MS003: Tournament #999303, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/28 11:10:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Hero (150 in chips)
+Seat 2: Villain (1,000 in chips)
+Hero: posts small blind 50
+Villain: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealt to Villain
+Hero: raises 200 to 300
+Villain: calls 200
+*** FLOP *** [2c 7d 9h]
+Villain: checks
+Hero: checks
+*** TURN *** [2c 7d 9h] [Qs]
+Villain: checks
+Hero: checks
+*** RIVER *** [2c 7d 9h Qs] [3c]
+Villain: checks
+Hero: checks
+*** SHOWDOWN ***
+Hero: shows [Ah Ad]
+Villain: shows [Kd Kh]
+Hero collected 600 from pot
+*** SUMMARY ***
+Total pot 600 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs 3c]
+Seat 1: Hero (button) showed [Ah Ad] and won (600)
+Seat 2: Villain (big blind) showed [Kd Kh] and lost
+
+Poker Hand #P0MS004: Tournament #999304, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/28 11:15:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Villain (1,000 in chips)
+Hero: posts small blind 50
+Villain: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealt to Villain
+Hero: calls 50
+Villain: checks
+*** FLOP *** [2c 7d 9h]
+Villain: bets 50
+Hero: raises 250 to 300
+Villain: folds
+Uncalled bet (280) returned to Hero
+Hero collected 270 from pot
+*** SUMMARY ***
+Total pot 270 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h]
+Seat 1: Hero (button) won (270)
+Seat 2: Villain (big blind) folded on the Flop
+
+Poker Hand #P0MS005: Tournament #999305, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/28 11:20:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Villain (1,000 in chips)
+Hero: posts small blind 50
+Villain: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealt to Villain
+Hero: folds
+Uncalled bet (200) returned to Villain
+Villain collected 50 from pot
+*** SUMMARY ***
+Total pot 50 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Hero (button) folded before Flop
+Seat 2: Villain (big blind) won (50)
+
+Poker Hand #P0MS006: Tournament #999306, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/28 11:25:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Hero (1,000 in chips)
+Seat 2: Villain (1,000 in chips)
+Hero: posts small blind 50
+Villain: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad]
+Dealt to Villain
+Hero: raises 300 to 400
+Villain: calls 300
+*** FLOP *** [2c 7d 9h]
+Villain: checks
+Hero: checks
+*** TURN *** [2c 7d 9h] [Qs]
+Hero: bets 50
+Villain: folds
+Uncalled bet (200) returned to Hero
+Hero collected 650 from pot
+*** SUMMARY ***
+Total pot 650 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Board [2c 7d 9h Qs]
+Seat 1: Hero (button) won (650)
+Seat 2: Villain (big blind) folded on the Turn

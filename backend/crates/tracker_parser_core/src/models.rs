@@ -525,6 +525,7 @@ pub enum SettlementIssue {
     MissingCollections,
     MultipleExactAllocations,
     CollectConflictNoExactSettlementMatchesCollectedAmounts,
+    ReplayStateInvalid,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -686,6 +687,27 @@ pub enum InvariantIssue {
         seq: usize,
         player_name: String,
         allowed_refund: i64,
+        actual_refund: i64,
+    },
+    ActionAmountExceedsStack {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        available_stack: i64,
+        attempted_amount: i64,
+    },
+    RefundExceedsCommitted {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        committed_total: i64,
+        actual_refund: i64,
+    },
+    RefundExceedsBettingRoundContrib {
+        street: Street,
+        seq: usize,
+        player_name: String,
+        betting_round_contrib: i64,
         actual_refund: i64,
     },
     IllegalCheck {

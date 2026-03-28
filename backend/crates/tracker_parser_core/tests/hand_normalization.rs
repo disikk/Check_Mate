@@ -1669,6 +1669,11 @@ fn invariant_issue_code(issue: &InvariantIssue) -> &'static str {
         InvariantIssue::IllegalBigBlindActor { .. } => "illegal_big_blind_actor",
         InvariantIssue::UncalledReturnActorMismatch { .. } => "uncalled_return_actor_mismatch",
         InvariantIssue::UncalledReturnAmountMismatch { .. } => "uncalled_return_amount_mismatch",
+        InvariantIssue::ActionAmountExceedsStack { .. } => "action_amount_exceeds_stack",
+        InvariantIssue::RefundExceedsCommitted { .. } => "refund_exceeds_committed",
+        InvariantIssue::RefundExceedsBettingRoundContrib { .. } => {
+            "refund_exceeds_betting_round_contrib"
+        }
         InvariantIssue::IllegalCheck { .. } => "illegal_check",
         InvariantIssue::IllegalCallAmount { .. } => "illegal_call_amount",
         InvariantIssue::UndercallInconsistency { .. } => "undercall_inconsistency",

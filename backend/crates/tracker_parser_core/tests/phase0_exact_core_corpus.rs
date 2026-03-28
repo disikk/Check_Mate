@@ -2290,6 +2290,51 @@ fn format_invariant_issue(issue: &InvariantIssue, parsed_hand: &CanonicalParsedH
             actual_refund,
             action_raw_line(parsed_hand, *seq)
         ),
+        InvariantIssue::ActionAmountExceedsStack {
+            street,
+            seq,
+            player_name,
+            available_stack,
+            attempted_amount,
+        } => format!(
+            "action_amount_exceeds_stack: street={} seq={} player={} available_stack={} attempted_amount={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            available_stack,
+            attempted_amount,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::RefundExceedsCommitted {
+            street,
+            seq,
+            player_name,
+            committed_total,
+            actual_refund,
+        } => format!(
+            "refund_exceeds_committed: street={} seq={} player={} committed_total={} actual_refund={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            committed_total,
+            actual_refund,
+            action_raw_line(parsed_hand, *seq)
+        ),
+        InvariantIssue::RefundExceedsBettingRoundContrib {
+            street,
+            seq,
+            player_name,
+            betting_round_contrib,
+            actual_refund,
+        } => format!(
+            "refund_exceeds_betting_round_contrib: street={} seq={} player={} betting_round_contrib={} actual_refund={} raw_line={}",
+            street_name(*street),
+            seq,
+            player_name,
+            betting_round_contrib,
+            actual_refund,
+            action_raw_line(parsed_hand, *seq)
+        ),
         InvariantIssue::IllegalCheck {
             street,
             seq,
@@ -2416,6 +2461,11 @@ fn invariant_issue_code(issue: &InvariantIssue) -> &'static str {
         InvariantIssue::IllegalBigBlindActor { .. } => "illegal_big_blind_actor",
         InvariantIssue::UncalledReturnActorMismatch { .. } => "uncalled_return_actor_mismatch",
         InvariantIssue::UncalledReturnAmountMismatch { .. } => "uncalled_return_amount_mismatch",
+        InvariantIssue::ActionAmountExceedsStack { .. } => "action_amount_exceeds_stack",
+        InvariantIssue::RefundExceedsCommitted { .. } => "refund_exceeds_committed",
+        InvariantIssue::RefundExceedsBettingRoundContrib { .. } => {
+            "refund_exceeds_betting_round_contrib"
+        }
         InvariantIssue::IllegalCheck { .. } => "illegal_check",
         InvariantIssue::IllegalCallAmount { .. } => "illegal_call_amount",
         InvariantIssue::UndercallInconsistency { .. } => "undercall_inconsistency",
@@ -2471,6 +2521,7 @@ fn format_settlement_issue(issue: &SettlementIssue) -> String {
         SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts => {
             "pot_settlement_collect_conflict".to_string()
         }
+        SettlementIssue::ReplayStateInvalid => "replay_state_invalid".to_string(),
     }
 }
 
@@ -2482,6 +2533,7 @@ fn settlement_issue_code(issue: &SettlementIssue) -> &'static str {
         SettlementIssue::CollectConflictNoExactSettlementMatchesCollectedAmounts => {
             "pot_settlement_collect_conflict"
         }
+        SettlementIssue::ReplayStateInvalid => "replay_state_invalid",
     }
 }
 

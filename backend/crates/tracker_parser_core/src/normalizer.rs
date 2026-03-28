@@ -3,10 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{
     ParserError,
     betting_rules::evaluate_action_legality,
+    money_state::{MoneyMutationFailure, apply_debit, apply_refund, validate_refund},
     models::{
         ActionType, CanonicalParsedHand, CertaintyState, HandElimination, HandEliminationKoShare,
-        HandInvariants, HandOutcomeActual, HandReturn, InvariantIssue, NormalizedHand,
-        ParsedHandSeat, PlayerNodeState, PlayerStatus, PotSlice, ResolutionNodeSnapshot, Street,
+        HandInvariants, HandOutcomeActual, HandReturn, HandSettlement, InvariantIssue,
+        NormalizedHand, ParsedHandSeat, PlayerNodeState, PlayerStatus, PotSlice,
+        ResolutionNodeSnapshot, SettlementIssue, Street,
     },
     pot_resolution::{observed_payouts, resolve_hand_pots},
 };
@@ -24,6 +26,8 @@ struct ReplayState {
     status: BTreeMap<String, PlayerStatus>,
     current_street: Street,
     snapshot: Option<ResolutionNodeSnapshot>,
+    issues: Vec<InvariantIssue>,
+    replay_state_invalid: bool,
 }
 
 struct SnapshotBuildContext<'a> {
@@ -39,7 +43,7 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         .hero_name
         .clone()
         .ok_or(ParserError::MissingLine("hero_name"))?;
-    let mut legality_errors = evaluate_action_legality(hand)?;
+    let legality_errors = evaluate_action_legality(hand)?;
 
     let ordered_seats = {
         let mut seats = hand.seats.clone();
@@ -73,7 +77,16 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         &replay.committed_total,
         &replay.status,
     )?;
-    let settlement = pot_resolution.settlement;
+    let mut invariant_issues = Vec::new();
+    push_unique_invariant_issues(&mut invariant_issues, legality_errors);
+    push_unique_invariant_issues(&mut invariant_issues, replay.issues.clone());
+
+    let replay_state_invalid =
+        replay.replay_state_invalid || invariant_issues.iter().any(issue_triggers_fail_safe);
+    let mut settlement = pot_resolution.settlement;
+    if replay_state_invalid {
+        settlement = invalidate_settlement(settlement);
+    }
     let observed_payout_totals = observed_payouts(hand).best_effort_totals();
 
     let stacks_after_actual = player_order
@@ -87,8 +100,6 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
 
     let total_committed = replay.committed_total.values().sum::<i64>();
     let total_collected = observed_payout_totals.values().sum::<i64>();
-    let mut invariant_issues = Vec::new();
-    invariant_issues.append(&mut legality_errors);
 
     let eliminations = ordered_seats
         .iter()
@@ -203,6 +214,8 @@ impl ReplayState {
             status,
             current_street: Street::Preflop,
             snapshot: None,
+            issues: Vec::new(),
+            replay_state_invalid: false,
         }
     }
 
@@ -252,43 +265,92 @@ impl ReplayState {
             }
             ActionType::ReturnUncalled => {
                 let refund = event.amount.unwrap_or(0);
-                *self.stack_current.entry(player_name.clone()).or_default() += refund;
-                *self.committed_total.entry(player_name.clone()).or_default() -= refund;
-                *self
-                    .committed_by_street
-                    .entry(player_name.clone())
-                    .or_insert_with(empty_committed_by_street)
-                    .entry(street_key(self.current_street).to_string())
-                    .or_default() -= refund;
-                *self
-                    .betting_round_contrib
-                    .entry(player_name.clone())
-                    .or_default() -= refund;
+                let refund_failures = validate_refund(
+                    Some(self.committed_total[player_name]),
+                    self.betting_round_contrib[player_name],
+                    refund,
+                );
+                if !refund_failures.is_empty() {
+                    self.replay_state_invalid = true;
+                    for failure in refund_failures {
+                        self.push_issue(invariant_issue_from_money_failure(
+                            player_name,
+                            event,
+                            failure,
+                        ));
+                    }
+                }
+
+                if !self.refund_surface_allows_mutation(player_name, refund) {
+                    self.replay_state_invalid = true;
+                } else if self
+                    .issues
+                    .iter()
+                    .all(|issue| !matches!(
+                        issue,
+                        InvariantIssue::RefundExceedsCommitted { seq, player_name: issue_player, .. }
+                            | InvariantIssue::RefundExceedsBettingRoundContrib { seq, player_name: issue_player, .. }
+                            if *seq == event.seq && issue_player == player_name
+                    ))
+                {
+                    let street_key = street_key(self.current_street).to_string();
+                    let stack_current = self.stack_current.get_mut(player_name).unwrap();
+                    let committed_total = self.committed_total.get_mut(player_name).unwrap();
+                    let committed_by_street = self
+                        .committed_by_street
+                        .get_mut(player_name)
+                        .and_then(|by_street| by_street.get_mut(&street_key))
+                        .unwrap();
+                    let betting_round_contrib =
+                        self.betting_round_contrib.get_mut(player_name).unwrap();
+
+                    if let Err(failures) = apply_refund(
+                        stack_current,
+                        Some(committed_total),
+                        Some(committed_by_street),
+                        betting_round_contrib,
+                        refund,
+                    ) {
+                        for failure in failures {
+                            self.push_issue(invariant_issue_from_money_failure(
+                                player_name,
+                                event,
+                                failure,
+                            ));
+                        }
+                    }
+                }
             }
             ActionType::Collect | ActionType::Show | ActionType::Muck => {}
         }
 
         if delta > 0 {
-            *self.stack_current.entry(player_name.clone()).or_default() -= delta;
-            *self.committed_total.entry(player_name.clone()).or_default() += delta;
-            *self
-                .committed_by_street
-                .entry(player_name.clone())
-                .or_insert_with(empty_committed_by_street)
-                .entry(street_key(self.current_street).to_string())
-                .or_default() += delta;
-            if contributes_to_betting_round {
+            let stack_current = self.stack_current.get_mut(player_name).unwrap();
+            if let Err(failure) = apply_debit(stack_current, delta) {
+                self.replay_state_invalid = true;
+                self.push_issue(invariant_issue_from_money_failure(
+                    player_name,
+                    event,
+                    failure,
+                ));
+            } else {
+                *self.committed_total.get_mut(player_name).unwrap() += delta;
                 *self
-                    .betting_round_contrib
-                    .entry(player_name.clone())
-                    .or_default() += delta;
+                    .committed_by_street
+                    .get_mut(player_name)
+                    .unwrap()
+                    .get_mut(street_key(self.current_street))
+                    .unwrap() += delta;
+                if contributes_to_betting_round {
+                    *self.betting_round_contrib.get_mut(player_name).unwrap() += delta;
+                }
             }
         }
 
         self.update_player_status(player_name, event);
         self.update_pending_live_actors(player_name, event);
 
-        if self.snapshot.is_none() && self.should_capture_snapshot() {
+        if !self.replay_state_invalid && self.snapshot.is_none() && self.should_capture_snapshot() {
             self.snapshot = Some(build_snapshot(
                 hand,
                 hero_name,
@@ -305,6 +367,20 @@ impl ReplayState {
         }
 
         Ok(())
+    }
+
+    fn refund_surface_allows_mutation(&self, player_name: &str, refund: i64) -> bool {
+        let before_contrib = self.betting_round_contrib[player_name];
+        let highest_other_contrib = self
+            .betting_round_contrib
+            .iter()
+            .filter(|(candidate, _)| candidate.as_str() != player_name)
+            .map(|(_, amount)| *amount)
+            .max()
+            .unwrap_or(0);
+        let overage = (before_contrib - highest_other_contrib).max(0);
+
+        overage > 0 && refund <= overage
     }
 
     fn advance_street_if_needed(&mut self, event_street: Street) {
@@ -413,6 +489,12 @@ impl ReplayState {
             contestants.len() >= 2 && all_in_count >= 1 && live_count == 1;
 
         all_contestants_all_in || betting_closed_with_single_live
+    }
+
+    fn push_issue(&mut self, issue: InvariantIssue) {
+        if !self.issues.contains(&issue) {
+            self.issues.push(issue);
+        }
     }
 }
 
@@ -552,6 +634,79 @@ fn fallback_ko_certainty_state(settlement_certainty_state: CertaintyState) -> Ce
         CertaintyState::Inconsistent => CertaintyState::Inconsistent,
         CertaintyState::Estimated => CertaintyState::Estimated,
         CertaintyState::Exact | CertaintyState::Uncertain => CertaintyState::Uncertain,
+    }
+}
+
+fn push_unique_invariant_issues(target: &mut Vec<InvariantIssue>, issues: Vec<InvariantIssue>) {
+    for issue in issues {
+        if !target.contains(&issue) {
+            target.push(issue);
+        }
+    }
+}
+
+fn issue_triggers_fail_safe(issue: &InvariantIssue) -> bool {
+    matches!(
+        issue,
+        InvariantIssue::UncalledReturnActorMismatch { .. }
+            | InvariantIssue::UncalledReturnAmountMismatch { .. }
+            | InvariantIssue::ActionAmountExceedsStack { .. }
+            | InvariantIssue::RefundExceedsCommitted { .. }
+            | InvariantIssue::RefundExceedsBettingRoundContrib { .. }
+    )
+}
+
+fn invalidate_settlement(mut settlement: HandSettlement) -> HandSettlement {
+    settlement.certainty_state = CertaintyState::Inconsistent;
+    if !settlement
+        .issues
+        .iter()
+        .any(|issue| matches!(issue, SettlementIssue::ReplayStateInvalid))
+    {
+        settlement.issues.push(SettlementIssue::ReplayStateInvalid);
+    }
+    for pot in &mut settlement.pots {
+        pot.selected_allocation = None;
+    }
+    settlement
+}
+
+fn invariant_issue_from_money_failure(
+    player_name: &str,
+    event: &crate::models::HandActionEvent,
+    failure: MoneyMutationFailure,
+) -> InvariantIssue {
+    match failure {
+        MoneyMutationFailure::ActionAmountExceedsStack {
+            available_stack,
+            attempted_amount,
+        } => InvariantIssue::ActionAmountExceedsStack {
+            street: event.street,
+            seq: event.seq,
+            player_name: player_name.to_string(),
+            available_stack,
+            attempted_amount,
+        },
+        MoneyMutationFailure::RefundExceedsCommitted {
+            committed_total,
+            attempted_refund,
+        } => InvariantIssue::RefundExceedsCommitted {
+            street: event.street,
+            seq: event.seq,
+            player_name: player_name.to_string(),
+            committed_total,
+            actual_refund: attempted_refund,
+        },
+        MoneyMutationFailure::RefundExceedsBettingRoundContrib {
+            betting_round_contrib,
+            attempted_refund,
+        } => InvariantIssue::RefundExceedsBettingRoundContrib {
+            street: event.street,
+            seq: event.seq,
+            player_name: player_name.to_string(),
+            betting_round_contrib,
+            actual_refund: attempted_refund,
+        },
     }
 }
 

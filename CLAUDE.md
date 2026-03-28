@@ -236,16 +236,24 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current unified settlement contract:
   - `NormalizedHand` no longer exports top-level `final_pots`, `pot_contributions`, `pot_eligibilities`, or `pot_winners`; the single canonical pot-resolution surface is `settlement`;
   - `settlement` carries hand-level `certainty_state`, typed `issues`, evidence facts (`collect_events_seen`, `summary_outcomes_seen`, `show_hands_seen`), and per-pot facts (`contributions`, `eligibilities`, `contenders`, `candidate_allocations`, `selected_allocation`, `issues`);
+  - `SettlementIssue::ReplayStateInvalid` is now the canonical reason-coded fail-safe downgrade for impossible money mutations; once present, settlement must stay `inconsistent` and exact `selected_allocation` rows must not materialize;
   - `invariants` now persist typed `issues` instead of string arrays, and downstream sparse feature layers must canonicalize enum codes explicitly instead of parsing human-readable messages.
 - Current phase0 exact-core proof pack:
   - `backend/fixtures/mbr/hh/GG20260325-phase0-exact-core-edge-matrix.txt` is the canonical 12-hand exact-core edge matrix for forced all-in, blinds/antes, dead blind, actor-order, uncalled-return, side-pot, odd-chip, and ambiguity regressions;
   - `tracker_parser_core/tests/phase0_exact_core_corpus.rs` now enforces manifest-style per-hand contracts over action stream facts (`seq`, `street`, `player_name`, `action_type`, `is_forced`, `is_all_in`, `all_in_reason`, `forced_all_in_preflop`) and normalization facts (`committed_total`, `returns`, projected pots/contributions/eligibilities, and typed invariant/settlement issue codes via manifest materializers);
   - new canonical rows `BRCM0404` and `BRCM0405` lock in `short BB forced all-in` and `dead blind + ante`; the 3-level side-pot ladder proof stays anchored on `BRSIDE1`;
   - odd-chip proof is now guarded at three levels: edge-matrix exactness for `BRCM0503`, summary-only exact settlement in `hand_normalization.rs`, and aggregate ambiguous odd-chip uncertainty without a guessed winner.
+  - `backend/fixtures/mbr/hh_synthetic/GG20260328-p0-money-state-safety.txt` is the dedicated malformed money-surface pack for overcall / overbet / overraise / bad refund fail-safe regressions, and `tests/state_safety_regressions.rs` is its canonical acceptance gate.
 - Current normalized-hand golden regression:
   - `tracker_parser_core/tests/normalized_hand_golden.rs` now snapshots the full serialized `NormalizedHand` output for the entire committed HH pack under `tracker_parser_core/tests/goldens/`;
   - goldens are stored per committed HH fixture file, not per hand;
   - ordinary test runs are read-only; refreshing goldens requires explicit `UPDATE_GOLDENS=1`.
+- Current money-state safety contract:
+  - shared helper `money_state` is the single guard layer for debit/refund replay mutations across parser all-in annotation, legality replay, and normalizer replay;
+  - impossible debit now surfaces `action_amount_exceeds_stack`;
+  - impossible refund now surfaces `refund_exceeds_committed` and/or `refund_exceeds_betting_round_contrib`;
+  - `uncalled_return_actor_mismatch` / `uncalled_return_amount_mismatch` still describe surface invalidity, but they no longer permit state mutation afterward;
+  - fail-safe hands may still expose observed payouts and return rows, but they must not claim exact settlement winners.
 - Current terminal all-in snapshot semantics:
   - `tracker_parser_core::normalizer` now captures `snapshot` by resolved table state, not by a narrow `Call | Check` event gate;
   - capture happens only after the current action leaves at least two contestants in `Live | AllIn`, with at least one `AllIn`, and no pending `Live` actors left on the street;
