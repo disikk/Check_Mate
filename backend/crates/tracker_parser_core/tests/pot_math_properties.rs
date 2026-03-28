@@ -53,7 +53,7 @@ fn canonical_smoke_hands_keep_non_negative_stacks() {
         assert!(
             normalized
                 .actual
-                .stacks_after_actual
+                .stacks_after_observed
                 .values()
                 .all(|stack| *stack >= 0)
         );

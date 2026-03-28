@@ -1962,7 +1962,7 @@ fn build_hand_state_resolution(
         settlement_state: certainty_state_code(normalized_hand.settlement.certainty_state)
             .to_string(),
         rake_amount: normalized_hand.actual.rake_amount,
-        final_stacks: normalized_hand.actual.stacks_after_actual.clone(),
+        final_stacks: normalized_hand.actual.stacks_after_observed.clone(),
         settlement: normalized_hand.settlement.clone(),
         invariant_issues: normalized_hand.invariants.issues.clone(),
     }

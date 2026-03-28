@@ -173,7 +173,17 @@ pub fn parse_canonical_hand(hand_text: &str) -> Result<CanonicalParsedHand, Pars
             continue;
         }
 
-        if parse_hidden_dealt_to_line(line) {
+        if let Some(player_name) = parse_hidden_dealt_to_line(line) {
+            // In the sanitized repo fixtures the hidden hero surface is still labeled as `Hero`.
+            if player_name == "Hero" {
+                hero_name = Some(player_name);
+                hero_hole_cards = None;
+            }
+            continue;
+        }
+
+        if line.starts_with("Dealt to ") {
+            parse_issues.push(raw_line_error(ParseIssueCode::MalformedDealtToLine, line));
             continue;
         }
 
@@ -303,6 +313,15 @@ fn raw_line_warning(code: ParseIssueCode, line: &str) -> ParseIssue {
     )
 }
 
+fn raw_line_error(code: ParseIssueCode, line: &str) -> ParseIssue {
+    ParseIssue::error(
+        code,
+        format!("{}: {line}", code.as_str()),
+        Some(line.to_string()),
+        None,
+    )
+}
+
 fn normalize_newlines(input: &str) -> String {
     input.replace("\r\n", "\n").replace('\r', "\n")
 }
@@ -368,13 +387,19 @@ fn parse_dealt_to_line(line: &str) -> Option<(String, Vec<String>)> {
     ))
 }
 
-fn parse_hidden_dealt_to_line(line: &str) -> bool {
+fn parse_hidden_dealt_to_line(line: &str) -> Option<String> {
+    if line.contains('[') || line.contains(']') {
+        return None;
+    }
+
     static REGEX: OnceLock<Regex> = OnceLock::new();
     let regex = REGEX.get_or_init(|| {
-        Regex::new(r"^Dealt to (?P<player_name>.+?)\s*$")
+        Regex::new(r"^Dealt to (?P<player_name>.+)$")
             .expect("hidden dealt-to regex must compile")
     });
-    regex.is_match(line)
+    regex
+        .captures(line)
+        .map(|captures| captures["player_name"].to_string())
 }
 
 fn parse_board_transition(line: &str) -> Option<(Street, Vec<String>)> {
@@ -949,7 +974,7 @@ fn parse_player_action_line(
             all_in_reason: None,
             forced_all_in_preflop: false,
             amount: Some(amount),
-            to_amount: Some(amount),
+            to_amount: None,
             cards: None,
             raw_line: line.to_string(),
         }));

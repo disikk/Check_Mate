@@ -450,7 +450,9 @@ fn record_issue(
 
 fn surface_kind_for_issue(code: ParseIssueCode) -> &'static str {
     match code {
-        ParseIssueCode::UnparsedLine | ParseIssueCode::ParserWarning => "hh_line",
+        ParseIssueCode::UnparsedLine
+        | ParseIssueCode::MalformedDealtToLine
+        | ParseIssueCode::ParserWarning => "hh_line",
         ParseIssueCode::UnparsedSummarySeatLine | ParseIssueCode::UnparsedSummarySeatTail => {
             "hh_summary_line"
         }

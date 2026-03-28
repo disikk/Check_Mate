@@ -10,16 +10,25 @@
           "VillainDead": 100,
           "VillainMuck": 100
         },
+        "exact_selected_payout_totals": {
+          "VillainDead": 200
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "VillainDead": 200
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 1000,
           "Sitout": 1000,
           "VillainDead": 1100,
           "VillainMuck": 900
         },
-        "winner_collections": {
-          "VillainDead": 200
+        "stacks_after_observed": {
+          "Hero": 1000,
+          "Sitout": 1000,
+          "VillainDead": 1100,
+          "VillainMuck": 900
         }
       },
       "eliminations": [],
@@ -161,6 +170,9 @@
           "VillainNoShow": 100,
           "VillainPartial": 100
         },
+        "exact_selected_payout_totals": {
+          "Hero": 300
+        },
         "final_board_cards": [
           "2c",
           "7d",
@@ -168,14 +180,19 @@
           "Qs",
           "3c"
         ],
+        "observed_winner_collections": {
+          "Hero": 300
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 1200,
           "VillainNoShow": 900,
           "VillainPartial": 900
         },
-        "winner_collections": {
-          "Hero": 300
+        "stacks_after_observed": {
+          "Hero": 1200,
+          "VillainNoShow": 900,
+          "VillainPartial": 900
         }
       },
       "eliminations": [],
@@ -342,6 +359,9 @@
           "Hero": 100,
           "ShortAnte": 100
         },
+        "exact_selected_payout_totals": {
+          "Hero": 200
+        },
         "final_board_cards": [
           "2c",
           "7d",
@@ -349,13 +369,17 @@
           "Qs",
           "3c"
         ],
+        "observed_winner_collections": {
+          "Hero": 200
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 1100,
           "ShortAnte": 0
         },
-        "winner_collections": {
-          "Hero": 200
+        "stacks_after_observed": {
+          "Hero": 1100,
+          "ShortAnte": 0
         }
       },
       "eliminations": [
@@ -587,6 +611,9 @@
           "Hero": 60,
           "ShortBb": 60
         },
+        "exact_selected_payout_totals": {
+          "Hero": 120
+        },
         "final_board_cards": [
           "2c",
           "7d",
@@ -594,13 +621,17 @@
           "Qs",
           "3c"
         ],
+        "observed_winner_collections": {
+          "Hero": 120
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 1060,
           "ShortBb": 0
         },
-        "winner_collections": {
-          "Hero": 120
+        "stacks_after_observed": {
+          "Hero": 1060,
+          "ShortBb": 0
         }
       },
       "eliminations": [
@@ -833,15 +864,23 @@
           "VillainDead": 120,
           "VillainMuck": 120
         },
+        "exact_selected_payout_totals": {
+          "VillainMuck": 260
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "VillainMuck": 260
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 980,
           "VillainDead": 880,
           "VillainMuck": 1140
         },
-        "winner_collections": {
-          "VillainMuck": 260
+        "stacks_after_observed": {
+          "Hero": 980,
+          "VillainDead": 880,
+          "VillainMuck": 1140
         }
       },
       "eliminations": [],
@@ -1034,15 +1073,15 @@
           "Qs",
           "3c"
         ],
+        "observed_winner_collections": {
+          "Hero": 400,
+          "Villain": 400
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_observed": {
           "Hero": 400,
           "ShortyA": 0,
           "ShortyB": 0,
-          "Villain": 400
-        },
-        "winner_collections": {
-          "Hero": 400,
           "Villain": 400
         }
       },
@@ -1398,6 +1437,10 @@
           "Hero": 200,
           "Villain": 200
         },
+        "exact_selected_payout_totals": {
+          "Hero": 201,
+          "Villain": 200
+        },
         "final_board_cards": [
           "2c",
           "3d",
@@ -1405,13 +1448,18 @@
           "5s",
           "6c"
         ],
+        "observed_winner_collections": {
+          "Hero": 201,
+          "Villain": 200
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "DeadMoney": 0,
           "Hero": 201,
           "Villain": 200
         },
-        "winner_collections": {
+        "stacks_after_observed": {
+          "DeadMoney": 0,
           "Hero": 201,
           "Villain": 200
         }
@@ -1802,6 +1850,10 @@
           "Medium": 1000,
           "Shorty": 500
         },
+        "exact_selected_payout_totals": {
+          "Hero": 1000,
+          "Shorty": 1500
+        },
         "final_board_cards": [
           "2c",
           "7d",
@@ -1809,14 +1861,19 @@
           "Qs",
           "3c"
         ],
+        "observed_winner_collections": {
+          "Hero": 1000,
+          "Shorty": 1500
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 1500,
           "Medium": 0,
           "Shorty": 1500
         },
-        "winner_collections": {
-          "Hero": 1000,
+        "stacks_after_observed": {
+          "Hero": 1500,
+          "Medium": 0,
           "Shorty": 1500
         }
       },
@@ -2184,6 +2241,9 @@
           "Hero": 100,
           "Villain": 100
         },
+        "exact_selected_payout_totals": {
+          "Hero": 200
+        },
         "final_board_cards": [
           "2c",
           "7d",
@@ -2191,13 +2251,17 @@
           "Js",
           "3c"
         ],
+        "observed_winner_collections": {
+          "Hero": 200
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 1100,
           "Villain": 900
         },
-        "winner_collections": {
-          "Hero": 200
+        "stacks_after_observed": {
+          "Hero": 1100,
+          "Villain": 900
         }
       },
       "eliminations": [],
@@ -2352,18 +2416,25 @@
           "Hero": 100,
           "Villain": 100
         },
+        "exact_selected_payout_totals": {
+          "Hero": 200
+        },
         "final_board_cards": [
           "2c",
           "7d",
           "9h"
         ],
+        "observed_winner_collections": {
+          "Hero": 200
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 1100,
           "Villain": 900
         },
-        "winner_collections": {
-          "Hero": 200
+        "stacks_after_observed": {
+          "Hero": 1100,
+          "Villain": 900
         }
       },
       "eliminations": [],
@@ -2494,6 +2565,9 @@
           "Shorty": 400,
           "VillainA": 300
         },
+        "exact_selected_payout_totals": {
+          "Hero": 1100
+        },
         "final_board_cards": [
           "2c",
           "7d",
@@ -2501,14 +2575,19 @@
           "Qs",
           "3c"
         ],
+        "observed_winner_collections": {
+          "Hero": 1100
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 1700,
           "Shorty": 0,
           "VillainA": 700
         },
-        "winner_collections": {
-          "Hero": 1100
+        "stacks_after_observed": {
+          "Hero": 1700,
+          "Shorty": 0,
+          "VillainA": 700
         }
       },
       "eliminations": [
@@ -2865,6 +2944,9 @@
           "Medium": 1000,
           "Shorty": 500
         },
+        "exact_selected_payout_totals": {
+          "BigStack": 2600
+        },
         "final_board_cards": [
           "2h",
           "7d",
@@ -2872,15 +2954,21 @@
           "3s",
           "4d"
         ],
+        "observed_winner_collections": {
+          "BigStack": 2600
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "BigStack": 3100,
           "Hero": 900,
           "Medium": 0,
           "Shorty": 0
         },
-        "winner_collections": {
-          "BigStack": 2600
+        "stacks_after_observed": {
+          "BigStack": 3100,
+          "Hero": 900,
+          "Medium": 0,
+          "Shorty": 0
         }
       },
       "eliminations": [

@@ -80,6 +80,11 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 - `eliminations`
 - `invariants`
 
+`actual` теперь разделяет два money-layer:
+- observed layer: `observed_winner_collections`, `stacks_after_observed`;
+- exact layer: `exact_selected_payout_totals`, `stacks_after_exact`;
+- legacy misleading names `winner_collections` / `stacks_after_actual` больше не входят в контракт.
+
 `settlement` является новым canonical surface для pot-resolution:
 - `certainty_state`
 - `issues`
@@ -95,7 +100,8 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 ### 1. Chip conservation
 
 Правило:
-- сумма стартовых стеков должна совпадать с суммой финальных стеков `stacks_after_actual`;
+- сумма стартовых стеков должна совпадать с суммой accounting final stacks;
+- accounting final stacks берутся из `stacks_after_observed`, а если observed payout layer пуст и settlement exact-доказан, допускается fallback на `stacks_after_exact`;
 - при нарушении `chip_conservation_ok = false`;
 - причина materialize-ится в `invariants.issues` с code `chip_conservation_mismatch`.
 
@@ -107,8 +113,9 @@ Parser-layer issues не поднимаются в `NormalizedHand`; normalizer 
 ### 2. Pot conservation
 
 Правило:
-- `sum(committed_total_by_player) == sum(winner_collections) + rake_amount`;
-- `winner_collections` materialize-ятся из best-effort observed payouts: сначала `collect`, а если их нет — из summary `won/collected` amounts;
+- `sum(committed_total_by_player) == sum(accounting_payout_totals) + rake_amount`;
+- `observed_winner_collections` materialize-ятся из best-effort observed payouts: сначала `collect`, а если их нет — из summary `won/collected` amounts;
+- `exact_selected_payout_totals` materialize-ятся только когда settlement exact и у каждого pot есть `selected_allocation`;
 - mismatch не маскируется и уходит в `invariants.issues` с code `pot_conservation_mismatch`;
 - отдельный mismatch `summary_total_pot` против `collected + rake` уходит в `invariants.issues` с code `summary_total_pot_mismatch`.
 

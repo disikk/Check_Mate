@@ -88,23 +88,44 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         settlement = invalidate_settlement(settlement);
     }
     let observed_payout_totals = observed_payouts(hand).best_effort_totals();
+    let exact_selected_payout_totals = settlement.exact_selected_payout_totals();
+    let stacks_after_observed = build_final_stacks(
+        &player_order,
+        &replay.starting_stack,
+        &replay.committed_total,
+        &observed_payout_totals,
+    );
+    let stacks_after_exact = exact_selected_payout_totals.as_ref().map(|payout_totals| {
+        build_final_stacks(
+            &player_order,
+            &replay.starting_stack,
+            &replay.committed_total,
+            payout_totals,
+        )
+    });
 
-    let stacks_after_actual = player_order
-        .iter()
-        .map(|player| {
-            let final_stack = replay.starting_stack[player] - replay.committed_total[player]
-                + observed_payout_totals.get(player).copied().unwrap_or(0);
-            (player.clone(), final_stack)
-        })
-        .collect::<BTreeMap<_, _>>();
+    let accounting_payout_totals = if observed_payout_totals.is_empty() {
+        exact_selected_payout_totals
+            .clone()
+            .unwrap_or_else(BTreeMap::new)
+    } else {
+        observed_payout_totals.clone()
+    };
+    let accounting_stacks = if observed_payout_totals.is_empty() {
+        stacks_after_exact
+            .clone()
+            .unwrap_or_else(|| stacks_after_observed.clone())
+    } else {
+        stacks_after_observed.clone()
+    };
 
     let total_committed = replay.committed_total.values().sum::<i64>();
-    let total_collected = observed_payout_totals.values().sum::<i64>();
+    let total_collected = accounting_payout_totals.values().sum::<i64>();
 
     let eliminations = ordered_seats
         .iter()
         .filter_map(|seat| {
-            let final_stack = stacks_after_actual
+            let final_stack = accounting_stacks
                 .get(&seat.player_name)
                 .copied()
                 .unwrap_or(0);
@@ -114,7 +135,7 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         .collect::<Vec<_>>();
 
     let starting_sum = replay.starting_stack.values().sum::<i64>();
-    let final_sum = stacks_after_actual.values().sum::<i64>();
+    let final_sum = accounting_stacks.values().sum::<i64>();
     let chip_conservation_ok = starting_sum == final_sum;
     if !chip_conservation_ok {
         invariant_issues.push(InvariantIssue::ChipConservationMismatch {
@@ -148,8 +169,10 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
         returns,
         actual: HandOutcomeActual {
             committed_total_by_player: replay.committed_total,
-            stacks_after_actual,
-            winner_collections: observed_payout_totals,
+            stacks_after_observed,
+            observed_winner_collections: observed_payout_totals,
+            exact_selected_payout_totals,
+            stacks_after_exact,
             final_board_cards,
             rake_amount,
         },
@@ -160,6 +183,22 @@ pub fn normalize_hand(hand: &CanonicalParsedHand) -> Result<NormalizedHand, Pars
             issues: invariant_issues,
         },
     })
+}
+
+fn build_final_stacks(
+    player_order: &[String],
+    starting_stack: &BTreeMap<String, i64>,
+    committed_total: &BTreeMap<String, i64>,
+    payout_totals: &BTreeMap<String, i64>,
+) -> BTreeMap<String, i64> {
+    player_order
+        .iter()
+        .map(|player| {
+            let final_stack = starting_stack[player] - committed_total[player]
+                + payout_totals.get(player).copied().unwrap_or(0);
+            (player.clone(), final_stack)
+        })
+        .collect()
 }
 
 impl ReplayState {

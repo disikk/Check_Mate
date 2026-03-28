@@ -15,14 +15,20 @@
           "b3d4c459": 24,
           "cc0f54d3": 24
         },
+        "exact_selected_payout_totals": {
+          "ae7eda73": 1356
+        },
         "final_board_cards": [
           "9s",
           "6d",
           "5d",
           "7c"
         ],
+        "observed_winner_collections": {
+          "ae7eda73": 1356
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1380,
           "4efe6eca": 1648,
           "6b07acd9": 2357,
@@ -33,8 +39,16 @@
           "b3d4c459": 3348,
           "cc0f54d3": 1560
         },
-        "winner_collections": {
-          "ae7eda73": 1356
+        "stacks_after_observed": {
+          "3cc5252d": 1380,
+          "4efe6eca": 1648,
+          "6b07acd9": 2357,
+          "9b70214f": 1453,
+          "Hero": 1642,
+          "a39e011e": 1606,
+          "ae7eda73": 3006,
+          "b3d4c459": 3348,
+          "cc0f54d3": 1560
         }
       },
       "eliminations": [],
@@ -392,6 +406,9 @@
           "b3d4c459": 30,
           "cc0f54d3": 30
         },
+        "exact_selected_payout_totals": {
+          "9b70214f": 3266
+        },
         "final_board_cards": [
           "7d",
           "Qh",
@@ -399,8 +416,11 @@
           "4c",
           "Th"
         ],
+        "observed_winner_collections": {
+          "9b70214f": 3266
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1350,
           "4efe6eca": 1468,
           "6b07acd9": 2327,
@@ -411,8 +431,16 @@
           "b3d4c459": 3318,
           "cc0f54d3": 1530
         },
-        "winner_collections": {
-          "9b70214f": 3266
+        "stacks_after_observed": {
+          "3cc5252d": 1350,
+          "4efe6eca": 1468,
+          "6b07acd9": 2327,
+          "9b70214f": 3266,
+          "Hero": 1612,
+          "a39e011e": 1576,
+          "ae7eda73": 1553,
+          "b3d4c459": 3318,
+          "cc0f54d3": 1530
         }
       },
       "eliminations": [],
@@ -1021,6 +1049,10 @@
           "b3d4c459": 30,
           "cc0f54d3": 1530
         },
+        "exact_selected_payout_totals": {
+          "4efe6eca": 4584,
+          "cc0f54d3": 124
+        },
         "final_board_cards": [
           "Td",
           "3d",
@@ -1028,8 +1060,12 @@
           "7c",
           "Qc"
         ],
+        "observed_winner_collections": {
+          "4efe6eca": 4584,
+          "cc0f54d3": 124
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1320,
           "4efe6eca": 4584,
           "6b07acd9": 797,
@@ -1040,8 +1076,15 @@
           "b3d4c459": 3288,
           "cc0f54d3": 124
         },
-        "winner_collections": {
+        "stacks_after_observed": {
+          "3cc5252d": 1320,
           "4efe6eca": 4584,
+          "6b07acd9": 797,
+          "9b70214f": 3236,
+          "Hero": 1582,
+          "a39e011e": 1546,
+          "ae7eda73": 1523,
+          "b3d4c459": 3288,
           "cc0f54d3": 124
         }
       },
@@ -1673,6 +1716,10 @@
           "b3d4c459": 180,
           "cc0f54d3": 124
         },
+        "exact_selected_payout_totals": {
+          "4efe6eca": 46,
+          "ae7eda73": 5068
+        },
         "final_board_cards": [
           "2h",
           "6h",
@@ -1680,8 +1727,12 @@
           "As",
           "Ks"
         ],
+        "observed_winner_collections": {
+          "4efe6eca": 46,
+          "ae7eda73": 5068
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1290,
           "4efe6eca": 3084,
           "6b07acd9": 692,
@@ -1692,9 +1743,16 @@
           "b3d4c459": 3108,
           "cc0f54d3": 0
         },
-        "winner_collections": {
-          "4efe6eca": 46,
-          "ae7eda73": 5068
+        "stacks_after_observed": {
+          "3cc5252d": 1290,
+          "4efe6eca": 3084,
+          "6b07acd9": 692,
+          "9b70214f": 3206,
+          "Hero": 1552,
+          "a39e011e": 0,
+          "ae7eda73": 5068,
+          "b3d4c459": 3108,
+          "cc0f54d3": 0
         }
       },
       "eliminations": [
@@ -2706,6 +2764,9 @@
           "ae7eda73": 40,
           "b3d4c459": 140
         },
+        "exact_selected_payout_totals": {
+          "6b07acd9": 1884
+        },
         "final_board_cards": [
           "Ac",
           "As",
@@ -2713,8 +2774,11 @@
           "Js",
           "5s"
         ],
+        "observed_winner_collections": {
+          "6b07acd9": 1884
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1050,
           "4efe6eca": 3044,
           "6b07acd9": 1884,
@@ -2723,8 +2787,14 @@
           "ae7eda73": 5028,
           "b3d4c459": 2968
         },
-        "winner_collections": {
-          "6b07acd9": 1884
+        "stacks_after_observed": {
+          "3cc5252d": 1050,
+          "4efe6eca": 3044,
+          "6b07acd9": 1884,
+          "9b70214f": 2514,
+          "Hero": 1512,
+          "ae7eda73": 5028,
+          "b3d4c459": 2968
         }
       },
       "eliminations": [],
@@ -3326,14 +3396,20 @@
           "ae7eda73": 740,
           "b3d4c459": 740
         },
+        "exact_selected_payout_totals": {
+          "b3d4c459": 2180
+        },
         "final_board_cards": [
           "As",
           "Kd",
           "Ad",
           "Qd"
         ],
+        "observed_winner_collections": {
+          "b3d4c459": 2180
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 910,
           "4efe6eca": 3004,
           "6b07acd9": 1844,
@@ -3342,8 +3418,14 @@
           "ae7eda73": 4288,
           "b3d4c459": 4408
         },
-        "winner_collections": {
-          "b3d4c459": 2180
+        "stacks_after_observed": {
+          "3cc5252d": 910,
+          "4efe6eca": 3004,
+          "6b07acd9": 1844,
+          "9b70214f": 2274,
+          "Hero": 1272,
+          "ae7eda73": 4288,
+          "b3d4c459": 4408
         }
       },
       "eliminations": [],
@@ -3741,6 +3823,9 @@
           "ae7eda73": 1844,
           "b3d4c459": 60
         },
+        "exact_selected_payout_totals": {
+          "ae7eda73": 4438
+        },
         "final_board_cards": [
           "4s",
           "3h",
@@ -3748,8 +3833,11 @@
           "4c",
           "Th"
         ],
+        "observed_winner_collections": {
+          "ae7eda73": 4438
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 850,
           "4efe6eca": 2944,
           "6b07acd9": 0,
@@ -3758,8 +3846,14 @@
           "ae7eda73": 6882,
           "b3d4c459": 4348
         },
-        "winner_collections": {
-          "ae7eda73": 4438
+        "stacks_after_observed": {
+          "3cc5252d": 850,
+          "4efe6eca": 2944,
+          "6b07acd9": 0,
+          "9b70214f": 2064,
+          "Hero": 912,
+          "ae7eda73": 6882,
+          "b3d4c459": 4348
         }
       },
       "eliminations": [
@@ -4402,9 +4496,15 @@
           "ae7eda73": 660,
           "b3d4c459": 660
         },
+        "exact_selected_payout_totals": {
+          "ae7eda73": 1710
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "ae7eda73": 1710
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 790,
           "4efe6eca": 2884,
           "9b70214f": 2004,
@@ -4412,8 +4512,13 @@
           "ae7eda73": 7932,
           "b3d4c459": 3688
         },
-        "winner_collections": {
-          "ae7eda73": 1710
+        "stacks_after_observed": {
+          "3cc5252d": 790,
+          "4efe6eca": 2884,
+          "9b70214f": 2004,
+          "Hero": 702,
+          "ae7eda73": 7932,
+          "b3d4c459": 3688
         }
       },
       "eliminations": [],
@@ -4717,6 +4822,9 @@
           "ae7eda73": 702,
           "b3d4c459": 60
         },
+        "exact_selected_payout_totals": {
+          "ae7eda73": 1944
+        },
         "final_board_cards": [
           "Ks",
           "2d",
@@ -4724,8 +4832,11 @@
           "6s",
           "9c"
         ],
+        "observed_winner_collections": {
+          "ae7eda73": 1944
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 730,
           "4efe6eca": 2524,
           "9b70214f": 1944,
@@ -4733,8 +4844,13 @@
           "ae7eda73": 9174,
           "b3d4c459": 3628
         },
-        "winner_collections": {
-          "ae7eda73": 1944
+        "stacks_after_observed": {
+          "3cc5252d": 730,
+          "4efe6eca": 2524,
+          "9b70214f": 1944,
+          "Hero": 0,
+          "ae7eda73": 9174,
+          "b3d4c459": 3628
         }
       },
       "eliminations": [
@@ -5264,17 +5380,27 @@
           "e26b5983": 24,
           "ef91e164": 24
         },
+        "exact_selected_payout_totals": {
+          "ef91e164": 70
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "ef91e164": 70
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "9761da2e": 986,
           "Hero": 996,
           "ae0bff91": 996,
           "e26b5983": 976,
           "ef91e164": 1046
         },
-        "winner_collections": {
-          "ef91e164": 70
+        "stacks_after_observed": {
+          "9761da2e": 986,
+          "Hero": 996,
+          "ae0bff91": 996,
+          "e26b5983": 976,
+          "ef91e164": 1046
         }
       },
       "eliminations": [],
@@ -5560,21 +5686,31 @@
           "Hero": 14,
           "ef91e164": 194
         },
+        "exact_selected_payout_totals": {
+          "ef91e164": 450
+        },
         "final_board_cards": [
           "Jd",
           "7d",
           "8c"
         ],
+        "observed_winner_collections": {
+          "ef91e164": 450
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "88f37512": 982,
           "9761da2e": 934,
           "9b70214f": 782,
           "Hero": 982,
           "ef91e164": 1302
         },
-        "winner_collections": {
-          "ef91e164": 450
+        "stacks_after_observed": {
+          "88f37512": 982,
+          "9761da2e": 934,
+          "9b70214f": 782,
+          "Hero": 982,
+          "ef91e164": 1302
         }
       },
       "eliminations": [],
@@ -5924,22 +6060,32 @@
           "ae7eda73": 4,
           "e26b5983": 14
         },
+        "exact_selected_payout_totals": {
+          "4efe6eca": 346
+        },
         "final_board_cards": [
           "Js",
           "Ac",
           "3h",
           "3c"
         ],
+        "observed_winner_collections": {
+          "4efe6eca": 346
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "1c0f85ad": 816,
           "4efe6eca": 1190,
           "Hero": 938,
           "ae7eda73": 974,
           "e26b5983": 1004
         },
-        "winner_collections": {
-          "4efe6eca": 346
+        "stacks_after_observed": {
+          "1c0f85ad": 816,
+          "4efe6eca": 1190,
+          "Hero": 938,
+          "ae7eda73": 974,
+          "e26b5983": 1004
         }
       },
       "eliminations": [],
@@ -6289,17 +6435,27 @@
           "a39e011e": 4,
           "cc0f54d3": 24
         },
+        "exact_selected_payout_totals": {
+          "Hero": 60
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "Hero": 60
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 926,
           "9761da2e": 1058,
           "Hero": 974,
           "a39e011e": 870,
           "cc0f54d3": 1266
         },
-        "winner_collections": {
-          "Hero": 60
+        "stacks_after_observed": {
+          "3cc5252d": 926,
+          "9761da2e": 1058,
+          "Hero": 974,
+          "a39e011e": 870,
+          "cc0f54d3": 1266
         }
       },
       "eliminations": [],
@@ -6527,21 +6683,31 @@
           "cc0f54d3": 44,
           "d431b788": 4
         },
+        "exact_selected_payout_totals": {
+          "6b07acd9": 140
+        },
         "final_board_cards": [
           "8s",
           "9c",
           "8d"
         ],
+        "observed_winner_collections": {
+          "6b07acd9": 140
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "6b07acd9": 1270,
           "Hero": 970,
           "b3d4c459": 595,
           "cc0f54d3": 1222,
           "d431b788": 1060
         },
-        "winner_collections": {
-          "6b07acd9": 140
+        "stacks_after_observed": {
+          "6b07acd9": 1270,
+          "Hero": 970,
+          "b3d4c459": 595,
+          "cc0f54d3": 1222,
+          "d431b788": 1060
         }
       },
       "eliminations": [],
@@ -6775,6 +6941,9 @@
           "ef91e164": 168,
           "fb793936": 8
         },
+        "exact_selected_payout_totals": {
+          "88f37512": 360
+        },
         "final_board_cards": [
           "Ts",
           "6h",
@@ -6782,16 +6951,23 @@
           "5h",
           "7c"
         ],
+        "observed_winner_collections": {
+          "88f37512": 360
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "88f37512": 1106,
           "Hero": 962,
           "d431b788": 1052,
           "ef91e164": 1108,
           "fb793936": 1002
         },
-        "winner_collections": {
-          "88f37512": 360
+        "stacks_after_observed": {
+          "88f37512": 1106,
+          "Hero": 962,
+          "d431b788": 1052,
+          "ef91e164": 1108,
+          "fb793936": 1002
         }
       },
       "eliminations": [],
@@ -7049,21 +7225,31 @@
           "ae0bff91": 8,
           "fb793936": 88
         },
+        "exact_selected_payout_totals": {
+          "4efe6eca": 280
+        },
         "final_board_cards": [
           "Ah",
           "4h",
           "2s"
         ],
+        "observed_winner_collections": {
+          "4efe6eca": 280
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "4efe6eca": 1338,
           "Hero": 954,
           "a39e011e": 750,
           "ae0bff91": 910,
           "fb793936": 914
         },
-        "winner_collections": {
-          "4efe6eca": 280
+        "stacks_after_observed": {
+          "4efe6eca": 1338,
+          "Hero": 954,
+          "a39e011e": 750,
+          "ae0bff91": 910,
+          "fb793936": 914
         }
       },
       "eliminations": [],
@@ -7297,22 +7483,32 @@
           "Hero": 88,
           "d431b788": 8
         },
+        "exact_selected_payout_totals": {
+          "9761da2e": 200
+        },
         "final_board_cards": [
           "2d",
           "7h",
           "9d",
           "6d"
         ],
+        "observed_winner_collections": {
+          "9761da2e": 200
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "1c0f85ad": 22,
           "9761da2e": 1126,
           "9b70214f": 1636,
           "Hero": 866,
           "d431b788": 1036
         },
-        "winner_collections": {
-          "9761da2e": 200
+        "stacks_after_observed": {
+          "1c0f85ad": 22,
+          "9761da2e": 1126,
+          "9b70214f": 1636,
+          "Hero": 866,
+          "d431b788": 1036
         }
       },
       "eliminations": [],
@@ -7540,17 +7736,27 @@
           "cc0f54d3": 48,
           "d431b788": 8
         },
+        "exact_selected_payout_totals": {
+          "cc0f54d3": 140
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "cc0f54d3": 140
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "9761da2e": 1078,
           "Hero": 858,
           "b6f2dca2": 767,
           "cc0f54d3": 1390,
           "d431b788": 944
         },
-        "winner_collections": {
-          "cc0f54d3": 140
+        "stacks_after_observed": {
+          "9761da2e": 1078,
+          "Hero": 858,
+          "b6f2dca2": 767,
+          "cc0f54d3": 1390,
+          "d431b788": 944
         }
       },
       "eliminations": [],
@@ -7836,17 +8042,27 @@
           "cc0f54d3": 48,
           "ef91e164": 28
         },
+        "exact_selected_payout_totals": {
+          "9761da2e": 180
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "9761da2e": 180
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "9761da2e": 1210,
           "Hero": 810,
           "b3d4c459": 733,
           "cc0f54d3": 1342,
           "ef91e164": 1072
         },
-        "winner_collections": {
-          "9761da2e": 180
+        "stacks_after_observed": {
+          "9761da2e": 1210,
+          "Hero": 810,
+          "b3d4c459": 733,
+          "cc0f54d3": 1342,
+          "ef91e164": 1072
         }
       },
       "eliminations": [],
@@ -8144,17 +8360,27 @@
           "d431b788": 72,
           "ef91e164": 72
         },
+        "exact_selected_payout_totals": {
+          "ef91e164": 210
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "ef91e164": 210
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "9b70214f": 1142,
           "Hero": 798,
           "b3d4c459": 713,
           "d431b788": 864,
           "ef91e164": 1202
         },
-        "winner_collections": {
-          "ef91e164": 210
+        "stacks_after_observed": {
+          "9b70214f": 1142,
+          "Hero": 798,
+          "b3d4c459": 713,
+          "d431b788": 864,
+          "ef91e164": 1202
         }
       },
       "eliminations": [],
@@ -8440,17 +8666,27 @@
           "cc0f54d3": 42,
           "d431b788": 42
         },
+        "exact_selected_payout_totals": {
+          "cc0f54d3": 120
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "cc0f54d3": 120
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "4efe6eca": 1220,
           "Hero": 786,
           "ae0bff91": 832,
           "cc0f54d3": 1408,
           "d431b788": 822
         },
-        "winner_collections": {
-          "cc0f54d3": 120
+        "stacks_after_observed": {
+          "4efe6eca": 1220,
+          "Hero": 786,
+          "ae0bff91": 832,
+          "cc0f54d3": 1408,
+          "d431b788": 822
         }
       },
       "eliminations": [],
@@ -8678,17 +8914,27 @@
           "b6f2dca2": 72,
           "fb793936": 12
         },
+        "exact_selected_payout_totals": {
+          "b6f2dca2": 210
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "b6f2dca2": 210
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "4efe6eca": 1208,
           "Hero": 744,
           "ae0bff91": 760,
           "b6f2dca2": 1005,
           "fb793936": 1884
         },
-        "winner_collections": {
-          "b6f2dca2": 210
+        "stacks_after_observed": {
+          "4efe6eca": 1208,
+          "Hero": 744,
+          "ae0bff91": 760,
+          "b6f2dca2": 1005,
+          "fb793936": 1884
         }
       },
       "eliminations": [],
@@ -8974,6 +9220,9 @@
           "d431b788": 674,
           "fb793936": 42
         },
+        "exact_selected_payout_totals": {
+          "ae7eda73": 1474
+        },
         "final_board_cards": [
           "Js",
           "2s",
@@ -8981,16 +9230,23 @@
           "3s",
           "8d"
         ],
+        "observed_winner_collections": {
+          "ae7eda73": 1474
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 672,
           "a39e011e": 554,
           "ae7eda73": 1474,
           "d431b788": 136,
           "fb793936": 1842
         },
-        "winner_collections": {
-          "ae7eda73": 1474
+        "stacks_after_observed": {
+          "Hero": 672,
+          "a39e011e": 554,
+          "ae7eda73": 1474,
+          "d431b788": 136,
+          "fb793936": 1842
         }
       },
       "eliminations": [],
@@ -9522,22 +9778,32 @@
           "b3d4c459": 379,
           "cc0f54d3": 42
         },
+        "exact_selected_payout_totals": {
+          "b3d4c459": 824
+        },
         "final_board_cards": [
           "7c",
           "5h",
           "5c",
           "3h"
         ],
+        "observed_winner_collections": {
+          "b3d4c459": 824
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1752,
           "6b07acd9": 1979,
           "Hero": 660,
           "b3d4c459": 1542,
           "cc0f54d3": 1528
         },
-        "winner_collections": {
-          "b3d4c459": 824
+        "stacks_after_observed": {
+          "3cc5252d": 1752,
+          "6b07acd9": 1979,
+          "Hero": 660,
+          "b3d4c459": 1542,
+          "cc0f54d3": 1528
         }
       },
       "eliminations": [],
@@ -9823,6 +10089,9 @@
           "a39e011e": 416,
           "ef91e164": 12
         },
+        "exact_selected_payout_totals": {
+          "a39e011e": 958
+        },
         "final_board_cards": [
           "As",
           "2s",
@@ -9830,16 +10099,23 @@
           "7s",
           "8d"
         ],
+        "observed_winner_collections": {
+          "a39e011e": 958
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "9761da2e": 0,
           "9b70214f": 1700,
           "Hero": 588,
           "a39e011e": 1746,
           "ef91e164": 632
         },
-        "winner_collections": {
-          "a39e011e": 958
+        "stacks_after_observed": {
+          "9761da2e": 0,
+          "9b70214f": 1700,
+          "Hero": 588,
+          "a39e011e": 1746,
+          "ef91e164": 632
         }
       },
       "eliminations": [
@@ -10413,17 +10689,27 @@
           "ef91e164": 42,
           "fb793936": 12
         },
+        "exact_selected_payout_totals": {
+          "ef91e164": 120
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "ef91e164": 120
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "9b70214f": 1676,
           "Hero": 546,
           "cc0f54d3": 1492,
           "ef91e164": 668,
           "fb793936": 1758
         },
-        "winner_collections": {
-          "ef91e164": 120
+        "stacks_after_observed": {
+          "9b70214f": 1676,
+          "Hero": 546,
+          "cc0f54d3": 1492,
+          "ef91e164": 668,
+          "fb793936": 1758
         }
       },
       "eliminations": [],
@@ -10651,17 +10937,27 @@
           "d431b788": 56,
           "ef91e164": 16
         },
+        "exact_selected_payout_totals": {
+          "b6f2dca2": 280
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "b6f2dca2": 280
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "Hero": 530,
           "ae7eda73": 1242,
           "b6f2dca2": 1347,
           "d431b788": 282,
           "ef91e164": 620
         },
-        "winner_collections": {
-          "b6f2dca2": 280
+        "stacks_after_observed": {
+          "Hero": 530,
+          "ae7eda73": 1242,
+          "b6f2dca2": 1347,
+          "d431b788": 282,
+          "ef91e164": 620
         }
       },
       "eliminations": [],
@@ -10947,17 +11243,27 @@
           "cc0f54d3": 16,
           "fb793936": 16
         },
+        "exact_selected_payout_totals": {
+          "Hero": 280
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "Hero": 280
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "9b70214f": 1468,
           "Hero": 714,
           "b3d4c459": 1438,
           "cc0f54d3": 1308,
           "fb793936": 1870
         },
-        "winner_collections": {
-          "Hero": 280
+        "stacks_after_observed": {
+          "9b70214f": 1468,
+          "Hero": 714,
+          "b3d4c459": 1438,
+          "cc0f54d3": 1308,
+          "fb793936": 1870
         }
       },
       "eliminations": [],
@@ -11243,6 +11549,9 @@
           "d431b788": 266,
           "ef91e164": 266
         },
+        "exact_selected_payout_totals": {
+          "d431b788": 620
+        },
         "final_board_cards": [
           "Jc",
           "4d",
@@ -11250,16 +11559,23 @@
           "8d",
           "7d"
         ],
+        "observed_winner_collections": {
+          "d431b788": 620
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1704,
           "Hero": 698,
           "ae0bff91": 508,
           "d431b788": 620,
           "ef91e164": 266
         },
-        "winner_collections": {
-          "d431b788": 620
+        "stacks_after_observed": {
+          "3cc5252d": 1704,
+          "Hero": 698,
+          "ae0bff91": 508,
+          "d431b788": 620,
+          "ef91e164": 266
         }
       },
       "eliminations": [],
@@ -11717,6 +12033,9 @@
           "b6f2dca2": 698,
           "fb793936": 16
         },
+        "exact_selected_payout_totals": {
+          "Hero": 1444
+        },
         "final_board_cards": [
           "9s",
           "Jd",
@@ -11724,16 +12043,23 @@
           "2h",
           "9c"
         ],
+        "observed_winner_collections": {
+          "Hero": 1444
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "9b70214f": 1436,
           "Hero": 1444,
           "b3d4c459": 1310,
           "b6f2dca2": 633,
           "fb793936": 1758
         },
-        "winner_collections": {
-          "Hero": 1444
+        "stacks_after_observed": {
+          "9b70214f": 1436,
+          "Hero": 1444,
+          "b3d4c459": 1310,
+          "b6f2dca2": 633,
+          "fb793936": 1758
         }
       },
       "eliminations": [],
@@ -12112,6 +12438,9 @@
           "b6f2dca2": 56,
           "ef91e164": 266
         },
+        "exact_selected_payout_totals": {
+          "ef91e164": 620
+        },
         "final_board_cards": [
           "Jh",
           "Ah",
@@ -12119,15 +12448,22 @@
           "Kc",
           "2h"
         ],
+        "observed_winner_collections": {
+          "ef91e164": 620
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1622,
           "4efe6eca": 1758,
           "Hero": 1428,
           "b6f2dca2": 577,
           "ef91e164": 620
         },
-        "winner_collections": {
+        "stacks_after_observed": {
+          "3cc5252d": 1622,
+          "4efe6eca": 1758,
+          "Hero": 1428,
+          "b6f2dca2": 577,
           "ef91e164": 620
         }
       },
@@ -12582,6 +12918,9 @@
           "d431b788": 16,
           "fb793936": 1726
         },
+        "exact_selected_payout_totals": {
+          "6b07acd9": 3500
+        },
         "final_board_cards": [
           "3h",
           "Tc",
@@ -12589,16 +12928,23 @@
           "7d",
           "Ks"
         ],
+        "observed_winner_collections": {
+          "6b07acd9": 3500
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "6b07acd9": 3953,
           "Hero": 1412,
           "ae7eda73": 1058,
           "d431b788": 604,
           "fb793936": 0
         },
-        "winner_collections": {
-          "6b07acd9": 3500
+        "stacks_after_observed": {
+          "6b07acd9": 3953,
+          "Hero": 1412,
+          "ae7eda73": 1058,
+          "d431b788": 604,
+          "fb793936": 0
         }
       },
       "eliminations": [
@@ -13020,17 +13366,27 @@
           "ae7eda73": 70,
           "ef91e164": 20
         },
+        "exact_selected_payout_totals": {
+          "3cc5252d": 350
+        },
         "final_board_cards": [],
+        "observed_winner_collections": {
+          "3cc5252d": 350
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1852,
           "9b70214f": 1104,
           "Hero": 1292,
           "ae7eda73": 972,
           "ef91e164": 600
         },
-        "winner_collections": {
-          "3cc5252d": 350
+        "stacks_after_observed": {
+          "3cc5252d": 1852,
+          "9b70214f": 1104,
+          "Hero": 1292,
+          "ae7eda73": 972,
+          "ef91e164": 600
         }
       },
       "eliminations": [],
@@ -13316,6 +13672,9 @@
           "cc0f54d3": 20,
           "ef91e164": 530
         },
+        "exact_selected_payout_totals": {
+          "b3d4c459": 1120
+        },
         "final_board_cards": [
           "Th",
           "9c",
@@ -13323,16 +13682,23 @@
           "6h",
           "Kd"
         ],
+        "observed_winner_collections": {
+          "b3d4c459": 1120
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "9b70214f": 1014,
           "Hero": 1272,
           "b3d4c459": 2532,
           "cc0f54d3": 1544,
           "ef91e164": 0
         },
-        "winner_collections": {
-          "b3d4c459": 1120
+        "stacks_after_observed": {
+          "9b70214f": 1014,
+          "Hero": 1272,
+          "b3d4c459": 2532,
+          "cc0f54d3": 1544,
+          "ef91e164": 0
         }
       },
       "eliminations": [
@@ -13739,6 +14105,9 @@
           "a39e011e": 120,
           "d431b788": 20
         },
+        "exact_selected_payout_totals": {
+          "9b70214f": 300
+        },
         "final_board_cards": [
           "Qs",
           "Ad",
@@ -13746,16 +14115,23 @@
           "Qh",
           "9d"
         ],
+        "observed_winner_collections": {
+          "9b70214f": 300
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1812,
           "9b70214f": 1174,
           "Hero": 1252,
           "a39e011e": 1760,
           "d431b788": 408
         },
-        "winner_collections": {
-          "9b70214f": 300
+        "stacks_after_observed": {
+          "3cc5252d": 1812,
+          "9b70214f": 1174,
+          "Hero": 1252,
+          "a39e011e": 1760,
+          "d431b788": 408
         }
       },
       "eliminations": [],
@@ -14013,6 +14389,10 @@
           "b6f2dca2": 401,
           "d431b788": 408
         },
+        "exact_selected_payout_totals": {
+          "Hero": 822,
+          "d431b788": 823
+        },
         "final_board_cards": [
           "8d",
           "Ac",
@@ -14020,16 +14400,23 @@
           "3h",
           "3s"
         ],
+        "observed_winner_collections": {
+          "Hero": 822,
+          "d431b788": 823
+        },
         "rake_amount": 0,
-        "stacks_after_actual": {
+        "stacks_after_exact": {
           "3cc5252d": 1404,
           "4efe6eca": 1732,
           "Hero": 1666,
           "b6f2dca2": 0,
           "d431b788": 823
         },
-        "winner_collections": {
-          "Hero": 822,
+        "stacks_after_observed": {
+          "3cc5252d": 1404,
+          "4efe6eca": 1732,
+          "Hero": 1666,
+          "b6f2dca2": 0,
           "d431b788": 823
         }
       },

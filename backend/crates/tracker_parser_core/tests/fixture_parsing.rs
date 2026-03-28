@@ -1,8 +1,10 @@
 use std::{fs, path::PathBuf};
 
+use serde_json::to_value;
 use tracker_parser_core::{
     SourceKind, detect_source_kind,
     models::{ActionType, AllInReason, ParseIssue, ParseIssueCode, ParseIssueSeverity, Street},
+    normalizer::normalize_hand,
     parsers::{
         hand_history::{parse_canonical_hand, parse_hand_header, split_hand_history},
         tournament_summary::parse_tournament_summary,
@@ -180,6 +182,22 @@ fn parses_canonical_rush_hand_for_replay_primitives() {
         hand.actions.last().unwrap().action_type,
         ActionType::Collect
     );
+}
+
+#[test]
+fn parses_call_actions_with_delta_amount_and_without_to_amount() {
+    let first_hand = HH_RUSH.split("\n\n").next().unwrap();
+    let hand = parse_canonical_hand(first_hand).unwrap();
+    let call_actions = hand
+        .actions
+        .iter()
+        .filter(|event| event.action_type == ActionType::Call)
+        .collect::<Vec<_>>();
+
+    assert_eq!(call_actions.len(), 4);
+    assert_eq!(call_actions[0].player_name.as_deref(), Some("5d455a01"));
+    assert_eq!(call_actions[0].amount, Some(200));
+    assert!(call_actions.iter().all(|event| event.to_amount.is_none()));
 }
 
 #[test]
@@ -605,6 +623,44 @@ Seat 2: Villain folded before Flop"#,
 }
 
 #[test]
+fn surfaces_malformed_dealt_line_as_explicit_parse_issue() {
+    let hand = parse_canonical_hand(&malformed_dealt_line_hand_text()).unwrap();
+
+    assert!(hand.parse_issues.iter().any(|issue| {
+        issue.raw_line.as_deref() == Some("Dealt to Hero [Ah Ad")
+            && issue
+                .message
+                .starts_with("malformed_dealt_to_line: Dealt to Hero [Ah Ad")
+            && to_value(issue)
+                .unwrap()
+                .get("code")
+                .and_then(|value| value.as_str())
+                == Some("malformed_dealt_to_line")
+    }));
+}
+
+#[test]
+fn preserves_hero_name_on_hidden_hero_dealt_surface() {
+    let hand = parse_canonical_hand(&hidden_hero_dealt_hand_text()).unwrap();
+
+    assert_eq!(hand.hero_name.as_deref(), Some("Hero"));
+    assert_eq!(hand.hero_hole_cards, None);
+    assert!(
+        hand.parse_issues.is_empty(),
+        "hidden hero dealt line must stay parser-clean: {:?}",
+        hand.parse_issues
+    );
+}
+
+#[test]
+fn normalizes_hidden_hero_dealt_surface_without_missing_hero_name() {
+    let hand = parse_canonical_hand(&hidden_hero_dealt_hand_text()).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+
+    assert_eq!(normalized.hand_id, "BRHIDDENHERO1");
+}
+
+#[test]
 fn parses_all_committed_tournament_summary_fixtures() {
     for fixture in TS_FIXTURE_FILES {
         let raw = read_fixture("ts", fixture);
@@ -841,6 +897,46 @@ Total pot 100 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
 Board [2c 7d 9h Qs 3c]
 Seat 1: ShortBlind (button) showed [Kd Kh] and lost
 Seat 2: Hero (big blind) showed [Ah Ad] and won (100)"#.to_string()
+}
+
+fn malformed_dealt_line_hand_text() -> String {
+    r#"Poker Hand #BRMALFORMDEALT1: Tournament #999205, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 13:20:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Villain (1,000 in chips)
+Seat 2: Hero (1,000 in chips)
+Villain: posts small blind 50
+Hero: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero [Ah Ad
+Villain: folds
+Uncalled bet (50) returned to Hero
+*** SHOWDOWN ***
+Hero collected 100 from pot
+*** SUMMARY ***
+Total pot 100 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Villain (button) folded before Flop
+Seat 2: Hero (big blind) collected (100)"#
+        .to_string()
+}
+
+fn hidden_hero_dealt_hand_text() -> String {
+    r#"Poker Hand #BRHIDDENHERO1: Tournament #999206, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 13:25:00
+Table '1' 2-max Seat #1 is the button
+Seat 1: Villain (1,000 in chips)
+Seat 2: Hero (1,000 in chips)
+Villain: posts small blind 50
+Hero: posts big blind 100
+*** HOLE CARDS ***
+Dealt to Hero
+Villain: folds
+Uncalled bet (50) returned to Hero
+*** SHOWDOWN ***
+Hero collected 100 from pot
+*** SUMMARY ***
+Total pot 100 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0
+Seat 1: Villain (button) folded before Flop
+Seat 2: Hero (big blind) collected (100)"#
+        .to_string()
 }
 
 fn read_fixture(kind: &str, filename: &str) -> String {

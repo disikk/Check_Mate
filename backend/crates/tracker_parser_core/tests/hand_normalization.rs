@@ -740,15 +740,15 @@ fn captures_terminal_all_in_snapshot_with_exact_pot_and_stacks() {
     assert_eq!(villain.committed_total, 1_992);
 
     assert_eq!(
-        normalized.actual.stacks_after_actual.get("Hero"),
+        normalized.actual.stacks_after_observed.get("Hero"),
         Some(&18_000)
     );
     assert_eq!(
-        normalized.actual.stacks_after_actual.get("f02e54a6"),
+        normalized.actual.stacks_after_observed.get("f02e54a6"),
         Some(&0)
     );
     assert_eq!(
-        normalized.actual.winner_collections.get("Hero"),
+        normalized.actual.observed_winner_collections.get("Hero"),
         Some(&3_984)
     );
     assert_eq!(
@@ -859,6 +859,21 @@ fn materializes_unified_settlement_with_selected_allocation_for_exact_hand() {
 }
 
 #[test]
+fn exact_hand_serializes_separate_observed_and_exact_actual_layers() {
+    let first_hand = HH_FT.split("\n\n").next().unwrap();
+    let hand = parse_canonical_hand(first_hand).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+    let actual = serde_json::to_value(&normalized.actual).unwrap();
+
+    assert_eq!(actual.get("winner_collections"), None);
+    assert_eq!(actual.get("stacks_after_actual"), None);
+    assert_eq!(actual["observed_winner_collections"]["Hero"], json!(3_984));
+    assert_eq!(actual["stacks_after_observed"]["Hero"], json!(18_000));
+    assert_eq!(actual["exact_selected_payout_totals"]["Hero"], json!(3_984));
+    assert_eq!(actual["stacks_after_exact"]["Hero"], json!(18_000));
+}
+
+#[test]
 fn handles_uncalled_return_without_creating_fake_snapshot() {
     let second_hand = HH_FT.split("\n\n").nth(1).unwrap();
     let hand = parse_canonical_hand(second_hand).unwrap();
@@ -866,14 +881,17 @@ fn handles_uncalled_return_without_creating_fake_snapshot() {
 
     assert!(normalized.snapshot.is_none());
     assert_eq!(
-        normalized.actual.stacks_after_actual.get("Hero"),
+        normalized.actual.stacks_after_observed.get("Hero"),
         Some(&16_008)
     );
     assert_eq!(
-        normalized.actual.stacks_after_actual.get("f02e54a6"),
+        normalized.actual.stacks_after_observed.get("f02e54a6"),
         Some(&1_992)
     );
-    assert_eq!(normalized.actual.winner_collections.get("Hero"), Some(&960));
+    assert_eq!(
+        normalized.actual.observed_winner_collections.get("Hero"),
+        Some(&960)
+    );
     assert_eq!(
         normalized.actual.committed_total_by_player.get("Hero"),
         Some(&480)
@@ -1321,6 +1339,22 @@ fn surfaces_collect_distribution_conflict_with_showdown_as_inconsistent() {
     assert_eq!(shorty_b["ko_share_fraction_by_winner"], json!([]));
     assert_eq!(shorty_b["elimination_certainty_state"], json!("exact"));
     assert_eq!(shorty_b["ko_certainty_state"], json!("inconsistent"));
+}
+
+#[test]
+fn inconsistent_hand_keeps_observed_actuals_but_omits_exact_layers() {
+    let hand = parse_canonical_hand(AMBIGUOUS_COLLECT_HAND).unwrap();
+    let normalized = normalize_hand(&hand).unwrap();
+    let actual = serde_json::to_value(&normalized.actual).unwrap();
+
+    assert_eq!(actual.get("winner_collections"), None);
+    assert_eq!(actual.get("stacks_after_actual"), None);
+    assert_eq!(actual["observed_winner_collections"]["Hero"], json!(400));
+    assert_eq!(actual["observed_winner_collections"]["Villain"], json!(400));
+    assert_eq!(actual["stacks_after_observed"]["Hero"], json!(400));
+    assert_eq!(actual["stacks_after_observed"]["Villain"], json!(400));
+    assert!(actual.get("exact_selected_payout_totals").is_none());
+    assert!(actual.get("stacks_after_exact").is_none());
 }
 
 #[test]

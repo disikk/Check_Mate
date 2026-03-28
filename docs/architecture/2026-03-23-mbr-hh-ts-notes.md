@@ -74,8 +74,10 @@ Poker Hand #BR1064994395: Tournament #271768505, Mystery Battle Royale $25 Hold'
 ### 7. Hero-only visibility
 
 - `Dealt to Hero [.. ..]` содержит hole cards только Hero.
+- Строгий скрытый hero surface допускается как `Dealt to Hero`; в этом случае parser обязан сохранить `hero_name`, а `hero_hole_cards` оставить `None`.
 - Для остальных игроков в начале руки карты не раскрыты.
 - Карты оппонентов доступны только через `shows` в action block и/или в summary showdown строках.
+- Любая строка, начинающаяся с `Dealt to`, но не совпадающая ни с explicit-, ни с hidden-форматом, считается malformed dealt surface и должна превращаться в reason-coded parse issue, а не проглатываться молча.
 
 ### 8. Основные action-формы
 
@@ -94,7 +96,8 @@ Poker Hand #BR1064994395: Tournament #271768505, Mystery Battle Royale $25 Hold'
 - `bets N and is all-in`
 - `shows [.. ..] (...)`
 
-Парсер должен хранить и raw amount, и `to_amount` для `raise-to`.
+Парсер должен хранить raw delta в `amount`, а `to_amount` использовать только для `raise-to`.
+Для `calls N` canonical action row не должен публиковать `to_amount`, чтобы delta-call не выглядел как итоговый вклад на улице.
 
 ### 9. Uncalled returns обязательны для корректной нормализации
 
@@ -124,6 +127,10 @@ Poker Hand #BR1064994395: Tournament #271768505, Mystery Battle Royale $25 Hold'
 - `hand_pots` и `hand_pot_winners` обязательны;
 - нельзя хранить только “общего победителя руки”;
 - нужны separate `pot_no`, `share_amount`, split-pot поддержка.
+- normalized money contract не должен маскировать observed collects под exact final accounting:
+  - `observed_winner_collections` / `stacks_after_observed` — явный observed-layer;
+  - `exact_selected_payout_totals` / `stacks_after_exact` — только для действительно exact settlement;
+  - persisted `derived.hand_state_resolutions.final_stacks` на текущем шаге остаётся observed projection без schema rename.
 
 ### 11. `*** SHOWDOWN ***` присутствует даже в no-flop / no-showdown сценариях
 

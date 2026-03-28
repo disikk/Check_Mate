@@ -247,6 +247,7 @@ impl ParseIssueSeverity {
 #[serde(rename_all = "snake_case")]
 pub enum ParseIssueCode {
     UnparsedLine,
+    MalformedDealtToLine,
     UnparsedSummarySeatLine,
     UnparsedSummarySeatTail,
     UnsupportedNoShowLine,
@@ -266,6 +267,7 @@ impl ParseIssueCode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::UnparsedLine => "unparsed_line",
+            Self::MalformedDealtToLine => "malformed_dealt_to_line",
             Self::UnparsedSummarySeatLine => "unparsed_summary_seat_line",
             Self::UnparsedSummarySeatTail => "unparsed_summary_seat_tail",
             Self::UnsupportedNoShowLine => "unsupported_no_show_line",
@@ -591,6 +593,22 @@ impl HandSettlement {
             })
             .collect()
     }
+
+    pub fn exact_selected_payout_totals(&self) -> Option<BTreeMap<String, i64>> {
+        if self.certainty_state != CertaintyState::Exact {
+            return None;
+        }
+
+        let mut payouts = BTreeMap::new();
+        for pot in &self.pots {
+            let allocation = pot.selected_allocation.as_ref()?;
+            for share in &allocation.shares {
+                *payouts.entry(share.player_name.clone()).or_default() += share.share_amount;
+            }
+        }
+
+        Some(payouts)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -617,8 +635,12 @@ pub struct ResolutionNodeSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HandOutcomeActual {
     pub committed_total_by_player: BTreeMap<String, i64>,
-    pub stacks_after_actual: BTreeMap<String, i64>,
-    pub winner_collections: BTreeMap<String, i64>,
+    pub stacks_after_observed: BTreeMap<String, i64>,
+    pub observed_winner_collections: BTreeMap<String, i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exact_selected_payout_totals: Option<BTreeMap<String, i64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stacks_after_exact: Option<BTreeMap<String, i64>>,
     pub final_board_cards: Vec<String>,
     pub rake_amount: i64,
 }

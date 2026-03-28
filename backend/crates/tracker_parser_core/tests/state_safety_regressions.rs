@@ -58,9 +58,12 @@ fn malformed_money_surface_enters_fail_safe_without_negative_outputs() {
             hand.actual.committed_total_by_player
         );
         assert!(
-            hand.actual.stacks_after_actual.values().all(|amount| *amount >= 0),
+            hand.actual
+                .stacks_after_observed
+                .values()
+                .all(|amount| *amount >= 0),
             "hand `{hand_id}` produced negative final stacks: {:?}",
-            hand.actual.stacks_after_actual
+            hand.actual.stacks_after_observed
         );
         assert!(
             hand.returns.iter().all(|entry| entry.amount >= 0),

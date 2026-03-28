@@ -151,11 +151,12 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - `normalize_hand` now runs through an internal replay ledger instead of relying on `collect` line order;
   - `tracker_parser_core::pot_resolution` now owns `pot construction -> pot settlement` as separate phases, instead of keeping reverse winner mapping inline inside `normalizer.rs`;
   - `normalize_hand` now exposes committed totals, exact final pot graph, explicit `pot_eligibilities`, return rows, resolved eliminations, and invariant results;
+  - `NormalizedHand.actual` now splits observed and exact money surfaces explicitly: `observed_winner_collections` + `stacks_after_observed` are always the observed-layer projection, while `exact_selected_payout_totals` + `stacks_after_exact` materialize only when settlement is truly `Exact`; legacy names `winner_collections` / `stacks_after_actual` are no longer part of the contract;
   - deterministic settlement now uses summary non-winner markers, summary shown cards, river showdown ranks, single-collector fallback, and observed payout totals (`collect` first, otherwise summary `won/collected`) as evidence constraints; arbitrary reverse subset-search over candidate winners is no longer the primary mechanism;
   - odd-chip allocation is only attempted inside already-proven showdown ties; observed odd-chip payouts from either `collect` or summary can prove `exact`, unresolved odd-chip stays `uncertain`, and contradictory `collect` vs summary payout totals surface as `pot_settlement_collect_conflict:*` instead of silently downgrading to guessed winners;
   - hidden showdown / partial reveal gaps now stay `uncertain` through explicit `uncertain_reason_codes`, and guessed `core.hand_pot_winners` rows are intentionally never materialized for those hands;
   - `parser_worker import-local` persists the first exact derived row into `derived.hand_state_resolutions`;
-  - persisted fields currently include `chip_conservation_ok`, `pot_conservation_ok`, parsed `rake_amount`, `final_stacks`, `invariant_errors`, and `uncertain_reason_codes`; pot eligibility rows persist separately in `core.hand_pot_eligibility` via migration `0009_hand_pot_eligibility_and_uncertain_codes.sql`.
+  - persisted fields currently include `chip_conservation_ok`, `pot_conservation_ok`, parsed `rake_amount`, `final_stacks`, `invariant_errors`, and `uncertain_reason_codes`; until a future schema rename, `final_stacks` stores the observed-layer projection (`stacks_after_observed`), not a pseudo-exact alias; pot eligibility rows persist separately in `core.hand_pot_eligibility` via migration `0009_hand_pot_eligibility_and_uncertain_codes.sql`.
 - Current MBR stage persistence behavior:
   - `derived.mbr_stage_resolution` now persists the exact `played_ft_hand` fact;
   - `ft_table_size` is persisted exactly for 9-max FT hands from the observed seat count;
@@ -231,6 +232,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current typed parse issue contract:
   - `CanonicalParsedHand` and `TournamentSummary` now expose parser-level `parse_issues: Vec<ParseIssue>` instead of legacy string surfaces like `parse_warnings` / `validation_issue_codes`;
   - `ParseIssue` is the single canonical family for HH, TS, and import-boundary issues: it carries typed `severity`, stable external `code`, human-readable `message`, optional `raw_line`, and optional structured `payload`;
+  - malformed `Dealt to ...` surfaces now materialize as parser errors with code `malformed_dealt_to_line`, instead of being silently swallowed by the hidden-dealt fallback;
   - `NormalizedHand` intentionally no longer mirrors parser-layer issues; parser diagnostics stay at the parser boundary and downstream exact-core logic reads factual hand state instead;
   - `parser_worker` now persists `core.parse_issues` as a direct projection of that typed contract, including `payload`, rather than reconstructing rows from warning-string prefixes.
 - Current unified settlement contract:
@@ -288,6 +290,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - canonical seat rows now carry `is_sitting_out`, and sit-out seats are excluded consistently from position derivation, legality order, and normalizer live-seat initialization;
   - action parser now materializes `PostDead` and player-line `Muck` instead of leaving them in unreachable enum-only state;
   - canonical action rows now carry `all_in_reason = voluntary | call_exhausted | raise_exhausted | blind_exhausted | ante_exhausted` plus `forced_all_in_preflop`;
+  - canonical action money fields now use `amount` as the delta surface, while `to_amount` is reserved for `RaiseTo`; `Call` rows intentionally publish `to_amount = null` to avoid pseudo-target semantics;
   - `parse_canonical_hand` annotates blind/ante exhaustion even when the room omits literal `and is all-in`, so forced posts that zero the stack no longer rely on downstream inference alone;
   - importer persists `all_in_reason` and `forced_all_in_preflop` into `core.hand_actions`, via migration `0007_hand_action_all_in_metadata.sql`.
 - Current reveal-surface policy:

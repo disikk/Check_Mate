@@ -452,7 +452,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(100),
-                        Some(100),
+                        None,
                     ),
                     (
                         3,
@@ -464,7 +464,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(50),
-                        Some(50),
+                        None,
                     ),
                     (
                         4,
@@ -712,7 +712,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(10),
-                        Some(10),
+                        None,
                     ),
                     (
                         3,
@@ -932,7 +932,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         Some(AllInReason::CallExhausted),
                         false,
                         Some(200),
-                        Some(200),
+                        None,
                     ),
                     (
                         6,
@@ -1036,7 +1036,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         Some(AllInReason::CallExhausted),
                         false,
                         Some(199),
-                        Some(199),
+                        None,
                     ),
                     (
                         5,
@@ -1140,7 +1140,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         Some(AllInReason::CallExhausted),
                         false,
                         Some(450),
-                        Some(450),
+                        None,
                     ),
                     (
                         4,
@@ -1152,7 +1152,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(400),
-                        Some(400),
+                        None,
                     ),
                     (
                         5,
@@ -1176,7 +1176,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(500),
-                        Some(500),
+                        None,
                     ),
                     (
                         7,
@@ -1292,7 +1292,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(50),
-                        Some(50),
+                        None,
                     ),
                     (
                         4,
@@ -1444,7 +1444,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(50),
-                        Some(50),
+                        None,
                     ),
                     (
                         3,
@@ -1560,7 +1560,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(250),
-                        Some(250),
+                        None,
                     ),
                     (
                         4,
@@ -1688,7 +1688,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(100),
-                        Some(100),
+                        None,
                     ),
                     (
                         3,
@@ -1712,7 +1712,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         Some(AllInReason::CallExhausted),
                         false,
                         Some(450),
-                        Some(450),
+                        None,
                     ),
                     (
                         5,
@@ -1748,7 +1748,7 @@ fn expected_parse_contracts() -> BTreeMap<&'static str, EdgeParseContract> {
                         None,
                         false,
                         Some(500),
-                        Some(500),
+                        None,
                     ),
                     (
                         8,
