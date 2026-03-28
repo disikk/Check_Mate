@@ -1,11 +1,11 @@
 use crate::{
     ParserError,
-    money_state::{apply_debit, apply_refund},
     models::{
         ActionType, AllInReason, CanonicalParsedHand, HandActionEvent, HandHeader, HandRecord,
         ParseIssue, ParseIssueCode, ParsedHandSeat, Street, SummarySeatMarker, SummarySeatOutcome,
         SummarySeatOutcomeKind,
     },
+    money_state::{apply_debit, apply_refund},
 };
 
 use regex::Regex;
@@ -394,8 +394,7 @@ fn parse_hidden_dealt_to_line(line: &str) -> Option<String> {
 
     static REGEX: OnceLock<Regex> = OnceLock::new();
     let regex = REGEX.get_or_init(|| {
-        Regex::new(r"^Dealt to (?P<player_name>.+)$")
-            .expect("hidden dealt-to regex must compile")
+        Regex::new(r"^Dealt to (?P<player_name>.+)$").expect("hidden dealt-to regex must compile")
     });
     regex
         .captures(line)

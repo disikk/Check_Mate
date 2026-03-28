@@ -27,6 +27,7 @@ use tracker_parser_core::{
         tournament_summary::parse_tournament_summary,
     },
     positions::{PositionSeatInput, compute_position_facts},
+    preflop_starting_hands::evaluate_preflop_starting_hands,
     street_strength::evaluate_street_hand_strength,
 };
 use uuid::Uuid;
@@ -323,6 +324,13 @@ struct StreetHandStrengthRow {
     missed_straight_draw: bool,
     is_nut_hand: Option<bool>,
     is_nut_draw: Option<bool>,
+    certainty_state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PreflopStartingHandRow {
+    seat_no: i32,
+    starter_hand_class: String,
     certainty_state: String,
 }
 
@@ -1120,6 +1128,8 @@ fn import_hand_history_registered(
         )?;
         let normalized_hand = &normalized_hands[index];
         persist_normalized_hand(tx, hand_id, normalized_hand)?;
+        let preflop_starting_hand_rows = build_preflop_starting_hand_rows(canonical_hand)?;
+        persist_preflop_starting_hands(tx, hand_id, &preflop_starting_hand_rows)?;
         let street_strength_rows = build_street_hand_strength_rows(canonical_hand)?;
         persist_street_hand_strength(tx, hand_id, &street_strength_rows)?;
         let mbr_stage_resolution = mbr_stage_resolutions
@@ -1894,6 +1904,38 @@ fn persist_street_hand_strength(
     Ok(())
 }
 
+fn persist_preflop_starting_hands(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[PreflopStartingHandRow],
+) -> Result<()> {
+    tx.execute(
+        "DELETE FROM derived.preflop_starting_hands
+         WHERE hand_id = $1",
+        &[&hand_id],
+    )?;
+
+    for row in rows {
+        tx.execute(
+            "INSERT INTO derived.preflop_starting_hands (
+                hand_id,
+                seat_no,
+                starter_hand_class,
+                certainty_state
+            )
+            VALUES ($1, $2, $3, $4)",
+            &[
+                &hand_id,
+                &row.seat_no,
+                &row.starter_hand_class,
+                &row.certainty_state,
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
 fn replace_hand_children(
     tx: &mut impl postgres::GenericClient,
     source_file_id: Uuid,
@@ -2005,6 +2047,19 @@ fn build_street_hand_strength_rows(
             missed_straight_draw: descriptor.missed_straight_draw,
             is_nut_hand: descriptor.is_nut_hand,
             is_nut_draw: descriptor.is_nut_draw,
+            certainty_state: certainty_state_code(descriptor.certainty_state).to_string(),
+        })
+        .collect())
+}
+
+fn build_preflop_starting_hand_rows(
+    hand: &CanonicalParsedHand,
+) -> Result<Vec<PreflopStartingHandRow>> {
+    Ok(evaluate_preflop_starting_hands(hand)?
+        .into_iter()
+        .map(|descriptor| PreflopStartingHandRow {
+            seat_no: descriptor.seat_no as i32,
+            starter_hand_class: descriptor.starter_hand_class,
             certainty_state: certainty_state_code(descriptor.certainty_state).to_string(),
         })
         .collect())
@@ -5707,6 +5762,12 @@ mod tests {
                     "bool".to_string(),
                     "bool".to_string()
                 ),
+                (
+                    "starter_hand_class".to_string(),
+                    "mbr_runtime_v1".to_string(),
+                    "enum".to_string(),
+                    "enum".to_string()
+                ),
             ]
         );
 
@@ -6100,6 +6161,7 @@ mod tests {
                      'made_hand_category',
                      'draw_category',
                      'overcards_count',
+                     'starter_hand_class',
                      'has_air',
                      'missed_flush_draw',
                      'missed_straight_draw',
@@ -6175,6 +6237,12 @@ mod tests {
                     "mbr_runtime_v1".to_string(),
                     "num".to_string(),
                     "double".to_string(),
+                ),
+                (
+                    "starter_hand_class".to_string(),
+                    "mbr_runtime_v1".to_string(),
+                    "enum".to_string(),
+                    "enum".to_string(),
                 ),
             ]
         );
@@ -7811,6 +7879,192 @@ mod tests {
             Some("0.000000")
         );
         assert!(!hero_flop_exact_values.get::<_, bool>(2));
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn import_local_materializes_preflop_matrix_rows_and_runtime_filters() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_core_schema_migrations(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+
+        let ts_path = fixture_path(
+            "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+        );
+        let ts_report = import_path(&ts_path).unwrap();
+        let organization_id: Uuid = setup_client
+            .query_one(
+                "SELECT organization_id
+                 FROM core.tournaments
+                 WHERE id = $1",
+                &[&ts_report.tournament_id],
+            )
+            .unwrap()
+            .get(0);
+        let player_profile_id: Uuid = setup_client
+            .query_one(
+                "SELECT player_profile_id
+                 FROM core.tournaments
+                 WHERE id = $1",
+                &[&ts_report.tournament_id],
+            )
+            .unwrap()
+            .get(0);
+        drop(setup_client);
+
+        let cm06_path = std::env::temp_dir().join(format!(
+            "cm-preflop-matrix-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(
+            &cm06_path,
+            cm06_joint_ko_hand_text().replace("Tournament #999060", "Tournament #271770266"),
+        )
+        .unwrap();
+        let cm06_report = import_path(cm06_path.to_str().unwrap()).unwrap();
+
+        let cm05_path = std::env::temp_dir().join(format!(
+            "cm-preflop-unknown-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(
+            &cm05_path,
+            cm05_hidden_showdown_hand_text()
+                .replace("Tournament #999051", "Tournament #271770266")
+                .replace(
+                    "Seat 1: ShortyA mucked",
+                    "Seat 1: ShortyA folded before Flop",
+                )
+                .replace(
+                    "Seat 2: ShortyB mucked",
+                    "Seat 2: ShortyB folded before Flop",
+                ),
+        )
+        .unwrap();
+        let cm05_report = import_path(cm05_path.to_str().unwrap()).unwrap();
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let known_hand_id: Uuid = client
+            .query_one(
+                "SELECT id
+                 FROM core.hands
+                 WHERE source_file_id = $1
+                   AND external_hand_id = $2",
+                &[&cm06_report.source_file_id, &"BRCM0601"],
+            )
+            .unwrap()
+            .get(0);
+        let unknown_hand_id: Uuid = client
+            .query_one(
+                "SELECT id
+                 FROM core.hands
+                 WHERE source_file_id = $1
+                   AND external_hand_id = $2",
+                &[&cm05_report.source_file_id, &"BRCM0502"],
+            )
+            .unwrap()
+            .get(0);
+
+        let derived_rows = client
+            .query(
+                "SELECT seat_no, starter_hand_class, certainty_state
+                 FROM derived.preflop_starting_hands
+                 WHERE hand_id = $1
+                 ORDER BY seat_no",
+                &[&known_hand_id],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, i32>(0),
+                    row.get::<_, String>(1),
+                    row.get::<_, String>(2),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            derived_rows,
+            vec![
+                (1, "AA".to_string(), "exact".to_string()),
+                (2, "22".to_string(), "exact".to_string()),
+                (3, "KQs".to_string(), "exact".to_string()),
+            ]
+        );
+
+        let unknown_rows_count: i64 = client
+            .query_one(
+                "SELECT COUNT(*)
+                 FROM derived.preflop_starting_hands
+                 WHERE hand_id = $1",
+                &[&unknown_hand_id],
+            )
+            .unwrap()
+            .get(0);
+        assert_eq!(unknown_rows_count, 1);
+
+        let analytics_rows = client
+            .query(
+                "SELECT seat_no, street, value
+                 FROM analytics.player_street_enum_features
+                 WHERE hand_id = $1
+                   AND feature_key = 'starter_hand_class'
+                 ORDER BY seat_no, street",
+                &[&known_hand_id],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get::<_, i32>(0),
+                    row.get::<_, String>(1),
+                    row.get::<_, String>(2),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            analytics_rows,
+            vec![
+                (1, "preflop".to_string(), "AA".to_string()),
+                (2, "preflop".to_string(), "22".to_string()),
+                (3, "preflop".to_string(), "KQs".to_string()),
+            ]
+        );
+
+        let hero_matches = query_matching_hand_ids(
+            &mut client,
+            &hand_query_request(
+                organization_id,
+                player_profile_id,
+                vec![FilterCondition {
+                    feature: FeatureRef::Street {
+                        street: "preflop".to_string(),
+                        feature_key: "starter_hand_class".to_string(),
+                    },
+                    operator: FilterOperator::In,
+                    value: FilterValue::EnumList(vec!["AA".to_string()]),
+                }],
+                vec![],
+            ),
+        )
+        .unwrap()
+        .hand_ids;
+        assert_eq!(hero_matches, vec![known_hand_id, unknown_hand_id]);
     }
 
     #[test]
@@ -9746,6 +10000,10 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
             client,
             &fixture_path("../../migrations/0024_user_timezone_and_gg_timestamp_contract.sql"),
         );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0026_preflop_matrix_filters.sql"),
+        );
     }
 
     fn dev_player_profile_id(client: &mut Client) -> Uuid {
@@ -9885,6 +10143,24 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
                     &[&player_profile_id],
                 )
                 .unwrap();
+            if client
+                .query_one(
+                    "SELECT to_regclass('derived.preflop_starting_hands') IS NOT NULL",
+                    &[],
+                )
+                .unwrap()
+                .get::<_, bool>(0)
+            {
+                client
+                    .execute(
+                        "DELETE FROM derived.preflop_starting_hands
+                         WHERE hand_id IN (
+                             SELECT id FROM core.hands WHERE player_profile_id = $1
+                         )",
+                        &[&player_profile_id],
+                    )
+                    .unwrap();
+            }
             if client
                 .query_one(
                     "SELECT to_regclass('derived.mbr_tournament_ft_helper') IS NOT NULL",

@@ -76,6 +76,7 @@ VALUES
     ('made_hand_category', 'mbr_runtime_v1', 'enum', 'enum', 'exact', 'Exact street-grain made-hand descriptor category.'),
     ('draw_category', 'mbr_runtime_v1', 'enum', 'enum', 'exact', 'Exact street-grain draw descriptor category.'),
     ('overcards_count', 'mbr_runtime_v1', 'num', 'double', 'exact', 'Exact street-grain overcards count.'),
+    ('starter_hand_class', 'mbr_runtime_v1', 'enum', 'enum', 'exact', 'Exact preflop matrix starter-hand class from derived.preflop_starting_hands.'),
     ('has_air', 'mbr_runtime_v1', 'bool', 'bool', 'exact', 'Exact street-grain air-like descriptor flag.'),
     ('missed_flush_draw', 'mbr_runtime_v1', 'bool', 'bool', 'exact', 'Exact street-grain missed flush draw flag.'),
     ('missed_straight_draw', 'mbr_runtime_v1', 'bool', 'bool', 'exact', 'Exact street-grain missed straight draw flag.'),

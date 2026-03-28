@@ -15,6 +15,14 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StreetFeatureRowSummary {
+    street_row_count: u64,
+    street_bool_rows: u64,
+    street_num_rows: u64,
+    street_enum_rows: u64,
+}
+
 pub fn materialize_player_hand_features(
     client: &mut impl GenericClient,
     organization_id: Uuid,
@@ -29,6 +37,7 @@ pub fn materialize_player_hand_features(
     let street_facts = load_street_feature_facts(client, organization_id, player_profile_id)?;
     let street_rows = build_street_feature_rows(&street_facts);
     persist_street_feature_rows(client, organization_id, player_profile_id, &street_rows)?;
+    let street_summary = summarize_street_feature_rows(&street_rows);
 
     Ok(MaterializationReport {
         hand_count: hand_rows.len() as u64,
@@ -45,14 +54,10 @@ pub fn materialize_player_hand_features(
             .iter()
             .flat_map(|row| row.enum_values.values())
             .count() as u64,
-        street_row_count: street_rows.len() as u64,
-        street_bool_rows: (street_rows.len() * 3) as u64,
-        street_num_rows: street_rows
-            .iter()
-            .flat_map(|row| row.num_values.values())
-            .filter(|value| value.is_some())
-            .count() as u64,
-        street_enum_rows: (street_rows.len() * 4) as u64,
+        street_row_count: street_summary.street_row_count,
+        street_bool_rows: street_summary.street_bool_rows,
+        street_num_rows: street_summary.street_num_rows,
+        street_enum_rows: street_summary.street_enum_rows,
     })
 }
 
@@ -175,8 +180,9 @@ fn load_street_feature_facts(
     organization_id: Uuid,
     player_profile_id: Uuid,
 ) -> Result<Vec<StreetFeatureFacts>> {
-    let rows = client.query(
-        "SELECT
+    let mut rows = client
+        .query(
+            "SELECT
             shs.hand_id,
             shs.seat_no,
             shs.street,
@@ -203,13 +209,45 @@ fn load_street_feature_facts(
          WHERE h.organization_id = $1
            AND h.player_profile_id = $2
          ORDER BY shs.hand_id, shs.seat_no, shs.street",
-        &[&organization_id, &player_profile_id],
-    )?;
+            &[&organization_id, &player_profile_id],
+        )?
+        .into_iter()
+        .map(row_to_postflop_street_feature_facts)
+        .collect::<Vec<_>>();
 
-    Ok(rows.into_iter().map(row_to_street_feature_facts).collect())
+    rows.extend(
+        client
+            .query(
+                "SELECT
+                    psh.hand_id,
+                    psh.seat_no,
+                    'preflop'::text AS street,
+                    hs.is_hero,
+                    COALESCE(hhc.known_at_showdown, FALSE),
+                    psh.starter_hand_class,
+                    psh.certainty_state
+                 FROM core.hands h
+                 INNER JOIN derived.preflop_starting_hands psh
+                   ON psh.hand_id = h.id
+                 INNER JOIN core.hand_seats hs
+                   ON hs.hand_id = psh.hand_id
+                  AND hs.seat_no = psh.seat_no
+                 LEFT JOIN core.hand_hole_cards hhc
+                   ON hhc.hand_id = psh.hand_id
+                  AND hhc.seat_no = psh.seat_no
+                 WHERE h.organization_id = $1
+                   AND h.player_profile_id = $2
+                 ORDER BY psh.hand_id, psh.seat_no",
+                &[&organization_id, &player_profile_id],
+            )?
+            .into_iter()
+            .map(row_to_preflop_street_feature_facts),
+    );
+
+    Ok(rows)
 }
 
-fn row_to_street_feature_facts(row: Row) -> StreetFeatureFacts {
+fn row_to_postflop_street_feature_facts(row: Row) -> StreetFeatureFacts {
     let is_hero: bool = row.get(3);
     let known_at_showdown: bool = row.get(4);
 
@@ -224,15 +262,44 @@ fn row_to_street_feature_facts(row: Row) -> StreetFeatureFacts {
         } else {
             StreetFeatureParticipant::UnknownOpponent
         },
-        best_hand_class: row.get(5),
+        starter_hand_class: None,
+        best_hand_class: Some(row.get(5)),
         best_hand_rank_value: row.get(6),
-        made_hand_category: row.get(7),
-        draw_category: row.get(8),
-        overcards_count: row.get(9),
-        has_air: row.get(10),
-        missed_flush_draw: row.get(11),
-        missed_straight_draw: row.get(12),
+        made_hand_category: Some(row.get(7)),
+        draw_category: Some(row.get(8)),
+        overcards_count: Some(row.get(9)),
+        has_air: Some(row.get(10)),
+        missed_flush_draw: Some(row.get(11)),
+        missed_straight_draw: Some(row.get(12)),
         certainty_state: row.get(13),
+    }
+}
+
+fn row_to_preflop_street_feature_facts(row: Row) -> StreetFeatureFacts {
+    let is_hero: bool = row.get(3);
+    let known_at_showdown: bool = row.get(4);
+
+    StreetFeatureFacts {
+        hand_id: row.get(0),
+        seat_no: row.get(1),
+        street: row.get(2),
+        participant: if is_hero {
+            StreetFeatureParticipant::Hero
+        } else if known_at_showdown {
+            StreetFeatureParticipant::ShowdownKnownOpponent
+        } else {
+            StreetFeatureParticipant::UnknownOpponent
+        },
+        starter_hand_class: Some(row.get(5)),
+        best_hand_class: None,
+        best_hand_rank_value: None,
+        made_hand_category: None,
+        draw_category: None,
+        overcards_count: None,
+        has_air: None,
+        missed_flush_draw: None,
+        missed_straight_draw: None,
+        certainty_state: row.get(6),
     }
 }
 
@@ -322,30 +389,40 @@ pub(crate) fn build_street_feature_rows(
         })
         .map(|fact| {
             let mut bool_values = BTreeMap::new();
-            bool_values.insert("has_air".to_string(), fact.has_air);
-            bool_values.insert("missed_flush_draw".to_string(), fact.missed_flush_draw);
-            bool_values.insert(
-                "missed_straight_draw".to_string(),
-                fact.missed_straight_draw,
-            );
+            if let Some(has_air) = fact.has_air {
+                bool_values.insert("has_air".to_string(), has_air);
+            }
+            if let Some(missed_flush_draw) = fact.missed_flush_draw {
+                bool_values.insert("missed_flush_draw".to_string(), missed_flush_draw);
+            }
+            if let Some(missed_straight_draw) = fact.missed_straight_draw {
+                bool_values.insert("missed_straight_draw".to_string(), missed_straight_draw);
+            }
 
             let mut num_values = BTreeMap::new();
-            num_values.insert(
-                "best_hand_rank_value".to_string(),
-                fact.best_hand_rank_value.map(|value| value as f64),
-            );
-            num_values.insert(
-                "overcards_count".to_string(),
-                Some(fact.overcards_count as f64),
-            );
+            if let Some(best_hand_rank_value) = fact.best_hand_rank_value {
+                num_values.insert(
+                    "best_hand_rank_value".to_string(),
+                    Some(best_hand_rank_value as f64),
+                );
+            }
+            if let Some(overcards_count) = fact.overcards_count {
+                num_values.insert("overcards_count".to_string(), Some(overcards_count as f64));
+            }
 
             let mut enum_values = BTreeMap::new();
-            enum_values.insert("best_hand_class".to_string(), fact.best_hand_class.clone());
-            enum_values.insert(
-                "made_hand_category".to_string(),
-                fact.made_hand_category.clone(),
-            );
-            enum_values.insert("draw_category".to_string(), fact.draw_category.clone());
+            if let Some(starter_hand_class) = &fact.starter_hand_class {
+                enum_values.insert("starter_hand_class".to_string(), starter_hand_class.clone());
+            }
+            if let Some(best_hand_class) = &fact.best_hand_class {
+                enum_values.insert("best_hand_class".to_string(), best_hand_class.clone());
+            }
+            if let Some(made_hand_category) = &fact.made_hand_category {
+                enum_values.insert("made_hand_category".to_string(), made_hand_category.clone());
+            }
+            if let Some(draw_category) = &fact.draw_category {
+                enum_values.insert("draw_category".to_string(), draw_category.clone());
+            }
             enum_values.insert("certainty_state".to_string(), fact.certainty_state.clone());
 
             MaterializedStreetFeatures {
@@ -358,6 +435,25 @@ pub(crate) fn build_street_feature_rows(
             }
         })
         .collect()
+}
+
+fn summarize_street_feature_rows(rows: &[MaterializedStreetFeatures]) -> StreetFeatureRowSummary {
+    StreetFeatureRowSummary {
+        street_row_count: rows.len() as u64,
+        street_bool_rows: rows
+            .iter()
+            .map(|row| row.bool_values.len() as u64)
+            .sum::<u64>(),
+        street_num_rows: rows
+            .iter()
+            .flat_map(|row| row.num_values.values())
+            .filter(|value| value.is_some())
+            .count() as u64,
+        street_enum_rows: rows
+            .iter()
+            .map(|row| row.enum_values.len() as u64)
+            .sum::<u64>(),
+    }
 }
 
 fn persist_feature_rows(
@@ -462,7 +558,9 @@ fn persist_street_feature_rows(
 
             match feature.table_family {
                 FeatureTableFamily::Bool => {
-                    let value = row.bool_values[feature.key];
+                    let Some(value) = row.bool_values.get(feature.key) else {
+                        continue;
+                    };
                     client.execute(
                         "INSERT INTO analytics.player_street_bool_features (
                             organization_id,
@@ -483,12 +581,12 @@ fn persist_street_feature_rows(
                             &row.street,
                             &feature.key,
                             &FEATURE_VERSION,
-                            &value,
+                            value,
                         ],
                     )?;
                 }
                 FeatureTableFamily::Num => {
-                    let Some(value) = row.num_values[feature.key] else {
+                    let Some(Some(value)) = row.num_values.get(feature.key) else {
                         continue;
                     };
                     client.execute(
@@ -511,12 +609,14 @@ fn persist_street_feature_rows(
                             &row.street,
                             &feature.key,
                             &FEATURE_VERSION,
-                            &value,
+                            value,
                         ],
                     )?;
                 }
                 FeatureTableFamily::Enum => {
-                    let value = &row.enum_values[feature.key];
+                    let Some(value) = row.enum_values.get(feature.key) else {
+                        continue;
+                    };
                     client.execute(
                         "INSERT INTO analytics.player_street_enum_features (
                             organization_id,
@@ -550,12 +650,15 @@ fn persist_street_feature_rows(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_feature_rows, build_street_feature_rows};
+    use super::{build_feature_rows, build_street_feature_rows, summarize_street_feature_rows};
     use crate::{
-        models::{HandFeatureFacts, StreetFeatureFacts, StreetFeatureParticipant},
+        models::{
+            HandFeatureFacts, MaterializedStreetFeatures, StreetFeatureFacts,
+            StreetFeatureParticipant,
+        },
         registry::{FeatureGrain, FtStageBucket, feature_registry},
     };
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use uuid::Uuid;
 
     #[test]
@@ -719,14 +822,15 @@ mod tests {
                 seat_no: 7,
                 street: "flop".to_string(),
                 participant: StreetFeatureParticipant::Hero,
-                best_hand_class: "pair".to_string(),
+                starter_hand_class: None,
+                best_hand_class: Some("pair".to_string()),
                 best_hand_rank_value: Some(1),
-                made_hand_category: "overpair".to_string(),
-                draw_category: "none".to_string(),
-                overcards_count: 0,
-                has_air: false,
-                missed_flush_draw: false,
-                missed_straight_draw: false,
+                made_hand_category: Some("overpair".to_string()),
+                draw_category: Some("none".to_string()),
+                overcards_count: Some(0),
+                has_air: Some(false),
+                missed_flush_draw: Some(false),
+                missed_straight_draw: Some(false),
                 certainty_state: "exact".to_string(),
             },
             StreetFeatureFacts {
@@ -734,14 +838,15 @@ mod tests {
                 seat_no: 3,
                 street: "flop".to_string(),
                 participant: StreetFeatureParticipant::ShowdownKnownOpponent,
-                best_hand_class: "two_pair".to_string(),
+                starter_hand_class: None,
+                best_hand_class: Some("two_pair".to_string()),
                 best_hand_rank_value: Some(2),
-                made_hand_category: "two_pair".to_string(),
-                draw_category: "none".to_string(),
-                overcards_count: 0,
-                has_air: false,
-                missed_flush_draw: false,
-                missed_straight_draw: false,
+                made_hand_category: Some("two_pair".to_string()),
+                draw_category: Some("none".to_string()),
+                overcards_count: Some(0),
+                has_air: Some(false),
+                missed_flush_draw: Some(false),
+                missed_straight_draw: Some(false),
                 certainty_state: "exact".to_string(),
             },
             StreetFeatureFacts {
@@ -749,14 +854,15 @@ mod tests {
                 seat_no: 5,
                 street: "flop".to_string(),
                 participant: StreetFeatureParticipant::UnknownOpponent,
-                best_hand_class: "high_card".to_string(),
+                starter_hand_class: None,
+                best_hand_class: Some("high_card".to_string()),
                 best_hand_rank_value: None,
-                made_hand_category: "none".to_string(),
-                draw_category: "none".to_string(),
-                overcards_count: 2,
-                has_air: true,
-                missed_flush_draw: false,
-                missed_straight_draw: false,
+                made_hand_category: Some("none".to_string()),
+                draw_category: Some("none".to_string()),
+                overcards_count: Some(2),
+                has_air: Some(true),
+                missed_flush_draw: Some(false),
+                missed_straight_draw: Some(false),
                 certainty_state: "exact".to_string(),
             },
         ]);
@@ -775,14 +881,15 @@ mod tests {
             seat_no: 7,
             street: "turn".to_string(),
             participant: StreetFeatureParticipant::Hero,
-            best_hand_class: "pair".to_string(),
+            starter_hand_class: None,
+            best_hand_class: Some("pair".to_string()),
             best_hand_rank_value: Some(1),
-            made_hand_category: "top_pair".to_string(),
-            draw_category: "flush_draw".to_string(),
-            overcards_count: 1,
-            has_air: false,
-            missed_flush_draw: false,
-            missed_straight_draw: false,
+            made_hand_category: Some("top_pair".to_string()),
+            draw_category: Some("flush_draw".to_string()),
+            overcards_count: Some(1),
+            has_air: Some(false),
+            missed_flush_draw: Some(false),
+            missed_straight_draw: Some(false),
             certainty_state: "exact".to_string(),
         }]);
 
@@ -796,5 +903,73 @@ mod tests {
         assert!(!rows[0].bool_values["has_air"]);
         assert!(!rows[0].bool_values["missed_flush_draw"]);
         assert!(!rows[0].bool_values["missed_straight_draw"]);
+    }
+
+    #[test]
+    fn materializes_preflop_rows_as_enum_only_surface() {
+        let rows = build_street_feature_rows(&[StreetFeatureFacts {
+            hand_id: Uuid::nil(),
+            seat_no: 7,
+            street: "preflop".to_string(),
+            participant: StreetFeatureParticipant::Hero,
+            starter_hand_class: Some("AA".to_string()),
+            best_hand_class: None,
+            best_hand_rank_value: None,
+            made_hand_category: None,
+            draw_category: None,
+            overcards_count: None,
+            has_air: None,
+            missed_flush_draw: None,
+            missed_straight_draw: None,
+            certainty_state: "exact".to_string(),
+        }]);
+
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].bool_values.is_empty());
+        assert!(rows[0].num_values.is_empty());
+        assert_eq!(rows[0].enum_values["starter_hand_class"], "AA");
+        assert_eq!(rows[0].enum_values["certainty_state"], "exact");
+    }
+
+    #[test]
+    fn counts_actual_mixed_street_feature_rows_for_reporting() {
+        let report = summarize_street_feature_rows(&[
+            MaterializedStreetFeatures {
+                hand_id: Uuid::nil(),
+                seat_no: 7,
+                street: "preflop".to_string(),
+                bool_values: BTreeMap::new(),
+                num_values: BTreeMap::new(),
+                enum_values: BTreeMap::from([
+                    ("starter_hand_class".to_string(), "AA".to_string()),
+                    ("certainty_state".to_string(), "exact".to_string()),
+                ]),
+            },
+            MaterializedStreetFeatures {
+                hand_id: Uuid::nil(),
+                seat_no: 7,
+                street: "flop".to_string(),
+                bool_values: BTreeMap::from([
+                    ("has_air".to_string(), false),
+                    ("missed_flush_draw".to_string(), false),
+                    ("missed_straight_draw".to_string(), false),
+                ]),
+                num_values: BTreeMap::from([
+                    ("best_hand_rank_value".to_string(), Some(1.0)),
+                    ("overcards_count".to_string(), Some(0.0)),
+                ]),
+                enum_values: BTreeMap::from([
+                    ("best_hand_class".to_string(), "pair".to_string()),
+                    ("made_hand_category".to_string(), "overpair".to_string()),
+                    ("draw_category".to_string(), "none".to_string()),
+                    ("certainty_state".to_string(), "exact".to_string()),
+                ]),
+            },
+        ]);
+
+        assert_eq!(report.street_row_count, 2);
+        assert_eq!(report.street_bool_rows, 3);
+        assert_eq!(report.street_num_rows, 2);
+        assert_eq!(report.street_enum_rows, 6);
     }
 }

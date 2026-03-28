@@ -52,6 +52,7 @@ const STREET_NUM_FEATURES: &[&str] = &[
 ];
 
 const STREET_ENUM_FEATURES: &[&str] = &[
+    "starter_hand_class",
     "best_hand_class",
     "made_hand_category",
     "draw_category",
@@ -78,11 +79,13 @@ pub enum FilterValue {
     Bool(bool),
     Num(f64),
     Enum(String),
+    EnumList(Vec<String>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterOperator {
     Eq,
+    In,
     Gte,
     Lte,
 }
@@ -363,6 +366,9 @@ fn compare_num(
     };
     Ok(match operator {
         FilterOperator::Eq => (actual - *expected).abs() < f64::EPSILON,
+        FilterOperator::In => {
+            return Err(FilterError::InvalidComparison("num feature".to_string()));
+        }
         FilterOperator::Gte => actual >= *expected,
         FilterOperator::Lte => actual <= *expected,
     })
@@ -373,13 +379,26 @@ fn compare_enum(
     operator: &FilterOperator,
     expected: &FilterValue,
 ) -> std::result::Result<bool, FilterError> {
-    let FilterValue::Enum(expected) = expected else {
-        return Err(FilterError::InvalidComparison("enum feature".to_string()));
-    };
-    if *operator != FilterOperator::Eq {
-        return Err(FilterError::InvalidComparison("enum feature".to_string()));
+    match operator {
+        FilterOperator::Eq => {
+            let FilterValue::Enum(expected) = expected else {
+                return Err(FilterError::InvalidComparison("enum feature".to_string()));
+            };
+            Ok(actual == expected)
+        }
+        FilterOperator::In => {
+            let FilterValue::EnumList(expected) = expected else {
+                return Err(FilterError::InvalidComparison("enum feature".to_string()));
+            };
+            if expected.is_empty() {
+                return Err(FilterError::InvalidComparison("enum feature".to_string()));
+            }
+            Ok(expected.iter().any(|value| value == actual))
+        }
+        FilterOperator::Gte | FilterOperator::Lte => {
+            Err(FilterError::InvalidComparison("enum feature".to_string()))
+        }
     }
-    Ok(actual == expected)
 }
 
 fn is_supported_hand_feature(feature_key: &str) -> bool {

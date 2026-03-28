@@ -22,6 +22,7 @@
 - exact elimination трактуется через pot-winner mapping, а не через legacy эвристику;
 - persisted split/side-pot признаки уже есть;
 - street hand strength foundation уже реализован и пишется в БД;
+- отдельный exact preflop starter-hand matrix layer теперь тоже реализован и пишется в `derived.preflop_starting_hands`;
 - runtime-слой уже может materialize первый набор hand-features;
 - tournament economics уже вынесены в explicit `ref.mbr_*` tables;
 - importer уже раскладывает `regular_prize_money` и `mystery_money_total` для current listed GG Royal buy-ins;
@@ -76,7 +77,7 @@
 - текущий entrypoint всё ещё dev-only: `parser_worker import-local` работает с локальными файлами и локальным runner loop, но это ещё не web upload pipeline;
 - runtime materializer теперь запускается один раз на bundle finalize, а не после каждого file job;
 - `hero_exact_ko_event_count` сейчас трактуется как число KO-событий, а не как KO-share/эквивалент полного KO;
-- generic hand/street query contract теперь живёт в `tracker_query_runtime`, возвращает стабильные `hand_id`-наборы и уже поддерживает `made hand / draw / missed draw / is_nut_hand / is_nut_draw`;
+- generic hand/street query contract теперь живёт в `tracker_query_runtime`, возвращает стабильные `hand_id`-наборы и уже поддерживает `made hand / draw / missed draw / is_nut_hand / is_nut_draw`, а также preflop starter-hand matrix whitelist filters через `preflop/starter_hand_class`;
 - boundary KO persistence пока ограничена boundary v1 point estimate;
 - pure `big_ko` decoder ещё не подключён к final stat/materialization contract.
 - real upload/status vertical slice уже поднят:

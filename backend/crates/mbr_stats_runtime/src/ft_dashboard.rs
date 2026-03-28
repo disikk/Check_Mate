@@ -7,9 +7,9 @@ use uuid::Uuid;
 
 use crate::models::{CanonicalStatNumericValue, CanonicalStatPoint, CanonicalStatSnapshot};
 use crate::queries::{
-    CanonicalQueryInputs, CanonicalQueryScope, TournamentKoEventFact,
-    TournamentStageAttemptFact, TournamentStageEntryFact, TournamentStageEventFact,
-    build_canonical_stat_snapshot, load_canonical_query_inputs_for_scope,
+    CanonicalQueryInputs, CanonicalQueryScope, TournamentKoEventFact, TournamentStageAttemptFact,
+    TournamentStageEntryFact, TournamentStageEventFact, build_canonical_stat_snapshot,
+    load_canonical_query_inputs_for_scope,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -170,14 +170,14 @@ pub fn query_ft_dashboard(
     client: &mut impl GenericClient,
     filters: FtDashboardFilters,
 ) -> Result<FtDashboardSnapshot> {
-    let all_tournament_ids = load_player_tournament_ids(
-        client,
-        filters.organization_id,
-        filters.player_profile_id,
-    )?;
-    let scoped_tournament_ids = resolve_scoped_tournament_ids(client, &filters, &all_tournament_ids)?;
-    let bundle_options = load_bundle_options(client, filters.organization_id, filters.player_profile_id)?;
-    let buyin_options = load_buyin_options(client, filters.organization_id, filters.player_profile_id)?;
+    let all_tournament_ids =
+        load_player_tournament_ids(client, filters.organization_id, filters.player_profile_id)?;
+    let scoped_tournament_ids =
+        resolve_scoped_tournament_ids(client, &filters, &all_tournament_ids)?;
+    let bundle_options =
+        load_bundle_options(client, filters.organization_id, filters.player_profile_id)?;
+    let buyin_options =
+        load_buyin_options(client, filters.organization_id, filters.player_profile_id)?;
     let (min_date_local, max_date_local) =
         load_date_range_bounds(client, filters.organization_id, filters.player_profile_id)?;
 
@@ -196,7 +196,12 @@ pub fn query_ft_dashboard(
     let inline_stats = build_inline_stats(&canonical);
     let big_ko_cards = build_big_ko_cards(&canonical);
     let charts = build_charts(&inputs);
-    let coverage = build_coverage(&inputs, filters.bundle_id, min_date_local.clone(), max_date_local.clone());
+    let coverage = build_coverage(
+        &inputs,
+        filters.bundle_id,
+        min_date_local.clone(),
+        max_date_local.clone(),
+    );
     let data_state = resolve_dashboard_state(&coverage, &stat_cards, &charts);
 
     Ok(FtDashboardSnapshot {
@@ -424,16 +429,17 @@ fn load_date_range_bounds(
     Ok((row.get(0), row.get(1)))
 }
 
-fn build_stat_cards(
-    canonical: &CanonicalStatSnapshot,
-) -> BTreeMap<String, FtDashboardMetricCard> {
+fn build_stat_cards(canonical: &CanonicalStatSnapshot) -> BTreeMap<String, FtDashboardMetricCard> {
     let mut cards = BTreeMap::new();
     cards.insert("roi".to_string(), single_stat_card(canonical, "roi_pct"));
     cards.insert(
         "ftReach".to_string(),
         single_stat_card(canonical, "final_table_reach_percent"),
     );
-    cards.insert("itm".to_string(), single_stat_card(canonical, "itm_percent"));
+    cards.insert(
+        "itm".to_string(),
+        single_stat_card(canonical, "itm_percent"),
+    );
     cards.insert(
         "avgKo".to_string(),
         dual_stat_card(
@@ -499,11 +505,7 @@ fn build_stat_cards(
     );
     cards.insert(
         "deepFtStack".to_string(),
-        dual_stat_card(
-            canonical,
-            "deep_ft_avg_stack_chips",
-            "deep_ft_avg_stack_bb",
-        ),
+        dual_stat_card(canonical, "deep_ft_avg_stack_chips", "deep_ft_avg_stack_bb"),
     );
     cards.insert(
         "ftStackConv34".to_string(),
@@ -567,7 +569,10 @@ fn build_charts(inputs: &CanonicalQueryInputs) -> BTreeMap<String, FtDashboardCh
     let stack_records = build_stack_records(inputs);
     BTreeMap::from([
         ("ft".to_string(), build_finish_place_chart(inputs, 1..=9)),
-        ("pre_ft".to_string(), build_finish_place_chart(inputs, 10..=18)),
+        (
+            "pre_ft".to_string(),
+            build_finish_place_chart(inputs, 10..=18),
+        ),
         ("all".to_string(), build_finish_place_chart(inputs, 1..=18)),
         (
             "ft_stack".to_string(),
@@ -659,10 +664,8 @@ fn build_stack_records(inputs: &CanonicalQueryInputs) -> Vec<StackTournamentReco
                     total_exact_ko_event_count: 0,
                     early_ft_exact_ko_event_count: 0,
                 });
-            let stage_event = stage_events
-                .get(&fact.tournament_id)
-                .copied()
-                .unwrap_or(TournamentStageEventFact {
+            let stage_event = stage_events.get(&fact.tournament_id).copied().unwrap_or(
+                TournamentStageEventFact {
                     tournament_id: fact.tournament_id,
                     early_ft_bust_count: 0,
                     ko_stage_2_3_event_count: 0,
@@ -672,11 +675,10 @@ fn build_stack_records(inputs: &CanonicalQueryInputs) -> Vec<StackTournamentReco
                     ko_stage_6_9_event_count: 0,
                     ko_stage_7_9_event_count: 0,
                     pre_ft_ko_count: 0,
-                });
-            let stage_attempt = stage_attempts
-                .get(&fact.tournament_id)
-                .copied()
-                .unwrap_or(TournamentStageAttemptFact {
+                },
+            );
+            let stage_attempt = stage_attempts.get(&fact.tournament_id).copied().unwrap_or(
+                TournamentStageAttemptFact {
                     tournament_id: fact.tournament_id,
                     ko_stage_2_3_attempt_count: 0,
                     ko_stage_3_4_attempt_count: 0,
@@ -684,11 +686,10 @@ fn build_stack_records(inputs: &CanonicalQueryInputs) -> Vec<StackTournamentReco
                     ko_stage_5_6_attempt_count: 0,
                     ko_stage_6_9_attempt_count: 0,
                     ko_stage_7_9_attempt_count: 0,
-                });
-            let stage_entry = stage_entries
-                .get(&fact.tournament_id)
-                .copied()
-                .unwrap_or(TournamentStageEntryFact {
+                },
+            );
+            let stage_entry = stage_entries.get(&fact.tournament_id).copied().unwrap_or(
+                TournamentStageEntryFact {
                     tournament_id: fact.tournament_id,
                     reached_stage_2_3: false,
                     reached_stage_3_4: false,
@@ -697,12 +698,15 @@ fn build_stack_records(inputs: &CanonicalQueryInputs) -> Vec<StackTournamentReco
                     reached_stage_7_9: false,
                     hero_stage_5_6_stack_bb: None,
                     hero_stage_3_4_stack_bb: None,
-                });
+                },
+            );
 
             Some(StackTournamentRecord {
                 tournament_id: fact.tournament_id,
                 finish_place: summary.and_then(|summary| summary.finish_place),
-                buyin_total_cents: summary.map(|summary| summary.buyin_total_cents).unwrap_or(0),
+                buyin_total_cents: summary
+                    .map(|summary| summary.buyin_total_cents)
+                    .unwrap_or(0),
                 payout_cents: summary.map(|summary| summary.payout_cents),
                 ft_entry_stack_chips: chips,
                 ft_entry_stack_bb: fact.hero_ft_entry_stack_bb,
@@ -820,7 +824,9 @@ fn build_stage_conversion_chart(
         .map(|(label, min, max)| {
             let matching = records
                 .iter()
-                .filter(|record| record.ft_entry_stack_chips >= min && record.ft_entry_stack_chips < max)
+                .filter(|record| {
+                    record.ft_entry_stack_chips >= min && record.ft_entry_stack_chips < max
+                })
                 .collect::<Vec<_>>();
 
             let sample_size = matching.len() as u64;
@@ -962,7 +968,12 @@ fn build_avg_ko_by_position_chart(inputs: &CanonicalQueryInputs) -> FtDashboardC
             let sample_size = matching.len() as u64;
             let total = matching
                 .iter()
-                .map(|fact| ko_by_tournament.get(&fact.tournament_id).copied().unwrap_or(0))
+                .map(|fact| {
+                    ko_by_tournament
+                        .get(&fact.tournament_id)
+                        .copied()
+                        .unwrap_or(0)
+                })
                 .sum::<u64>();
             FtChartBar {
                 label: place.to_string(),
@@ -1040,7 +1051,9 @@ fn build_ft_stack_bars(
         .map(|(label, min, max)| {
             let matching = records
                 .iter()
-                .filter(|record| record.ft_entry_stack_chips >= min && record.ft_entry_stack_chips < max)
+                .filter(|record| {
+                    record.ft_entry_stack_chips >= min && record.ft_entry_stack_chips < max
+                })
                 .collect::<Vec<_>>();
             let sample_size = matching.len() as u64;
             if sample_size == 0 {
@@ -1055,12 +1068,15 @@ fn build_ft_stack_bars(
             let value = match metric_key {
                 "count" => sample_size as f64,
                 "roi" => {
-                    let (payout_sum, buyin_sum) = matching.iter().fold((0_i64, 0_i64), |(payout, buyin), record| {
-                        (
-                            payout + record.payout_cents.unwrap_or(0),
-                            buyin + record.buyin_total_cents,
-                        )
-                    });
+                    let (payout_sum, buyin_sum) =
+                        matching
+                            .iter()
+                            .fold((0_i64, 0_i64), |(payout, buyin), record| {
+                                (
+                                    payout + record.payout_cents.unwrap_or(0),
+                                    buyin + record.buyin_total_cents,
+                                )
+                            });
                     roi_from_totals(payout_sum, buyin_sum).unwrap_or(0.0)
                 }
                 "conv" => {
@@ -1074,16 +1090,20 @@ fn build_ft_stack_bars(
                         .sum::<f64>();
                     ratio_to_float(events, stack_sum).unwrap_or(0.0)
                 }
-                "avg_ko" => matching
-                    .iter()
-                    .map(|record| record.total_exact_ko_event_count)
-                    .sum::<u64>() as f64
-                    / sample_size as f64,
-                "early_avg_ko" => matching
-                    .iter()
-                    .map(|record| record.early_ft_exact_ko_event_count)
-                    .sum::<u64>() as f64
-                    / sample_size as f64,
+                "avg_ko" => {
+                    matching
+                        .iter()
+                        .map(|record| record.total_exact_ko_event_count)
+                        .sum::<u64>() as f64
+                        / sample_size as f64
+                }
+                "early_avg_ko" => {
+                    matching
+                        .iter()
+                        .map(|record| record.early_ft_exact_ko_event_count)
+                        .sum::<u64>() as f64
+                        / sample_size as f64
+                }
                 _ => 0.0,
             };
             let attempts = match metric_key {
@@ -1113,15 +1133,20 @@ fn build_short_roi_bars(records: &[StackTournamentRecord], step: i32) -> Vec<FtC
         .map(|(label, min, max)| {
             let matching = records
                 .iter()
-                .filter(|record| record.ft_entry_stack_chips >= min && record.ft_entry_stack_chips < max)
+                .filter(|record| {
+                    record.ft_entry_stack_chips >= min && record.ft_entry_stack_chips < max
+                })
                 .collect::<Vec<_>>();
             let sample_size = matching.len() as u64;
-            let (payout_sum, buyin_sum) = matching.iter().fold((0_i64, 0_i64), |(payout, buyin), record| {
-                (
-                    payout + record.payout_cents.unwrap_or(0),
-                    buyin + record.buyin_total_cents,
-                )
-            });
+            let (payout_sum, buyin_sum) =
+                matching
+                    .iter()
+                    .fold((0_i64, 0_i64), |(payout, buyin), record| {
+                        (
+                            payout + record.payout_cents.unwrap_or(0),
+                            buyin + record.buyin_total_cents,
+                        )
+                    });
             FtChartBar {
                 label,
                 value: roi_from_totals(payout_sum, buyin_sum).unwrap_or(0.0),
@@ -1326,6 +1351,5 @@ fn ratio_to_float(numerator: u64, denominator: f64) -> Option<f64> {
 }
 
 fn roi_from_totals(payout_cents: i64, buyin_cents: i64) -> Option<f64> {
-    (buyin_cents > 0)
-        .then_some(((payout_cents - buyin_cents) as f64 / buyin_cents as f64) * 100.0)
+    (buyin_cents > 0).then_some(((payout_cents - buyin_cents) as f64 / buyin_cents as f64) * 100.0)
 }

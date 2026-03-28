@@ -51,6 +51,17 @@ fn street_enum(street: &str, feature_key: &str, value: &str) -> FilterCondition 
     }
 }
 
+fn street_enum_in(street: &str, feature_key: &str, values: &[&str]) -> FilterCondition {
+    FilterCondition {
+        feature: FeatureRef::Street {
+            street: street.to_string(),
+            feature_key: feature_key.to_string(),
+        },
+        operator: FilterOperator::In,
+        value: FilterValue::EnumList(values.iter().map(|value| (*value).to_string()).collect()),
+    }
+}
+
 #[test]
 fn supports_nut_predicates_as_regular_hero_filters() {
     let context = HandFilterContext {
@@ -206,6 +217,136 @@ fn rejects_unsupported_features_and_invalid_comparisons_hard() {
     );
     assert_eq!(
         evaluate_hand_query_request(&context, &invalid_comparison),
+        Err(FilterError::InvalidComparison("enum feature".to_string()))
+    );
+}
+
+#[test]
+fn supports_preflop_starter_hand_whitelist_for_hero() {
+    let context = HandFilterContext {
+        hand_id: Uuid::nil(),
+        street_rows: vec![StreetFilterRow {
+            seat_no: 7,
+            street: "preflop".to_string(),
+            is_hero: true,
+            enum_values: BTreeMap::from([("starter_hand_class".to_string(), "AKs".to_string())]),
+            ..StreetFilterRow::default()
+        }],
+        ..HandFilterContext::default()
+    };
+
+    let query = request(
+        vec![street_enum_in(
+            "preflop",
+            "starter_hand_class",
+            &["AA", "AKs"],
+        )],
+        vec![],
+    );
+
+    assert_eq!(evaluate_hand_query_request(&context, &query), Ok(true));
+}
+
+#[test]
+fn opponent_group_requires_same_seat_to_match_preflop_and_postflop_filters() {
+    let context = HandFilterContext {
+        hand_id: Uuid::nil(),
+        street_rows: vec![
+            StreetFilterRow {
+                seat_no: 3,
+                street: "preflop".to_string(),
+                is_hero: false,
+                enum_values: BTreeMap::from([("starter_hand_class".to_string(), "AA".to_string())]),
+                ..StreetFilterRow::default()
+            },
+            StreetFilterRow {
+                seat_no: 3,
+                street: "flop".to_string(),
+                is_hero: false,
+                enum_values: BTreeMap::from([(
+                    "made_hand_category".to_string(),
+                    "high_card".to_string(),
+                )]),
+                ..StreetFilterRow::default()
+            },
+            StreetFilterRow {
+                seat_no: 5,
+                street: "preflop".to_string(),
+                is_hero: false,
+                enum_values: BTreeMap::from([(
+                    "starter_hand_class".to_string(),
+                    "QJo".to_string(),
+                )]),
+                ..StreetFilterRow::default()
+            },
+            StreetFilterRow {
+                seat_no: 5,
+                street: "flop".to_string(),
+                is_hero: false,
+                enum_values: BTreeMap::from([(
+                    "made_hand_category".to_string(),
+                    "top_pair".to_string(),
+                )]),
+                ..StreetFilterRow::default()
+            },
+        ],
+        ..HandFilterContext::default()
+    };
+
+    let query = request(
+        vec![],
+        vec![
+            street_enum_in("preflop", "starter_hand_class", &["AA"]),
+            street_enum("flop", "made_hand_category", "top_pair"),
+        ],
+    );
+
+    assert_eq!(evaluate_hand_query_request(&context, &query), Ok(false));
+}
+
+#[test]
+fn rejects_empty_or_non_enum_whitelists() {
+    let context = HandFilterContext {
+        hand_id: Uuid::nil(),
+        street_rows: vec![StreetFilterRow {
+            seat_no: 7,
+            street: "preflop".to_string(),
+            is_hero: true,
+            enum_values: BTreeMap::from([("starter_hand_class".to_string(), "AA".to_string())]),
+            ..StreetFilterRow::default()
+        }],
+        ..HandFilterContext::default()
+    };
+
+    let empty_whitelist = request(
+        vec![FilterCondition {
+            feature: FeatureRef::Street {
+                street: "preflop".to_string(),
+                feature_key: "starter_hand_class".to_string(),
+            },
+            operator: FilterOperator::In,
+            value: FilterValue::EnumList(vec![]),
+        }],
+        vec![],
+    );
+    assert_eq!(
+        evaluate_hand_query_request(&context, &empty_whitelist),
+        Err(FilterError::InvalidComparison("enum feature".to_string()))
+    );
+
+    let bool_whitelist = request(
+        vec![FilterCondition {
+            feature: FeatureRef::Street {
+                street: "preflop".to_string(),
+                feature_key: "starter_hand_class".to_string(),
+            },
+            operator: FilterOperator::In,
+            value: FilterValue::Bool(true),
+        }],
+        vec![],
+    );
+    assert_eq!(
+        evaluate_hand_query_request(&context, &bool_whitelist),
         Err(FilterError::InvalidComparison("enum feature".to_string()))
     );
 }

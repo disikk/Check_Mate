@@ -193,7 +193,10 @@ fn code_from_json<T: serde::Serialize>(value: &T) -> String {
 }
 
 fn materialize(codes: &[&'static str]) -> Vec<String> {
-    let mut values = codes.iter().map(|code| (*code).to_string()).collect::<Vec<_>>();
+    let mut values = codes
+        .iter()
+        .map(|code| (*code).to_string())
+        .collect::<Vec<_>>();
     values.sort();
     values
 }

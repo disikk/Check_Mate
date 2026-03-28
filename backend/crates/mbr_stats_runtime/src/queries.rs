@@ -227,30 +227,21 @@ pub(crate) fn load_canonical_query_inputs_for_scope(
             .into_iter()
             .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
             .collect::<Vec<_>>();
-    let hand_covered_tournaments = load_hand_covered_tournament_ids(
-        client,
-        scope.organization_id,
-        scope.player_profile_id,
-    )?
-    .into_iter()
-    .filter(|tournament_id| allowed_tournaments.contains(tournament_id))
-    .collect::<Vec<_>>();
-    let ft_helper_facts = load_tournament_ft_helper_facts(
-        client,
-        scope.organization_id,
-        scope.player_profile_id,
-    )?
-    .into_iter()
-    .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
-    .collect::<Vec<_>>();
-    let ko_event_facts = load_tournament_ko_event_facts(
-        client,
-        scope.organization_id,
-        scope.player_profile_id,
-    )?
-    .into_iter()
-    .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
-    .collect::<Vec<_>>();
+    let hand_covered_tournaments =
+        load_hand_covered_tournament_ids(client, scope.organization_id, scope.player_profile_id)?
+            .into_iter()
+            .filter(|tournament_id| allowed_tournaments.contains(tournament_id))
+            .collect::<Vec<_>>();
+    let ft_helper_facts =
+        load_tournament_ft_helper_facts(client, scope.organization_id, scope.player_profile_id)?
+            .into_iter()
+            .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
+            .collect::<Vec<_>>();
+    let ko_event_facts =
+        load_tournament_ko_event_facts(client, scope.organization_id, scope.player_profile_id)?
+            .into_iter()
+            .filter(|fact| allowed_tournaments.contains(&fact.tournament_id))
+            .collect::<Vec<_>>();
     let deep_ft_entry_facts =
         load_deep_ft_entry_facts(client, scope.organization_id, scope.player_profile_id)?
             .into_iter()
@@ -992,7 +983,9 @@ fn build_seed_stat_accumulator(
     }
 }
 
-pub(crate) fn build_canonical_stat_snapshot(inputs: &CanonicalQueryInputs) -> CanonicalStatSnapshot {
+pub(crate) fn build_canonical_stat_snapshot(
+    inputs: &CanonicalQueryInputs,
+) -> CanonicalStatSnapshot {
     let tournament_buyin_facts = &inputs.tournament_buyin_facts;
     let summary_facts = &inputs.summary_facts;
     let hand_covered_tournaments = &inputs.hand_covered_tournaments;

@@ -65,7 +65,10 @@ fn apply_all_migrations(client: &mut Client) {
         .expect("reference seed must apply");
 }
 
-fn seed_actor_shell(client: &mut impl postgres::GenericClient, timezone_name: &str) -> (Uuid, Uuid, Uuid) {
+fn seed_actor_shell(
+    client: &mut impl postgres::GenericClient,
+    timezone_name: &str,
+) -> (Uuid, Uuid, Uuid) {
     let organization_id = Uuid::new_v4();
     let user_id = Uuid::new_v4();
     let player_profile_id = Uuid::new_v4();
@@ -172,7 +175,9 @@ fn ft_dashboard_snapshot_respects_live_bundle_and_date_filters() {
         user_id,
         player_profile_id,
         &[
-            fixture_path("fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"),
+            fixture_path(
+                "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+            ),
             fixture_path("fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt"),
         ],
     );
@@ -182,7 +187,9 @@ fn ft_dashboard_snapshot_respects_live_bundle_and_date_filters() {
         user_id,
         player_profile_id,
         &[
-            fixture_path("fixtures/mbr/ts/GG20260316 - Tournament #271769772 - Mystery Battle Royale 25.txt"),
+            fixture_path(
+                "fixtures/mbr/ts/GG20260316 - Tournament #271769772 - Mystery Battle Royale 25.txt",
+            ),
             fixture_path("fixtures/mbr/hh/GG20260316-0342 - Mystery Battle Royale 25.txt"),
         ],
     );
@@ -215,11 +222,7 @@ fn ft_dashboard_snapshot_respects_live_bundle_and_date_filters() {
         BTreeSet::from([first_bundle_id, second_bundle_id])
     );
     assert_eq!(
-        snapshot
-            .charts
-            .keys()
-            .cloned()
-            .collect::<BTreeSet<_>>(),
+        snapshot.charts.keys().cloned().collect::<BTreeSet<_>>(),
         BTreeSet::from([
             "all".to_string(),
             "avg_ko_by_early_ft_stack".to_string(),

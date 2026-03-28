@@ -14,10 +14,7 @@ pub(crate) enum MoneyMutationFailure {
     },
 }
 
-pub(crate) fn apply_debit(
-    stack_current: &mut i64,
-    delta: i64,
-) -> Result<(), MoneyMutationFailure> {
+pub(crate) fn apply_debit(stack_current: &mut i64, delta: i64) -> Result<(), MoneyMutationFailure> {
     if delta <= 0 {
         return Ok(());
     }

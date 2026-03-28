@@ -107,11 +107,7 @@ async fn spawn_test_server(config: WebApiConfig) -> (String, tokio::task::JoinHa
     (base_url, handle)
 }
 
-async fn upload_bundle(
-    http: &Client,
-    base_url: &str,
-    files: &[PathBuf],
-) -> Value {
+async fn upload_bundle(http: &Client, base_url: &str, files: &[PathBuf]) -> Value {
     let mut form = reqwest::multipart::Form::new();
     for path in files {
         let filename = path.file_name().unwrap().to_string_lossy().to_string();
@@ -140,7 +136,10 @@ async fn run_real_ingest_runner() {
     })
     .await
     .unwrap();
-    assert!(processed_jobs > 0, "runner must process at least one ingest job");
+    assert!(
+        processed_jobs > 0,
+        "runner must process at least one ingest job"
+    );
 }
 
 struct SuccessExecutor {
@@ -469,7 +468,10 @@ async fn ft_dashboard_endpoint_returns_live_snapshot_and_respects_filters() {
     assert_eq!(response.status(), 200);
     let dashboard: Value = response.json().await.unwrap();
 
-    assert_eq!(dashboard.get("data_state").and_then(Value::as_str), Some("ready"));
+    assert_eq!(
+        dashboard.get("data_state").and_then(Value::as_str),
+        Some("ready")
+    );
     assert_eq!(
         dashboard
             .get("coverage")
@@ -494,10 +496,7 @@ async fn ft_dashboard_endpoint_returns_live_snapshot_and_respects_filters() {
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(
         bundle_ids,
-        std::collections::BTreeSet::from([
-            first_bundle_id.as_str(),
-            second_bundle_id.as_str(),
-        ])
+        std::collections::BTreeSet::from([first_bundle_id.as_str(), second_bundle_id.as_str(),])
     );
     assert_eq!(
         dashboard
@@ -533,7 +532,10 @@ async fn ft_dashboard_endpoint_returns_live_snapshot_and_respects_filters() {
         .unwrap();
     assert_eq!(empty_response.status(), 200);
     let empty_dashboard: Value = empty_response.json().await.unwrap();
-    assert_eq!(empty_dashboard.get("data_state").and_then(Value::as_str), Some("empty"));
+    assert_eq!(
+        empty_dashboard.get("data_state").and_then(Value::as_str),
+        Some("empty")
+    );
 
     let date_response = http
         .get(format!(
@@ -544,7 +546,10 @@ async fn ft_dashboard_endpoint_returns_live_snapshot_and_respects_filters() {
         .unwrap();
     assert_eq!(date_response.status(), 200);
     let date_dashboard: Value = date_response.json().await.unwrap();
-    assert_eq!(date_dashboard.get("data_state").and_then(Value::as_str), Some("empty"));
+    assert_eq!(
+        date_dashboard.get("data_state").and_then(Value::as_str),
+        Some("empty")
+    );
 
     handle.abort();
     let _ = fs::remove_dir_all(spool_dir);

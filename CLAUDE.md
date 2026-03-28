@@ -192,7 +192,12 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - Current street-strength persistence behavior:
   - `tracker_parser_core` now exposes a pure `street_strength` evaluator over `CanonicalParsedHand`;
   - `parser_worker import-local` now persists exact `flop` / `turn` / `river` descriptors into `derived.street_hand_strength`;
-  - current product direction intentionally does **not** add a structural preflop descriptor layer into `street_strength`; preflop ranges are expected to be defined separately via an explicit starter-hand matrix;
+  - current product direction intentionally does **not** add a structural preflop descriptor layer into `street_strength`; preflop filtering now lives separately through `derived.preflop_starting_hands` and an explicit starter-hand matrix contract;
+  - `tracker_parser_core` now also exposes a pure preflop canonicalizer/evaluator in `preflop_starting_hands`, which materializes exact `starter_hand_class` rows for Hero and showdown-known opponents only;
+  - `parser_worker import-local` now persists exact preflop starter rows into `derived.preflop_starting_hands` via migration `backend/migrations/0026_preflop_matrix_filters.sql`;
+  - runtime materializes `starter_hand_class` and `certainty_state` into `analytics.player_street_enum_features` with `street = 'preflop'`;
+  - `tracker_query_runtime` now supports enum whitelist membership through `FilterOperator::In` + `FilterValue::EnumList`, which is the canonical query shape for preflop matrix filters;
+  - `backend/docs/preflop_matrix_contract.md` is now the canonical exact contract for the preflop starter-hand matrix layer and must be updated whenever its semantics change;
   - rows are materialized for Hero and for opponents whose hole cards are exact-known by showdown, and showdown-known opponents are backfilled across all reached streets;
   - the active unversioned persisted contract is `best_hand_class`, `best_hand_rank_value`, `made_hand_category`, `draw_category`, `overcards_count`, `has_air`, `missed_flush_draw`, `missed_straight_draw`, `is_nut_hand`, `is_nut_draw`, and `certainty_state`;
   - legacy `pair_strength`, independent draw bits, `has_overcards`, `has_missed_draw_by_river`, and `descriptor_version` are no longer part of the active runtime surface;

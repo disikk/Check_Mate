@@ -676,7 +676,12 @@ fn parse_buyin_filter(buyin: Option<&str>) -> Result<Option<Vec<i64>>, ApiError>
         Some(value) => value
             .parse::<i64>()
             .map(|parsed| Some(vec![parsed]))
-            .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "buyin must be an integer amount in cents")),
+            .map_err(|_| {
+                ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    "buyin must be an integer amount in cents",
+                )
+            }),
         None => Ok(None),
     }
 }
@@ -722,10 +727,7 @@ fn validate_local_datetime(
     };
 
     client
-        .query_one(
-            "SELECT replace($1, 'T', ' ')::timestamp",
-            &[&value],
-        )
+        .query_one("SELECT replace($1, 'T', ' ')::timestamp", &[&value])
         .map_err(|_| {
             ApiError::new(
                 StatusCode::BAD_REQUEST,

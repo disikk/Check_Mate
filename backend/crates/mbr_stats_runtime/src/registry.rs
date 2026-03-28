@@ -45,7 +45,7 @@ pub struct FeatureSpec {
     pub grain: FeatureGrain,
 }
 
-const FEATURE_REGISTRY: [FeatureSpec; 26] = [
+const FEATURE_REGISTRY: [FeatureSpec; 27] = [
     FeatureSpec {
         key: "played_ft_hand",
         table_family: FeatureTableFamily::Bool,
@@ -132,6 +132,11 @@ const FEATURE_REGISTRY: [FeatureSpec; 26] = [
         grain: FeatureGrain::Hand,
     },
     FeatureSpec {
+        key: "starter_hand_class",
+        table_family: FeatureTableFamily::Enum,
+        grain: FeatureGrain::Street,
+    },
+    FeatureSpec {
         key: "best_hand_class",
         table_family: FeatureTableFamily::Enum,
         grain: FeatureGrain::Street,
@@ -207,7 +212,7 @@ mod tests {
     fn freezes_feature_version_and_registry_mapping() {
         let registry = feature_registry();
         assert_eq!(FEATURE_VERSION, "mbr_runtime_v1");
-        assert_eq!(registry.len(), 26);
+        assert_eq!(registry.len(), 27);
 
         let hand_bool_keys = registry
             .iter()
@@ -271,6 +276,7 @@ mod tests {
         assert_eq!(
             street_keys,
             vec![
+                "starter_hand_class",
                 "best_hand_class",
                 "best_hand_rank_value",
                 "made_hand_category",
