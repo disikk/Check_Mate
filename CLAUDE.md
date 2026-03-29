@@ -129,7 +129,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - TS -> deduped `import.source_files`, synthetic `import.source_file_members`, `import.import_jobs`, `import.job_attempts`, `import.file_fragments`, `core.tournaments`, `core.tournament_entries`;
   - HH -> deduped `import.source_files`, synthetic `import.source_file_members`, `import.import_jobs`, `import.job_attempts`, `import.file_fragments`, `core.hands`, `core.hand_seats`, `core.hand_hole_cards`, `core.hand_actions`, `core.hand_boards`, `core.hand_showdowns`, `core.hand_pots`, `core.hand_pot_eligibility`, `core.hand_pot_contributions`, `core.hand_pot_winners`, `core.hand_returns`, `core.parse_issues`, `derived.hand_state_resolutions`, `derived.hand_eliminations`, `derived.mbr_stage_resolution`, `derived.mbr_tournament_ft_helper`;
   - post-import runtime refresh -> `analytics.player_hand_bool_features`, `analytics.player_hand_num_features`, `analytics.player_hand_enum_features` for the imported `player_profile_id` and current runtime version.
-- `parser_worker import-local` is now a thin local shell over `tracker_ingest_runtime`: it enqueues a one-file local bundle, runs the local worker loop to terminal bundle status, executes exact TS/HH persistence inside file jobs, and runs one bundle-level materialization refresh in finalize stage.
+- `parser_worker import-local` is now a thin local shell over `tracker_ingest_runtime`: it enqueues a one-file local bundle, runs the local worker loop to terminal bundle status, executes exact TS/HH persistence inside file jobs, and runs one bundle-level scoped materialization refresh in finalize stage with per-stage timing captured in `stage_profile`.
 - Current persistence behavior:
   - `backend/migrations/0004_exact_core_schema_v2.sql` now hardens the exact-core schema with `core.player_aliases`, `import.source_file_members`, `import.job_attempts`, `analytics.feature_catalog`, `analytics.stat_catalog`, `analytics.stat_dependencies`, and `analytics.materialization_policies`;
   - `backend/migrations/0021_ingest_runtime_runner.sql` adds the ingest runtime contract: `import.ingest_bundles`, `import.ingest_bundle_files`, richer job/attempt statuses, `job_kind`, bundle/file links, claim metadata, and finalize/file-job uniqueness guards;
@@ -304,9 +304,12 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - committed GG fixture `43b06066: shows [5d] (a pair of Fives)` is now a documented allowed explicit warning, not an unexpected parser failure.
 - Current stat runtime foundation:
   - `backend/crates/mbr_stats_runtime` now owns the first backend-only stat runtime slice;
-  - `FEATURE_VERSION = mbr_runtime_v1`;
+  - `FEATURE_VERSION = mbr_runtime_v2`;
   - `GG_MBR_FT_MAX_PLAYERS = 9` — единая константа для FT detection; заменяет все magic `9` хардкоды в Rust-коде parser_worker и mbr_stats_runtime;
-  - `parser_worker import-local` now calls the runtime materializer inside the same PostgreSQL transaction after TS/HH persistence and full-refreshes analytics features for the affected `player_profile_id`;
+  - `mbr_stats_runtime` now exposes scoped runtime entrypoints `materialize_player_hand_features_for_tournaments(...)` and `materialize_player_hand_features_for_bundle(...)` as the canonical public materialization API;
+  - `parser_worker import-local` now calls the runtime materializer inside the same PostgreSQL transaction after TS/HH persistence and refreshes analytics features only for tournaments affected by the finalized bundle instead of full-refreshing the whole `player_profile_id`;
+  - runtime analytics writes now use chunked multi-values `INSERT`s for hand-grain and street-grain feature rows, so scoped finalize no longer pays row-by-row insert overhead;
+  - `parser_worker import-local` now returns `stage_profile { parse_ms, normalize_ms, persist_ms, materialize_ms, finalize_ms }` in its JSON contract, and `bulk_local_import` now also reports `file_jobs`, `finalize_jobs`, `runner_elapsed_ms`, `hands_per_minute`, and aggregated `stage_profile`;
   - the runtime materializes dense per-hand features for every imported hand:
     - bool: `played_ft_hand`, `is_ft_hand`, `is_stage_2`, `is_stage_3_4`, `is_stage_4_5`, `is_stage_5_6`, `is_stage_6_9`, `is_boundary_hand`, `has_exact_ko_event`, `has_split_ko_event`, `has_sidepot_ko_event`;
     - num: `ft_table_size`, `ft_players_remaining_exact`, `hero_exact_ko_event_count`, `hero_split_ko_event_count`, `hero_sidepot_ko_event_count`;

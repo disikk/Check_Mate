@@ -75,7 +75,10 @@
 - `tracker_ingest_runtime` уже даёт воспроизводимый DB-backed ingest contour: `bundle -> bundle_file -> file_ingest jobs -> single bundle_finalize`;
 - `source_files` дедуплицируются по `(player_profile_id, room, file_kind, sha256)`, а bundle membership живёт отдельно, так что повторные импорты не дублируют exact rows;
 - текущий entrypoint всё ещё dev-only: `parser_worker import-local` работает с локальными файлами и локальным runner loop, но это ещё не web upload pipeline;
-- runtime materializer теперь запускается один раз на bundle finalize, а не после каждого file job;
+- runtime materializer теперь запускается один раз на bundle finalize, а не после каждого file job, и пересчитывает только турниры, затронутые текущим bundle, а не весь профиль целиком;
+- materializer analytics writes и hot-path child-table persistence в `parser_worker` теперь идут через batched multi-values `INSERT`, чтобы убрать row-by-row round-trips;
+- `parser_worker import-local` теперь возвращает `stage_profile` с фазами `parse/normalize/persist/materialize/finalize`;
+- `bulk_local_import` теперь возвращает `file_jobs`, `finalize_jobs`, `hands_persisted`, `runner_elapsed_ms`, `hands_per_minute`, `stage_profile`;
 - `hero_exact_ko_event_count` сейчас трактуется как число KO-событий, а не как KO-share/эквивалент полного KO;
 - generic hand/street query contract теперь живёт в `tracker_query_runtime`, возвращает стабильные `hand_id`-наборы и уже поддерживает `made hand / draw / missed draw / is_nut_hand / is_nut_draw`, а также preflop starter-hand matrix whitelist filters через `preflop/starter_hand_class`;
 - boundary KO persistence пока ограничена boundary v1 point estimate;
@@ -104,6 +107,7 @@ bash scripts/run_wide_corpus_triage.sh
 cargo run -p parser_worker -- "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local --player-profile-id <uuid> "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local --player-profile-id <uuid> "fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt"
+cargo run -p parser_worker --bin bulk_local_import -- --player-profile-id <uuid> --list-file /tmp/files.txt --chunk-size 2
 cargo run -p parser_worker -- set-user-timezone --user-id <uuid> --timezone Asia/Krasnoyarsk
 cargo run -p parser_worker -- clear-user-timezone --user-id <uuid>
 cargo run -p tracker_web_api --

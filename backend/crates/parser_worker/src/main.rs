@@ -30,6 +30,7 @@ enum WorkerOutput {
         tournament_id: String,
         fragments_persisted: usize,
         hands_persisted: usize,
+        stage_profile: local_import::IngestStageProfile,
     },
     UserTimezoneUpdated {
         user_id: String,
@@ -74,6 +75,7 @@ fn run() -> Result<()> {
                 tournament_id: report.tournament_id.to_string(),
                 fragments_persisted: report.fragments_persisted,
                 hands_persisted: report.hands_persisted,
+                stage_profile: report.stage_profile,
             }
         }
         WorkerCommand::SetUserTimezone {
@@ -190,6 +192,8 @@ fn summarize_path(path: &str) -> Result<WorkerOutput> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use parser_worker::local_import::IngestStageProfile;
+    use serde_json::json;
     use uuid::Uuid;
 
     #[test]
@@ -249,6 +253,46 @@ mod tests {
         assert!(
             parsed.is_ok(),
             "clear-user-timezone should parse, got {parsed:?}"
+        );
+    }
+
+    #[test]
+    fn local_import_output_serializes_stage_profile_contract() {
+        let output = WorkerOutput::LocalImport {
+            file_kind: "hh".to_string(),
+            source_file_id: Uuid::nil().to_string(),
+            import_job_id: Uuid::nil().to_string(),
+            tournament_id: Uuid::nil().to_string(),
+            fragments_persisted: 3,
+            hands_persisted: 2,
+            stage_profile: IngestStageProfile {
+                parse_ms: 11,
+                normalize_ms: 12,
+                persist_ms: 13,
+                materialize_ms: 14,
+                finalize_ms: 15,
+            },
+        };
+
+        let value = serde_json::to_value(output).expect("worker output must serialize");
+        assert_eq!(
+            value,
+            json!({
+                "kind": "local_import",
+                "file_kind": "hh",
+                "source_file_id": Uuid::nil().to_string(),
+                "import_job_id": Uuid::nil().to_string(),
+                "tournament_id": Uuid::nil().to_string(),
+                "fragments_persisted": 3,
+                "hands_persisted": 2,
+                "stage_profile": {
+                    "parse_ms": 11,
+                    "normalize_ms": 12,
+                    "persist_ms": 13,
+                    "materialize_ms": 14,
+                    "finalize_ms": 15
+                }
+            })
         );
     }
 }

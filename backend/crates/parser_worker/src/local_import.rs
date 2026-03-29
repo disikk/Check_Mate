@@ -3,10 +3,14 @@ use std::{
     env, fs,
     io::Read,
     path::Path,
+    time::Instant,
 };
 
 use anyhow::{Context, Result, anyhow};
-use mbr_stats_runtime::{GG_MBR_FT_MAX_PLAYERS, materialize_player_hand_features};
+use mbr_stats_runtime::{
+    GG_MBR_FT_MAX_PLAYERS, materialize_player_hand_features,
+    materialize_player_hand_features_for_bundle,
+};
 use postgres::{Client, NoTls, Transaction};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -36,6 +40,49 @@ const HAND_RESOLUTION_VERSION: &str = EXACT_CORE_RESOLUTION_VERSION;
 const GG_TIMESTAMP_PROVENANCE_PRESENT: &str = "gg_user_timezone";
 const GG_TIMESTAMP_PROVENANCE_MISSING: &str = "gg_user_timezone_missing";
 
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
+pub struct IngestStageProfile {
+    pub parse_ms: u64,
+    pub normalize_ms: u64,
+    pub persist_ms: u64,
+    pub materialize_ms: u64,
+    pub finalize_ms: u64,
+}
+
+impl IngestStageProfile {
+    fn add_assign(&mut self, other: IngestStageProfile) {
+        self.parse_ms += other.parse_ms;
+        self.normalize_ms += other.normalize_ms;
+        self.persist_ms += other.persist_ms;
+        self.materialize_ms += other.materialize_ms;
+        self.finalize_ms += other.finalize_ms;
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub struct IngestRunProfile {
+    pub processed_jobs: usize,
+    pub file_jobs: usize,
+    pub finalize_jobs: usize,
+    pub files_persisted: usize,
+    pub hands_persisted: usize,
+    pub stage_profile: IngestStageProfile,
+}
+
+impl IngestRunProfile {
+    fn record_file_job(&mut self, report: &LocalImportReport) {
+        self.file_jobs += 1;
+        self.files_persisted += 1;
+        self.hands_persisted += report.hands_persisted;
+        self.stage_profile.add_assign(report.stage_profile);
+    }
+
+    fn record_finalize_job(&mut self, stage_profile: IngestStageProfile) {
+        self.finalize_jobs += 1;
+        self.stage_profile.add_assign(stage_profile);
+    }
+}
+
 #[derive(Debug)]
 pub struct LocalImportReport {
     pub file_kind: &'static str,
@@ -44,10 +91,13 @@ pub struct LocalImportReport {
     pub tournament_id: Uuid,
     pub fragments_persisted: usize,
     pub hands_persisted: usize,
+    pub stage_profile: IngestStageProfile,
 }
 
 struct LocalImportExecutor {
     report: Option<LocalImportReport>,
+    run_profile: IngestRunProfile,
+    last_finalize_profile: IngestStageProfile,
 }
 
 #[derive(Debug)]
@@ -378,7 +428,11 @@ pub fn import_path(path: &str, player_profile_id: Uuid) -> Result<LocalImportRep
     tx.commit()
         .context("failed to commit ingest enqueue transaction")?;
 
-    let mut executor = LocalImportExecutor { report: None };
+    let mut executor = LocalImportExecutor {
+        report: None,
+        run_profile: IngestRunProfile::default(),
+        last_finalize_profile: IngestStageProfile::default(),
+    };
     loop {
         let mut tx = client
             .transaction()
@@ -403,9 +457,13 @@ pub fn import_path(path: &str, player_profile_id: Uuid) -> Result<LocalImportRep
         }
     }
 
-    executor.report.ok_or_else(|| {
+    let mut report = executor.report.ok_or_else(|| {
         anyhow!("ingest bundle for `{path}` finished without successful file import")
-    })
+    })?;
+    report
+        .stage_profile
+        .add_assign(executor.last_finalize_profile);
+    Ok(report)
 }
 
 pub fn run_ingest_runner_until_idle(
@@ -413,10 +471,24 @@ pub fn run_ingest_runner_until_idle(
     runner_name: &str,
     max_attempts: i32,
 ) -> Result<usize> {
+    Ok(
+        run_ingest_runner_until_idle_with_profile(database_url, runner_name, max_attempts)?
+            .processed_jobs,
+    )
+}
+
+pub fn run_ingest_runner_until_idle_with_profile(
+    database_url: &str,
+    runner_name: &str,
+    max_attempts: i32,
+) -> Result<IngestRunProfile> {
     let mut client =
         Client::connect(database_url, NoTls).context("failed to connect to PostgreSQL")?;
-    let mut executor = LocalImportExecutor { report: None };
-    let mut processed_jobs = 0usize;
+    let mut executor = LocalImportExecutor {
+        report: None,
+        run_profile: IngestRunProfile::default(),
+        last_finalize_profile: IngestStageProfile::default(),
+    };
 
     loop {
         let mut tx = client
@@ -427,13 +499,13 @@ pub fn run_ingest_runner_until_idle(
             .context("failed to commit ingest runner transaction")?;
 
         if claimed.is_some() {
-            processed_jobs += 1;
+            executor.run_profile.processed_jobs += 1;
         } else {
             break;
         }
     }
 
-    Ok(processed_jobs)
+    Ok(executor.run_profile)
 }
 
 fn build_ingest_file_input(path: &str, input: &str) -> Result<IngestFileInput> {
@@ -568,6 +640,7 @@ impl JobExecutor for LocalImportExecutor {
         };
         let report = report.map_err(|error| JobExecutionError::terminal(format!("{error:#}")))?;
 
+        self.run_profile.record_file_job(&report);
         self.report = Some(report);
         Ok(())
     }
@@ -577,9 +650,24 @@ impl JobExecutor for LocalImportExecutor {
         client: &mut C,
         job: &IngestClaimedJob,
     ) -> std::result::Result<(), JobExecutionError> {
-        materialize_player_hand_features(client, job.organization_id, job.player_profile_id)
-            .map(|_| ())
-            .map_err(|error| JobExecutionError::retriable(error.to_string()))
+        let started_at = Instant::now();
+        materialize_player_hand_features_for_bundle(
+            client,
+            job.organization_id,
+            job.player_profile_id,
+            job.bundle_id,
+        )
+        .map(|_| {
+            let elapsed_ms = started_at.elapsed().as_millis() as u64;
+            let stage_profile = IngestStageProfile {
+                materialize_ms: elapsed_ms,
+                finalize_ms: elapsed_ms,
+                ..IngestStageProfile::default()
+            };
+            self.last_finalize_profile = stage_profile;
+            self.run_profile.record_finalize_job(stage_profile);
+        })
+        .map_err(|error| JobExecutionError::retriable(error.to_string()))
     }
 }
 
@@ -838,7 +926,10 @@ fn import_tournament_summary_registered(
     source_file_member_id: Uuid,
     import_job_id: Uuid,
 ) -> Result<LocalImportReport> {
+    let parse_started_at = Instant::now();
     let summary = parse_tournament_summary(input)?;
+    let parse_ms = parse_started_at.elapsed().as_millis() as u64;
+    let persist_started_at = Instant::now();
     let tournament_entry_economics = load_tournament_entry_economics(tx, context, &summary)?;
     let fragment_id = insert_file_fragment(
         tx,
@@ -996,6 +1087,13 @@ fn import_tournament_summary_registered(
         tournament_id,
         fragments_persisted: 1,
         hands_persisted: 0,
+        stage_profile: IngestStageProfile {
+            parse_ms,
+            normalize_ms: 0,
+            persist_ms: persist_started_at.elapsed().as_millis() as u64,
+            materialize_ms: 0,
+            finalize_ms: 0,
+        },
     })
 }
 
@@ -1030,15 +1128,20 @@ fn import_hand_history_registered(
     source_file_member_id: Uuid,
     import_job_id: Uuid,
 ) -> Result<LocalImportReport> {
+    let parse_started_at = Instant::now();
     let hands = split_hand_history(input)?;
     let canonical_hands = hands
         .iter()
         .map(|hand| parse_canonical_hand(&hand.raw_text))
         .collect::<Result<Vec<_>, _>>()?;
+    let parse_ms = parse_started_at.elapsed().as_millis() as u64;
+    let normalize_started_at = Instant::now();
     let normalized_hands = canonical_hands
         .iter()
         .map(normalize_hand)
         .collect::<Result<Vec<_>, _>>()?;
+    let normalize_ms = normalize_started_at.elapsed().as_millis() as u64;
+    let persist_started_at = Instant::now();
     let first_hand = hands
         .first()
         .ok_or_else(|| anyhow!("hand history contains no parsed hands"))?;
@@ -1229,6 +1332,13 @@ fn import_hand_history_registered(
         tournament_id,
         fragments_persisted: hands.len(),
         hands_persisted: hands.len(),
+        stage_profile: IngestStageProfile {
+            parse_ms,
+            normalize_ms,
+            persist_ms: persist_started_at.elapsed().as_millis() as u64,
+            materialize_ms: 0,
+            finalize_ms: 0,
+        },
     })
 }
 
@@ -1332,113 +1442,16 @@ fn persist_canonical_hand(
     let rows = build_canonical_persistence(hand)?;
     replace_hand_children(tx, source_file_id, fragment_id, hand_id)?;
 
-    for seat in &rows.seats {
-        tx.execute(
-            "INSERT INTO core.hand_seats (
-                hand_id,
-                seat_no,
-                player_name,
-                player_profile_id,
-                starting_stack,
-                is_hero,
-                is_button,
-                is_sitting_out
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-            &[
-                &hand_id,
-                &seat.seat_no,
-                &seat.player_name,
-                &context
-                    .player_aliases
-                    .iter()
-                    .any(|alias| alias == &seat.player_name)
-                    .then_some(context.player_profile_id),
-                &seat.starting_stack,
-                &seat.is_hero,
-                &seat.is_button,
-                &seat.is_sitting_out,
-            ],
-        )?;
-    }
-
-    for position in &rows.positions {
-        tx.execute(
-            "INSERT INTO core.hand_positions (
-                hand_id,
-                seat_no,
-                position_index,
-                position_label,
-                preflop_act_order_index,
-                postflop_act_order_index
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)",
-            &[
-                &hand_id,
-                &position.seat_no,
-                &position.position_index,
-                &position.position_label,
-                &position.preflop_act_order_index,
-                &position.postflop_act_order_index,
-            ],
-        )?;
-    }
-
-    for hole_cards in &rows.hole_cards {
-        tx.execute(
-            "INSERT INTO core.hand_hole_cards (
-                hand_id,
-                seat_no,
-                card1,
-                card2,
-                known_to_hero,
-                known_at_showdown
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)",
-            &[
-                &hand_id,
-                &hole_cards.seat_no,
-                &hole_cards.card1,
-                &hole_cards.card2,
-                &hole_cards.known_to_hero,
-                &hole_cards.known_at_showdown,
-            ],
-        )?;
-    }
-
-    for action in &rows.actions {
-        tx.execute(
-            "INSERT INTO core.hand_actions (
-                hand_id,
-                sequence_no,
-                street,
-                seat_no,
-                action_type,
-                raw_amount,
-                to_amount,
-                is_all_in,
-                all_in_reason,
-                forced_all_in_preflop,
-                references_previous_bet,
-                raw_line
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-            &[
-                &hand_id,
-                &action.sequence_no,
-                &action.street,
-                &action.seat_no,
-                &action.action_type,
-                &action.raw_amount,
-                &action.to_amount,
-                &action.is_all_in,
-                &action.all_in_reason,
-                &action.forced_all_in_preflop,
-                &action.references_previous_bet,
-                &action.raw_line,
-            ],
-        )?;
-    }
+    insert_hand_seat_rows(
+        tx,
+        hand_id,
+        context.player_profile_id,
+        &context.player_aliases,
+        &rows.seats,
+    )?;
+    insert_hand_position_rows(tx, hand_id, &rows.positions)?;
+    insert_hand_hole_card_rows(tx, hand_id, &rows.hole_cards)?;
+    insert_hand_action_rows(tx, hand_id, &rows.actions)?;
 
     if let Some(board) = &rows.board {
         tx.execute(
@@ -1462,47 +1475,8 @@ fn persist_canonical_hand(
         )?;
     }
 
-    for showdown in &rows.showdowns {
-        tx.execute(
-            "INSERT INTO core.hand_showdowns (
-                hand_id,
-                seat_no,
-                shown_cards
-            )
-            VALUES ($1, $2, $3)",
-            &[&hand_id, &showdown.seat_no, &showdown.shown_cards],
-        )?;
-    }
-
-    for summary_outcome in &rows.summary_seat_outcomes {
-        tx.execute(
-            "INSERT INTO core.hand_summary_results (
-                hand_id,
-                seat_no,
-                player_name,
-                position_marker,
-                outcome_kind,
-                folded_street,
-                shown_cards,
-                won_amount,
-                hand_class,
-                raw_line
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-            &[
-                &hand_id,
-                &summary_outcome.seat_no,
-                &summary_outcome.player_name,
-                &summary_outcome.position_marker,
-                &summary_outcome.outcome_kind,
-                &summary_outcome.folded_street,
-                &summary_outcome.shown_cards,
-                &summary_outcome.won_amount,
-                &summary_outcome.hand_class,
-                &summary_outcome.raw_line,
-            ],
-        )?;
-    }
+    insert_hand_showdown_rows(tx, hand_id, &rows.showdowns)?;
+    insert_hand_summary_result_rows(tx, hand_id, &rows.summary_seat_outcomes)?;
 
     for issue in &rows.parse_issues {
         tx.execute(
@@ -1584,89 +1558,11 @@ fn persist_normalized_hand(
         ],
     )?;
 
-    for pot_row in pot_rows {
-        tx.execute(
-            "INSERT INTO core.hand_pots (
-                hand_id,
-                pot_no,
-                pot_type,
-                amount
-            )
-            VALUES ($1, $2, $3, $4)",
-            &[
-                &hand_id,
-                &pot_row.pot_no,
-                &pot_row.pot_type,
-                &pot_row.amount,
-            ],
-        )?;
-    }
-
-    for eligibility_row in eligibility_rows {
-        tx.execute(
-            "INSERT INTO core.hand_pot_eligibility (
-                hand_id,
-                pot_no,
-                seat_no
-            )
-            VALUES ($1, $2, $3)",
-            &[&hand_id, &eligibility_row.pot_no, &eligibility_row.seat_no],
-        )?;
-    }
-
-    for contribution_row in contribution_rows {
-        tx.execute(
-            "INSERT INTO core.hand_pot_contributions (
-                hand_id,
-                pot_no,
-                seat_no,
-                amount
-            )
-            VALUES ($1, $2, $3, $4)",
-            &[
-                &hand_id,
-                &contribution_row.pot_no,
-                &contribution_row.seat_no,
-                &contribution_row.amount,
-            ],
-        )?;
-    }
-
-    for winner_row in winner_rows {
-        tx.execute(
-            "INSERT INTO core.hand_pot_winners (
-                hand_id,
-                pot_no,
-                seat_no,
-                share_amount
-            )
-            VALUES ($1, $2, $3, $4)",
-            &[
-                &hand_id,
-                &winner_row.pot_no,
-                &winner_row.seat_no,
-                &winner_row.share_amount,
-            ],
-        )?;
-    }
-
-    for return_row in return_rows {
-        tx.execute(
-            "INSERT INTO core.hand_returns (
-                hand_id,
-                seat_no,
-                amount,
-                reason
-            )
-            VALUES ($1, $2, $3, $4)",
-            &[
-                &hand_id,
-                &return_row.seat_no,
-                &return_row.amount,
-                &return_row.reason,
-            ],
-        )?;
-    }
+    insert_hand_pot_rows(tx, hand_id, &pot_rows)?;
+    insert_hand_pot_eligibility_rows(tx, hand_id, &eligibility_rows)?;
+    insert_hand_pot_contribution_rows(tx, hand_id, &contribution_rows)?;
+    insert_hand_pot_winner_rows(tx, hand_id, &winner_rows)?;
+    insert_hand_return_rows(tx, hand_id, &return_rows)?;
 
     tx.execute(
         "DELETE FROM derived.hand_eliminations WHERE hand_id = $1",
@@ -1719,67 +1615,17 @@ fn persist_hand_ko_events(
     let attempt_rows = build_hand_ko_attempt_rows(hand);
     let opportunity_rows = build_hand_ko_opportunity_rows(hand);
 
-    tx.execute("DELETE FROM derived.hand_ko_attempts WHERE hand_id = $1", &[&hand_id])?;
+    tx.execute(
+        "DELETE FROM derived.hand_ko_attempts WHERE hand_id = $1",
+        &[&hand_id],
+    )?;
     tx.execute(
         "DELETE FROM derived.hand_ko_opportunities WHERE hand_id = $1",
         &[&hand_id],
     )?;
 
-    for row in attempt_rows {
-        tx.execute(
-            "INSERT INTO derived.hand_ko_attempts (
-                hand_id,
-                player_profile_id,
-                hero_seat_no,
-                target_seat_no,
-                target_player_name,
-                attempt_kind,
-                street,
-                source_sequence_no,
-                is_forced_all_in
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-            &[
-                &hand_id,
-                &player_profile_id,
-                &row.hero_seat_no,
-                &row.target_seat_no,
-                &row.target_player_name,
-                &row.attempt_kind,
-                &row.street,
-                &row.source_sequence_no,
-                &row.is_forced_all_in,
-            ],
-        )?;
-    }
-
-    for row in opportunity_rows {
-        tx.execute(
-            "INSERT INTO derived.hand_ko_opportunities (
-                hand_id,
-                player_profile_id,
-                hero_seat_no,
-                target_seat_no,
-                target_player_name,
-                opportunity_kind,
-                street,
-                source_sequence_no,
-                is_forced_all_in
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-            &[
-                &hand_id,
-                &player_profile_id,
-                &row.hero_seat_no,
-                &row.target_seat_no,
-                &row.target_player_name,
-                &row.opportunity_kind,
-                &row.street,
-                &row.source_sequence_no,
-                &row.is_forced_all_in,
-            ],
-        )?;
-    }
+    insert_hand_ko_attempt_rows(tx, hand_id, player_profile_id, &attempt_rows)?;
+    insert_hand_ko_opportunity_rows(tx, hand_id, player_profile_id, &opportunity_rows)?;
 
     Ok(())
 }
@@ -1957,46 +1803,7 @@ fn persist_street_hand_strength(
         &[&hand_id],
     )?;
 
-    for row in rows {
-        tx.execute(
-            "INSERT INTO derived.street_hand_strength (
-                hand_id,
-                seat_no,
-                street,
-                best_hand_class,
-                best_hand_rank_value,
-                made_hand_category,
-                draw_category,
-                overcards_count,
-                has_air,
-                missed_flush_draw,
-                missed_straight_draw,
-                is_nut_hand,
-                is_nut_draw,
-                certainty_state
-            )
-            VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14
-            )",
-            &[
-                &hand_id,
-                &row.seat_no,
-                &row.street,
-                &row.best_hand_class,
-                &row.best_hand_rank_value,
-                &row.made_hand_category,
-                &row.draw_category,
-                &row.overcards_count,
-                &row.has_air,
-                &row.missed_flush_draw,
-                &row.missed_straight_draw,
-                &row.is_nut_hand,
-                &row.is_nut_draw,
-                &row.certainty_state,
-            ],
-        )?;
-    }
+    insert_street_hand_strength_rows(tx, hand_id, rows)?;
 
     Ok(())
 }
@@ -2012,22 +1819,450 @@ fn persist_preflop_starting_hands(
         &[&hand_id],
     )?;
 
-    for row in rows {
-        tx.execute(
-            "INSERT INTO derived.preflop_starting_hands (
-                hand_id,
-                seat_no,
-                starter_hand_class,
-                certainty_state
-            )
-            VALUES ($1, $2, $3, $4)",
-            &[
-                &hand_id,
-                &row.seat_no,
-                &row.starter_hand_class,
-                &row.certainty_state,
-            ],
-        )?;
+    insert_preflop_starting_hand_rows(tx, hand_id, rows)?;
+
+    Ok(())
+}
+
+const PERSIST_BATCH_INSERT_CHUNK_SIZE: usize = 256;
+
+fn execute_batched_insert(
+    tx: &mut impl postgres::GenericClient,
+    insert_prefix: &str,
+    column_patterns: &[&str],
+    row_count: usize,
+    params: &[&(dyn postgres::types::ToSql + Sync)],
+) -> Result<()> {
+    if row_count == 0 {
+        return Ok(());
+    }
+
+    let statement = format!(
+        "{insert_prefix} VALUES {}",
+        build_batched_values_clause(row_count, column_patterns)
+    );
+    tx.execute(&statement, params)?;
+    Ok(())
+}
+
+fn build_batched_values_clause(row_count: usize, column_patterns: &[&str]) -> String {
+    let mut bind_index = 1usize;
+    let mut row_sql = Vec::with_capacity(row_count);
+
+    for _ in 0..row_count {
+        let mut columns = Vec::with_capacity(column_patterns.len());
+        for pattern in column_patterns {
+            columns.push(pattern.replace("{}", &format!("${bind_index}")));
+            bind_index += 1;
+        }
+        row_sql.push(format!("({})", columns.join(", ")));
+    }
+
+    row_sql.join(", ")
+}
+
+fn insert_hand_seat_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    player_profile_id: Uuid,
+    player_aliases: &[String],
+    rows: &[HandSeatRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_seats (        hand_id,        seat_no,        player_name,        player_profile_id,        starting_stack,        is_hero,        is_button,        is_sitting_out    )";
+
+    let mapped_profile_ids = rows
+        .iter()
+        .map(|seat| {
+            player_aliases
+                .iter()
+                .any(|alias| alias == &seat.player_name)
+                .then_some(player_profile_id)
+        })
+        .collect::<Vec<_>>();
+
+    for (chunk_index, chunk) in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE).enumerate() {
+        let offset = chunk_index * PERSIST_BATCH_INSERT_CHUNK_SIZE;
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+
+        for (index, seat) in chunk.iter().enumerate() {
+            params.push(&hand_id);
+            params.push(&seat.seat_no);
+            params.push(&seat.player_name);
+            params.push(&mapped_profile_ids[offset + index]);
+            params.push(&seat.starting_stack);
+            params.push(&seat.is_hero);
+            params.push(&seat.is_button);
+            params.push(&seat.is_sitting_out);
+        }
+
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_position_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandPositionRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_positions (        hand_id,        seat_no,        position_index,        position_label,        preflop_act_order_index,        postflop_act_order_index    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.position_index);
+            params.push(&row.position_label);
+            params.push(&row.preflop_act_order_index);
+            params.push(&row.postflop_act_order_index);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_hole_card_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandHoleCardsRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_hole_cards (        hand_id,        seat_no,        card1,        card2,        known_to_hero,        known_at_showdown    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.card1);
+            params.push(&row.card2);
+            params.push(&row.known_to_hero);
+            params.push(&row.known_at_showdown);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_action_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandActionRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &[
+        "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}",
+    ];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_actions (        hand_id,        sequence_no,        street,        seat_no,        action_type,        raw_amount,        to_amount,        is_all_in,        all_in_reason,        forced_all_in_preflop,        references_previous_bet,        raw_line    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.sequence_no);
+            params.push(&row.street);
+            params.push(&row.seat_no);
+            params.push(&row.action_type);
+            params.push(&row.raw_amount);
+            params.push(&row.to_amount);
+            params.push(&row.is_all_in);
+            params.push(&row.all_in_reason);
+            params.push(&row.forced_all_in_preflop);
+            params.push(&row.references_previous_bet);
+            params.push(&row.raw_line);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_showdown_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandShowdownRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}"];
+    const INSERT_PREFIX: &str =
+        "INSERT INTO core.hand_showdowns (        hand_id,        seat_no,        shown_cards    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.shown_cards);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_summary_result_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandSummarySeatOutcomeRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_summary_results (        hand_id,        seat_no,        player_name,        position_marker,        outcome_kind,        folded_street,        shown_cards,        won_amount,        hand_class,        raw_line    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.player_name);
+            params.push(&row.position_marker);
+            params.push(&row.outcome_kind);
+            params.push(&row.folded_street);
+            params.push(&row.shown_cards);
+            params.push(&row.won_amount);
+            params.push(&row.hand_class);
+            params.push(&row.raw_line);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_pot_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandPotRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_pots (        hand_id,        pot_no,        pot_type,        amount    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.pot_no);
+            params.push(&row.pot_type);
+            params.push(&row.amount);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_pot_eligibility_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandPotEligibilityRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_pot_eligibility (        hand_id,        pot_no,        seat_no    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.pot_no);
+            params.push(&row.seat_no);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_pot_contribution_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandPotContributionRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_pot_contributions (        hand_id,        pot_no,        seat_no,        amount    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.pot_no);
+            params.push(&row.seat_no);
+            params.push(&row.amount);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_pot_winner_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandPotWinnerRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_pot_winners (        hand_id,        pot_no,        seat_no,        share_amount    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.pot_no);
+            params.push(&row.seat_no);
+            params.push(&row.share_amount);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_return_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[HandReturnRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO core.hand_returns (        hand_id,        seat_no,        amount,        reason    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.amount);
+            params.push(&row.reason);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_ko_attempt_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    player_profile_id: Uuid,
+    rows: &[HandKoAttemptRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO derived.hand_ko_attempts (        hand_id,        player_profile_id,        hero_seat_no,        target_seat_no,        target_player_name,        attempt_kind,        street,        source_sequence_no,        is_forced_all_in    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&player_profile_id);
+            params.push(&row.hero_seat_no);
+            params.push(&row.target_seat_no);
+            params.push(&row.target_player_name);
+            params.push(&row.attempt_kind);
+            params.push(&row.street);
+            params.push(&row.source_sequence_no);
+            params.push(&row.is_forced_all_in);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_ko_opportunity_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    player_profile_id: Uuid,
+    rows: &[HandKoOpportunityRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO derived.hand_ko_opportunities (        hand_id,        player_profile_id,        hero_seat_no,        target_seat_no,        target_player_name,        opportunity_kind,        street,        source_sequence_no,        is_forced_all_in    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&player_profile_id);
+            params.push(&row.hero_seat_no);
+            params.push(&row.target_seat_no);
+            params.push(&row.target_player_name);
+            params.push(&row.opportunity_kind);
+            params.push(&row.street);
+            params.push(&row.source_sequence_no);
+            params.push(&row.is_forced_all_in);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_street_hand_strength_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[StreetHandStrengthRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &[
+        "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}",
+    ];
+    const INSERT_PREFIX: &str = "INSERT INTO derived.street_hand_strength (        hand_id,        seat_no,        street,        best_hand_class,        best_hand_rank_value,        made_hand_category,        draw_category,        overcards_count,        has_air,        missed_flush_draw,        missed_straight_draw,        is_nut_hand,        is_nut_draw,        certainty_state    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.street);
+            params.push(&row.best_hand_class);
+            params.push(&row.best_hand_rank_value);
+            params.push(&row.made_hand_category);
+            params.push(&row.draw_category);
+            params.push(&row.overcards_count);
+            params.push(&row.has_air);
+            params.push(&row.missed_flush_draw);
+            params.push(&row.missed_straight_draw);
+            params.push(&row.is_nut_hand);
+            params.push(&row.is_nut_draw);
+            params.push(&row.certainty_state);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
+    }
+
+    Ok(())
+}
+
+fn insert_preflop_starting_hand_rows(
+    tx: &mut impl postgres::GenericClient,
+    hand_id: Uuid,
+    rows: &[PreflopStartingHandRow],
+) -> Result<()> {
+    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
+    const INSERT_PREFIX: &str = "INSERT INTO derived.preflop_starting_hands (        hand_id,        seat_no,        starter_hand_class,        certainty_state    )";
+
+    for chunk in rows.chunks(PERSIST_BATCH_INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(chunk.len() * COLUMN_PATTERNS.len());
+        for row in chunk {
+            params.push(&hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.starter_hand_class);
+            params.push(&row.certainty_state);
+        }
+        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, chunk.len(), &params)?;
     }
 
     Ok(())
@@ -2209,10 +2444,9 @@ fn build_hand_ko_attempt_rows(hand: &CanonicalParsedHand) -> Vec<HandKoAttemptRo
                         street: hero_push_trigger.street,
                         is_forced_all_in: target_facts.forced_auto_all_in_sequence_no.is_some(),
                     })
-            } else if let (Some(target_all_in_sequence_no), Some(target_all_in_street)) = (
-                target_facts.all_in_sequence_no,
-                target_facts.all_in_street,
-            ) {
+            } else if let (Some(target_all_in_sequence_no), Some(target_all_in_street)) =
+                (target_facts.all_in_sequence_no, target_facts.all_in_street)
+            {
                 hero_responded_after_all_in(&hero_actions, target_all_in_sequence_no).then_some(
                     KoAttemptTrigger {
                         sequence_no: target_all_in_sequence_no,
@@ -2348,7 +2582,13 @@ fn target_seat_rows(
         .filter(|seat| seat.player_name != hero_name)
         .filter(|seat| seat.starting_stack > 0)
         .filter(|seat| hero_stack >= seat.starting_stack)
-        .map(|seat| (i32::from(seat.seat_no), seat.player_name.clone(), seat.starting_stack))
+        .map(|seat| {
+            (
+                i32::from(seat.seat_no),
+                seat.player_name.clone(),
+                seat.starting_stack,
+            )
+        })
         .collect()
 }
 
@@ -2383,7 +2623,9 @@ fn target_action_facts(
             ActionType::PostAnte | ActionType::PostSb | ActionType::PostBb | ActionType::PostDead
         )
     }) {
-        forced_commit_total += action.amount.unwrap_or(action.to_amount.unwrap_or_default());
+        forced_commit_total += action
+            .amount
+            .unwrap_or(action.to_amount.unwrap_or_default());
         if forced_auto_all_in_sequence_no.is_none() && forced_commit_total >= target_stack {
             forced_auto_all_in_sequence_no = Some(action.seq as i32);
             forced_auto_all_in_street = Some(action.street);
@@ -3443,9 +3685,9 @@ mod tests {
         expected_big_ko_bucket_probabilities, expected_hero_mystery_cents,
     };
     use mbr_stats_runtime::{
-        CanonicalStatNumericValue, CanonicalStatState, FtDashboardDataState,
-        FtDashboardFilters, FtValueState, MysteryEnvelope, SeedStatsFilters,
-        query_canonical_stats, query_ft_dashboard, query_seed_stats,
+        CanonicalStatNumericValue, CanonicalStatState, FtDashboardDataState, FtDashboardFilters,
+        FtValueState, MysteryEnvelope, SeedStatsFilters, query_canonical_stats, query_ft_dashboard,
+        query_seed_stats,
     };
     use std::{
         io::Write,
@@ -3503,6 +3745,22 @@ mod tests {
             "GG20260316-0351 - Mystery Battle Royale 25.txt",
         ),
     ];
+
+    #[test]
+    fn build_batched_values_clause_numbers_placeholders_row_by_row() {
+        let clause =
+            build_batched_values_clause(2, &["{}", "CAST({} AS integer)", "COALESCE({}, NULL)"]);
+
+        assert_eq!(
+            clause,
+            "($1, CAST($2 AS integer), COALESCE($3, NULL)), ($4, CAST($5 AS integer), COALESCE($6, NULL))"
+        );
+    }
+
+    #[test]
+    fn build_batched_values_clause_returns_empty_for_zero_rows() {
+        assert_eq!(build_batched_values_clause(0, &["{}", "{}"]), "");
+    }
 
     fn hand_query_request(
         organization_id: Uuid,
@@ -4101,7 +4359,11 @@ mod tests {
         assert_eq!(
             attempts
                 .iter()
-                .map(|row| (row.target_seat_no, row.attempt_kind.as_str(), row.street.as_str()))
+                .map(|row| (
+                    row.target_seat_no,
+                    row.attempt_kind.as_str(),
+                    row.street.as_str()
+                ))
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([
                 (2_i32, "hero_push", "preflop"),
@@ -4142,7 +4404,10 @@ mod tests {
         assert_eq!(blind_attempts[0].attempt_kind, "forced_auto_all_in");
         assert_eq!(blind_attempts[0].street, "preflop");
         assert!(blind_attempts[0].is_forced_all_in);
-        assert_eq!(blind_opportunities[0].opportunity_kind, "forced_auto_all_in");
+        assert_eq!(
+            blind_opportunities[0].opportunity_kind,
+            "forced_auto_all_in"
+        );
         assert!(blind_opportunities[0].is_forced_all_in);
     }
 
@@ -5815,16 +6080,25 @@ mod tests {
                 ("hand_ko_attempts".to_string(), "attempt_kind".to_string()),
                 ("hand_ko_attempts".to_string(), "hand_id".to_string()),
                 ("hand_ko_attempts".to_string(), "hero_seat_no".to_string()),
-                ("hand_ko_attempts".to_string(), "is_forced_all_in".to_string()),
-                ("hand_ko_attempts".to_string(), "player_profile_id".to_string()),
-                ("hand_ko_attempts".to_string(), "source_sequence_no".to_string()),
-                ("hand_ko_attempts".to_string(), "street".to_string()),
-                ("hand_ko_attempts".to_string(), "target_player_name".to_string()),
-                ("hand_ko_attempts".to_string(), "target_seat_no".to_string()),
                 (
-                    "hand_ko_opportunities".to_string(),
-                    "hand_id".to_string()
+                    "hand_ko_attempts".to_string(),
+                    "is_forced_all_in".to_string()
                 ),
+                (
+                    "hand_ko_attempts".to_string(),
+                    "player_profile_id".to_string()
+                ),
+                (
+                    "hand_ko_attempts".to_string(),
+                    "source_sequence_no".to_string()
+                ),
+                ("hand_ko_attempts".to_string(), "street".to_string()),
+                (
+                    "hand_ko_attempts".to_string(),
+                    "target_player_name".to_string()
+                ),
+                ("hand_ko_attempts".to_string(), "target_seat_no".to_string()),
+                ("hand_ko_opportunities".to_string(), "hand_id".to_string()),
                 (
                     "hand_ko_opportunities".to_string(),
                     "hero_seat_no".to_string()
@@ -8333,9 +8607,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            hand_attempt_feature
-                .get::<_, Option<String>>(0)
-                .as_deref(),
+            hand_attempt_feature.get::<_, Option<String>>(0).as_deref(),
             Some(format!("{expected_hand_attempt_count}.000000").as_str())
         );
         assert_eq!(
@@ -10757,11 +11029,13 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
             hero_name: Some("Hero".to_string()),
             seats: seats
                 .into_iter()
-                .map(|(player_name, seat_no, starting_stack)| tracker_parser_core::models::ParsedHandSeat {
-                    seat_no,
-                    player_name: player_name.to_string(),
-                    starting_stack,
-                    is_sitting_out: false,
+                .map(|(player_name, seat_no, starting_stack)| {
+                    tracker_parser_core::models::ParsedHandSeat {
+                        seat_no,
+                        player_name: player_name.to_string(),
+                        starting_stack,
+                        is_sitting_out: false,
+                    }
                 })
                 .collect(),
             actions,
@@ -11303,15 +11577,6 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
                 .unwrap();
             client
                 .execute(
-                    "DELETE FROM import.source_file_members
-                     WHERE source_file_id IN (
-                         SELECT id FROM import.source_files WHERE player_profile_id = $1
-                     )",
-                    &[&player_profile_id],
-                )
-                .unwrap();
-            client
-                .execute(
                     "DELETE FROM import.job_attempts
                      WHERE import_job_id IN (
                          SELECT id
@@ -11335,6 +11600,15 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
                         OR bundle_id IN (
                             SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
                         )",
+                    &[&player_profile_id],
+                )
+                .unwrap();
+            client
+                .execute(
+                    "DELETE FROM import.source_file_members
+                     WHERE source_file_id IN (
+                         SELECT id FROM import.source_files WHERE player_profile_id = $1
+                     )",
                     &[&player_profile_id],
                 )
                 .unwrap();

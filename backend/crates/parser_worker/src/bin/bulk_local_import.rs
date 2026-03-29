@@ -1,7 +1,7 @@
 use std::{env, fs, process::ExitCode};
 
 use anyhow::{Context, Result, anyhow};
-use parser_worker::local_import::run_ingest_runner_until_idle;
+use parser_worker::local_import::run_ingest_runner_until_idle_with_profile;
 use postgres::{Client, NoTls};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -30,6 +30,12 @@ struct BulkImportOutput {
     chunk_size: usize,
     runner_name: String,
     processed_jobs: usize,
+    file_jobs: usize,
+    finalize_jobs: usize,
+    hands_persisted: usize,
+    runner_elapsed_ms: u64,
+    hands_per_minute: f64,
+    stage_profile: parser_worker::local_import::IngestStageProfile,
     bundle_ids: Vec<String>,
 }
 
@@ -50,7 +56,10 @@ fn run() -> Result<()> {
     let paths = read_list_file(&args.list_file)?;
 
     if paths.is_empty() {
-        return Err(anyhow!("list file `{}` contained no import paths", args.list_file));
+        return Err(anyhow!(
+            "list file `{}` contained no import paths",
+            args.list_file
+        ));
     }
 
     let mut client =
@@ -81,13 +90,27 @@ fn run() -> Result<()> {
         bundle_ids.push(bundle.bundle_id);
     }
 
-    let processed_jobs = run_ingest_runner_until_idle(&database_url, &args.runner_name, 3)?;
+    let runner_started_at = std::time::Instant::now();
+    let run_profile =
+        run_ingest_runner_until_idle_with_profile(&database_url, &args.runner_name, 3)?;
+    let runner_elapsed_ms = runner_started_at.elapsed().as_millis() as u64;
+    let hands_per_minute = if runner_elapsed_ms == 0 {
+        0.0
+    } else {
+        (run_profile.hands_persisted as f64) * 60_000.0 / (runner_elapsed_ms as f64)
+    };
     let output = BulkImportOutput {
         bundle_count: bundle_ids.len(),
         file_count: paths.len(),
         chunk_size: args.chunk_size,
         runner_name: args.runner_name,
-        processed_jobs,
+        processed_jobs: run_profile.processed_jobs,
+        file_jobs: run_profile.file_jobs,
+        finalize_jobs: run_profile.finalize_jobs,
+        hands_persisted: run_profile.hands_persisted,
+        runner_elapsed_ms,
+        hands_per_minute,
+        stage_profile: run_profile.stage_profile,
         bundle_ids: bundle_ids.into_iter().map(|id| id.to_string()).collect(),
     };
 
@@ -105,9 +128,7 @@ fn parse_args(args: &[String]) -> Result<BulkImportArgs> {
     while index < args.len() {
         match args[index].as_str() {
             "--player-profile-id" => {
-                let value = args
-                    .get(index + 1)
-                    .ok_or_else(usage_error)?;
+                let value = args.get(index + 1).ok_or_else(usage_error)?;
                 player_profile_id = Some(
                     Uuid::parse_str(value)
                         .with_context(|| format!("invalid --player-profile-id `{value}`"))?,
@@ -115,16 +136,12 @@ fn parse_args(args: &[String]) -> Result<BulkImportArgs> {
                 index += 2;
             }
             "--list-file" => {
-                let value = args
-                    .get(index + 1)
-                    .ok_or_else(usage_error)?;
+                let value = args.get(index + 1).ok_or_else(usage_error)?;
                 list_file = Some(value.clone());
                 index += 2;
             }
             "--chunk-size" => {
-                let value = args
-                    .get(index + 1)
-                    .ok_or_else(usage_error)?;
+                let value = args.get(index + 1).ok_or_else(usage_error)?;
                 chunk_size = value
                     .parse::<usize>()
                     .with_context(|| format!("invalid --chunk-size `{value}`"))?;
@@ -134,9 +151,7 @@ fn parse_args(args: &[String]) -> Result<BulkImportArgs> {
                 index += 2;
             }
             "--runner-name" => {
-                let value = args
-                    .get(index + 1)
-                    .ok_or_else(usage_error)?;
+                let value = args.get(index + 1).ok_or_else(usage_error)?;
                 runner_name = value.clone();
                 index += 2;
             }
@@ -179,7 +194,9 @@ fn load_import_actor(client: &mut Client, player_profile_id: Uuid) -> Result<Imp
                AND player_profiles.room = 'gg'",
             &[&player_profile_id],
         )?
-        .ok_or_else(|| anyhow!("player profile `{player_profile_id}` does not exist for room `gg`"))?;
+        .ok_or_else(|| {
+            anyhow!("player profile `{player_profile_id}` does not exist for room `gg`")
+        })?;
 
     Ok(ImportActor {
         organization_id: row.get(0),
@@ -223,6 +240,8 @@ fn source_filename(path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use parser_worker::local_import::IngestStageProfile;
+    use serde_json::json;
 
     #[test]
     fn parse_args_accepts_required_flags_and_defaults() {
@@ -268,6 +287,55 @@ mod tests {
                 .to_string()
                 .contains("--player-profile-id <uuid> --list-file <path>"),
             "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn bulk_import_output_serializes_stage_profile_contract() {
+        let value = serde_json::to_value(BulkImportOutput {
+            bundle_count: 2,
+            file_count: 4,
+            chunk_size: 2,
+            runner_name: "bulk-runner".to_string(),
+            processed_jobs: 6,
+            bundle_ids: vec![Uuid::nil().to_string()],
+            file_jobs: 4,
+            finalize_jobs: 2,
+            hands_persisted: 10,
+            runner_elapsed_ms: 500,
+            hands_per_minute: 1_200.0,
+            stage_profile: IngestStageProfile {
+                parse_ms: 100,
+                normalize_ms: 110,
+                persist_ms: 120,
+                materialize_ms: 130,
+                finalize_ms: 140,
+            },
+        })
+        .expect("bulk import output must serialize");
+
+        assert_eq!(
+            value,
+            json!({
+                "bundle_count": 2,
+                "file_count": 4,
+                "chunk_size": 2,
+                "runner_name": "bulk-runner",
+                "processed_jobs": 6,
+                "bundle_ids": [Uuid::nil().to_string()],
+                "file_jobs": 4,
+                "finalize_jobs": 2,
+                "hands_persisted": 10,
+                "runner_elapsed_ms": 500,
+                "hands_per_minute": 1200.0,
+                "stage_profile": {
+                    "parse_ms": 100,
+                    "normalize_ms": 110,
+                    "persist_ms": 120,
+                    "materialize_ms": 130,
+                    "finalize_ms": 140
+                }
+            })
         );
     }
 }

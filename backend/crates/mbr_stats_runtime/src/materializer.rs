@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use postgres::{GenericClient, Row};
+use postgres::{GenericClient, Row, types::ToSql};
 use uuid::Uuid;
 
 use crate::{
@@ -23,18 +23,123 @@ struct StreetFeatureRowSummary {
     street_enum_rows: u64,
 }
 
+const INSERT_CHUNK_SIZE: usize = 1_000;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HandBoolInsertRow {
+    hand_id: Uuid,
+    feature_key: String,
+    value: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct HandNumInsertRow {
+    hand_id: Uuid,
+    feature_key: String,
+    value: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HandEnumInsertRow {
+    hand_id: Uuid,
+    feature_key: String,
+    value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StreetBoolInsertRow {
+    hand_id: Uuid,
+    seat_no: i32,
+    street: String,
+    feature_key: String,
+    value: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct StreetNumInsertRow {
+    hand_id: Uuid,
+    seat_no: i32,
+    street: String,
+    feature_key: String,
+    value: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StreetEnumInsertRow {
+    hand_id: Uuid,
+    seat_no: i32,
+    street: String,
+    feature_key: String,
+    value: String,
+}
+
 pub fn materialize_player_hand_features(
     client: &mut impl GenericClient,
     organization_id: Uuid,
     player_profile_id: Uuid,
 ) -> Result<MaterializationReport> {
-    delete_existing_feature_rows(client, organization_id, player_profile_id)?;
+    materialize_player_hand_features_inner(client, organization_id, player_profile_id, None)
+}
 
-    let hand_facts = load_hand_feature_facts(client, organization_id, player_profile_id)?;
+pub fn materialize_player_hand_features_for_tournaments(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    tournament_ids: &[Uuid],
+) -> Result<MaterializationReport> {
+    if tournament_ids.is_empty() {
+        return Ok(empty_materialization_report());
+    }
+
+    materialize_player_hand_features_inner(
+        client,
+        organization_id,
+        player_profile_id,
+        Some(tournament_ids),
+    )
+}
+
+pub fn materialize_player_hand_features_for_bundle(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    bundle_id: Uuid,
+) -> Result<MaterializationReport> {
+    let tournament_ids =
+        load_bundle_tournament_ids(client, bundle_id, organization_id, player_profile_id)?;
+    materialize_player_hand_features_for_tournaments(
+        client,
+        organization_id,
+        player_profile_id,
+        &tournament_ids,
+    )
+}
+
+fn materialize_player_hand_features_inner(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    tournament_ids: Option<&[Uuid]>,
+) -> Result<MaterializationReport> {
+    match tournament_ids {
+        Some(ids) => {
+            delete_existing_feature_rows_for_tournaments(
+                client,
+                organization_id,
+                player_profile_id,
+                ids,
+            )?;
+        }
+        None => delete_existing_feature_rows(client, organization_id, player_profile_id)?,
+    }
+
+    let hand_facts =
+        load_hand_feature_facts(client, organization_id, player_profile_id, tournament_ids)?;
     let hand_rows = build_feature_rows(&hand_facts);
     persist_feature_rows(client, organization_id, player_profile_id, &hand_rows)?;
 
-    let street_facts = load_street_feature_facts(client, organization_id, player_profile_id)?;
+    let street_facts =
+        load_street_feature_facts(client, organization_id, player_profile_id, tournament_ids)?;
     let street_rows = build_street_feature_rows(&street_facts);
     persist_street_feature_rows(client, organization_id, player_profile_id, &street_rows)?;
     let street_summary = summarize_street_feature_rows(&street_rows);
@@ -59,6 +164,44 @@ pub fn materialize_player_hand_features(
         street_num_rows: street_summary.street_num_rows,
         street_enum_rows: street_summary.street_enum_rows,
     })
+}
+
+fn empty_materialization_report() -> MaterializationReport {
+    MaterializationReport {
+        hand_count: 0,
+        bool_rows: 0,
+        num_rows: 0,
+        enum_rows: 0,
+        street_row_count: 0,
+        street_bool_rows: 0,
+        street_num_rows: 0,
+        street_enum_rows: 0,
+    }
+}
+
+fn load_bundle_tournament_ids(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+) -> Result<Vec<Uuid>> {
+    Ok(client
+        .query(
+            "SELECT DISTINCT h.tournament_id
+             FROM import.import_jobs jobs
+             INNER JOIN core.hands h
+               ON h.source_file_id = jobs.source_file_id
+             WHERE jobs.bundle_id = $1
+               AND jobs.job_kind = 'file_ingest'
+               AND jobs.source_file_id IS NOT NULL
+               AND h.organization_id = $2
+               AND h.player_profile_id = $3
+             ORDER BY h.tournament_id",
+            &[&bundle_id, &organization_id, &player_profile_id],
+        )?
+        .into_iter()
+        .map(|row| row.get(0))
+        .collect())
 }
 
 fn delete_existing_feature_rows(
@@ -88,12 +231,60 @@ fn delete_existing_feature_rows(
     Ok(())
 }
 
+fn delete_existing_feature_rows_for_tournaments(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    tournament_ids: &[Uuid],
+) -> Result<()> {
+    if tournament_ids.is_empty() {
+        return Ok(());
+    }
+
+    let tournament_clause = placeholder_list(4, tournament_ids.len());
+    let mut params: Vec<&(dyn ToSql + Sync)> =
+        vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
+    params.extend(tournament_ids.iter().map(|id| id as &(dyn ToSql + Sync)));
+
+    for table in [
+        "analytics.player_hand_bool_features",
+        "analytics.player_hand_num_features",
+        "analytics.player_hand_enum_features",
+        "analytics.player_street_bool_features",
+        "analytics.player_street_num_features",
+        "analytics.player_street_enum_features",
+    ] {
+        let statement = format!(
+            "DELETE FROM {table} AS target
+             USING core.hands AS hands
+             WHERE target.hand_id = hands.id
+               AND target.organization_id = $1
+               AND target.player_profile_id = $2
+               AND target.feature_version = $3
+               AND hands.organization_id = $1
+               AND hands.player_profile_id = $2
+               AND hands.tournament_id IN ({tournament_clause})"
+        );
+        client.execute(&statement, &params)?;
+    }
+
+    Ok(())
+}
+
+fn placeholder_list(start_index: usize, item_count: usize) -> String {
+    (0..item_count)
+        .map(|offset| format!("${}", start_index + offset))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn load_hand_feature_facts(
     client: &mut impl GenericClient,
     organization_id: Uuid,
     player_profile_id: Uuid,
+    tournament_ids: Option<&[Uuid]>,
 ) -> Result<Vec<HandFeatureFacts>> {
-    let rows = client.query(
+    let mut statement = String::from(
         "WITH hand_attempt_counts AS (
             SELECT
                 hand_id,
@@ -169,7 +360,19 @@ fn load_hand_feature_facts(
          LEFT JOIN hand_opportunity_counts
            ON hand_opportunity_counts.hand_id = h.id
          WHERE h.organization_id = $1
-           AND h.player_profile_id = $2
+           AND h.player_profile_id = $2"
+    );
+    let mut params: Vec<&(dyn ToSql + Sync)> = vec![&organization_id, &player_profile_id];
+    if let Some(ids) = tournament_ids {
+        statement.push_str(&format!(
+            "
+           AND h.tournament_id IN ({})",
+            placeholder_list(3, ids.len())
+        ));
+        params.extend(ids.iter().map(|id| id as &(dyn ToSql + Sync)));
+    }
+    statement.push_str(
+        "
          GROUP BY
             h.id,
             h.tournament_id,
@@ -180,9 +383,9 @@ fn load_hand_feature_facts(
             hand_attempt_counts.ko_attempt_count,
             hand_opportunity_counts.ko_opportunity_count
          ORDER BY h.id",
-        &[&organization_id, &player_profile_id],
-    )?;
+    );
 
+    let rows = client.query(&statement, &params)?;
     Ok(rows.into_iter().map(row_to_hand_feature_facts).collect())
 }
 
@@ -205,10 +408,10 @@ fn load_street_feature_facts(
     client: &mut impl GenericClient,
     organization_id: Uuid,
     player_profile_id: Uuid,
+    tournament_ids: Option<&[Uuid]>,
 ) -> Result<Vec<StreetFeatureFacts>> {
-    let mut rows = client
-        .query(
-            "SELECT
+    let mut postflop_statement = String::from(
+        "SELECT
             shs.hand_id,
             shs.seat_no,
             shs.street,
@@ -233,39 +436,66 @@ fn load_street_feature_facts(
            ON hhc.hand_id = shs.hand_id
           AND hhc.seat_no = shs.seat_no
          WHERE h.organization_id = $1
-           AND h.player_profile_id = $2
+           AND h.player_profile_id = $2",
+    );
+    let mut postflop_params: Vec<&(dyn ToSql + Sync)> = vec![&organization_id, &player_profile_id];
+    if let Some(ids) = tournament_ids {
+        postflop_statement.push_str(&format!(
+            "
+           AND h.tournament_id IN ({})",
+            placeholder_list(3, ids.len())
+        ));
+        postflop_params.extend(ids.iter().map(|id| id as &(dyn ToSql + Sync)));
+    }
+    postflop_statement.push_str(
+        "
          ORDER BY shs.hand_id, shs.seat_no, shs.street",
-            &[&organization_id, &player_profile_id],
-        )?
+    );
+
+    let mut rows = client
+        .query(&postflop_statement, &postflop_params)?
         .into_iter()
         .map(row_to_postflop_street_feature_facts)
         .collect::<Vec<_>>();
 
+    let mut preflop_statement = String::from(
+        "SELECT
+            psh.hand_id,
+            psh.seat_no,
+            'preflop'::text AS street,
+            hs.is_hero,
+            COALESCE(hhc.known_at_showdown, FALSE),
+            psh.starter_hand_class,
+            psh.certainty_state
+         FROM core.hands h
+         INNER JOIN derived.preflop_starting_hands psh
+           ON psh.hand_id = h.id
+         INNER JOIN core.hand_seats hs
+           ON hs.hand_id = psh.hand_id
+          AND hs.seat_no = psh.seat_no
+         LEFT JOIN core.hand_hole_cards hhc
+           ON hhc.hand_id = psh.hand_id
+          AND hhc.seat_no = psh.seat_no
+         WHERE h.organization_id = $1
+           AND h.player_profile_id = $2",
+    );
+    let mut preflop_params: Vec<&(dyn ToSql + Sync)> = vec![&organization_id, &player_profile_id];
+    if let Some(ids) = tournament_ids {
+        preflop_statement.push_str(&format!(
+            "
+           AND h.tournament_id IN ({})",
+            placeholder_list(3, ids.len())
+        ));
+        preflop_params.extend(ids.iter().map(|id| id as &(dyn ToSql + Sync)));
+    }
+    preflop_statement.push_str(
+        "
+         ORDER BY psh.hand_id, psh.seat_no",
+    );
+
     rows.extend(
         client
-            .query(
-                "SELECT
-                    psh.hand_id,
-                    psh.seat_no,
-                    'preflop'::text AS street,
-                    hs.is_hero,
-                    COALESCE(hhc.known_at_showdown, FALSE),
-                    psh.starter_hand_class,
-                    psh.certainty_state
-                 FROM core.hands h
-                 INNER JOIN derived.preflop_starting_hands psh
-                   ON psh.hand_id = h.id
-                 INNER JOIN core.hand_seats hs
-                   ON hs.hand_id = psh.hand_id
-                  AND hs.seat_no = psh.seat_no
-                 LEFT JOIN core.hand_hole_cards hhc
-                   ON hhc.hand_id = psh.hand_id
-                  AND hhc.seat_no = psh.seat_no
-                 WHERE h.organization_id = $1
-                   AND h.player_profile_id = $2
-                 ORDER BY psh.hand_id, psh.seat_no",
-                &[&organization_id, &player_profile_id],
-            )?
+            .query(&preflop_statement, &preflop_params)?
             .into_iter()
             .map(row_to_preflop_street_feature_facts),
     );
@@ -501,83 +731,175 @@ fn persist_feature_rows(
     player_profile_id: Uuid,
     rows: &[MaterializedHandFeatures],
 ) -> Result<()> {
-    for row in rows {
-        for feature in feature_registry() {
-            if feature.grain != FeatureGrain::Hand {
-                continue;
-            }
+    let registry = feature_registry();
+    let mut bool_rows = Vec::new();
+    let mut num_rows = Vec::new();
+    let mut enum_rows = Vec::new();
 
+    for row in rows {
+        for feature in registry
+            .iter()
+            .filter(|feature| feature.grain == FeatureGrain::Hand)
+        {
             match feature.table_family {
-                FeatureTableFamily::Bool => {
-                    let value = row.bool_values[feature.key];
-                    client.execute(
-                        "INSERT INTO analytics.player_hand_bool_features (
-                            organization_id,
-                            player_profile_id,
-                            hand_id,
-                            feature_key,
-                            feature_version,
-                            value
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6)",
-                        &[
-                            &organization_id,
-                            &player_profile_id,
-                            &row.hand_id,
-                            &feature.key,
-                            &FEATURE_VERSION,
-                            &value,
-                        ],
-                    )?;
-                }
+                FeatureTableFamily::Bool => bool_rows.push(HandBoolInsertRow {
+                    hand_id: row.hand_id,
+                    feature_key: feature.key.to_string(),
+                    value: row.bool_values[feature.key],
+                }),
                 FeatureTableFamily::Num => {
                     let Some(value) = row.num_values[feature.key] else {
                         continue;
                     };
-                    client.execute(
-                        "INSERT INTO analytics.player_hand_num_features (
-                            organization_id,
-                            player_profile_id,
-                            hand_id,
-                            feature_key,
-                            feature_version,
-                            value
-                        )
-                        VALUES ($1, $2, $3, $4, $5, ($6::double precision)::numeric(18,6))",
-                        &[
-                            &organization_id,
-                            &player_profile_id,
-                            &row.hand_id,
-                            &feature.key,
-                            &FEATURE_VERSION,
-                            &value,
-                        ],
-                    )?;
+                    num_rows.push(HandNumInsertRow {
+                        hand_id: row.hand_id,
+                        feature_key: feature.key.to_string(),
+                        value,
+                    });
                 }
-                FeatureTableFamily::Enum => {
-                    let value = &row.enum_values[feature.key];
-                    client.execute(
-                        "INSERT INTO analytics.player_hand_enum_features (
-                            organization_id,
-                            player_profile_id,
-                            hand_id,
-                            feature_key,
-                            feature_version,
-                            value
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6)",
-                        &[
-                            &organization_id,
-                            &player_profile_id,
-                            &row.hand_id,
-                            &feature.key,
-                            &FEATURE_VERSION,
-                            value,
-                        ],
-                    )?;
-                }
+                FeatureTableFamily::Enum => enum_rows.push(HandEnumInsertRow {
+                    hand_id: row.hand_id,
+                    feature_key: feature.key.to_string(),
+                    value: row.enum_values[feature.key].clone(),
+                }),
             }
         }
+    }
+
+    insert_hand_bool_rows(client, organization_id, player_profile_id, &bool_rows)?;
+    insert_hand_num_rows(client, organization_id, player_profile_id, &num_rows)?;
+    insert_hand_enum_rows(client, organization_id, player_profile_id, &enum_rows)?;
+
+    Ok(())
+}
+
+fn insert_hand_bool_rows(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    rows: &[HandBoolInsertRow],
+) -> Result<()> {
+    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn ToSql + Sync)> =
+            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
+        let mut values = String::new();
+        for (index, row) in chunk.iter().enumerate() {
+            let base = 4 + index * 3;
+            if !values.is_empty() {
+                values.push_str(", ");
+            }
+            values.push_str(&format!(
+                "($1, $2, ${}, ${}, $3, ${})",
+                base,
+                base + 1,
+                base + 2
+            ));
+            params.push(&row.hand_id);
+            params.push(&row.feature_key);
+            params.push(&row.value);
+        }
+        client.execute(
+            &format!(
+                "INSERT INTO analytics.player_hand_bool_features (
+                    organization_id,
+                    player_profile_id,
+                    hand_id,
+                    feature_key,
+                    feature_version,
+                    value
+                )
+                VALUES {values}"
+            ),
+            &params,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_num_rows(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    rows: &[HandNumInsertRow],
+) -> Result<()> {
+    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn ToSql + Sync)> =
+            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
+        let mut values = String::new();
+        for (index, row) in chunk.iter().enumerate() {
+            let base = 4 + index * 3;
+            if !values.is_empty() {
+                values.push_str(", ");
+            }
+            values.push_str(&format!(
+                "($1, $2, ${}, ${}, $3, (${}::double precision)::numeric(18,6))",
+                base,
+                base + 1,
+                base + 2
+            ));
+            params.push(&row.hand_id);
+            params.push(&row.feature_key);
+            params.push(&row.value);
+        }
+        client.execute(
+            &format!(
+                "INSERT INTO analytics.player_hand_num_features (
+                    organization_id,
+                    player_profile_id,
+                    hand_id,
+                    feature_key,
+                    feature_version,
+                    value
+                )
+                VALUES {values}"
+            ),
+            &params,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn insert_hand_enum_rows(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    rows: &[HandEnumInsertRow],
+) -> Result<()> {
+    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn ToSql + Sync)> =
+            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
+        let mut values = String::new();
+        for (index, row) in chunk.iter().enumerate() {
+            let base = 4 + index * 3;
+            if !values.is_empty() {
+                values.push_str(", ");
+            }
+            values.push_str(&format!(
+                "($1, $2, ${}, ${}, $3, ${})",
+                base,
+                base + 1,
+                base + 2
+            ));
+            params.push(&row.hand_id);
+            params.push(&row.feature_key);
+            params.push(&row.value);
+        }
+        client.execute(
+            &format!(
+                "INSERT INTO analytics.player_hand_enum_features (
+                    organization_id,
+                    player_profile_id,
+                    hand_id,
+                    feature_key,
+                    feature_version,
+                    value
+                )
+                VALUES {values}"
+            ),
+            &params,
+        )?;
     }
 
     Ok(())
@@ -589,99 +911,209 @@ fn persist_street_feature_rows(
     player_profile_id: Uuid,
     rows: &[MaterializedStreetFeatures],
 ) -> Result<()> {
-    for row in rows {
-        for feature in feature_registry() {
-            if feature.grain != FeatureGrain::Street {
-                continue;
-            }
+    let registry = feature_registry();
+    let mut bool_rows = Vec::new();
+    let mut num_rows = Vec::new();
+    let mut enum_rows = Vec::new();
 
+    for row in rows {
+        for feature in registry
+            .iter()
+            .filter(|feature| feature.grain == FeatureGrain::Street)
+        {
             match feature.table_family {
                 FeatureTableFamily::Bool => {
                     let Some(value) = row.bool_values.get(feature.key) else {
                         continue;
                     };
-                    client.execute(
-                        "INSERT INTO analytics.player_street_bool_features (
-                            organization_id,
-                            player_profile_id,
-                            hand_id,
-                            seat_no,
-                            street,
-                            feature_key,
-                            feature_version,
-                            value
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-                        &[
-                            &organization_id,
-                            &player_profile_id,
-                            &row.hand_id,
-                            &row.seat_no,
-                            &row.street,
-                            &feature.key,
-                            &FEATURE_VERSION,
-                            value,
-                        ],
-                    )?;
+                    bool_rows.push(StreetBoolInsertRow {
+                        hand_id: row.hand_id,
+                        seat_no: row.seat_no,
+                        street: row.street.clone(),
+                        feature_key: feature.key.to_string(),
+                        value: *value,
+                    });
                 }
                 FeatureTableFamily::Num => {
                     let Some(Some(value)) = row.num_values.get(feature.key) else {
                         continue;
                     };
-                    client.execute(
-                        "INSERT INTO analytics.player_street_num_features (
-                            organization_id,
-                            player_profile_id,
-                            hand_id,
-                            seat_no,
-                            street,
-                            feature_key,
-                            feature_version,
-                            value
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::double precision)::numeric(18,6))",
-                        &[
-                            &organization_id,
-                            &player_profile_id,
-                            &row.hand_id,
-                            &row.seat_no,
-                            &row.street,
-                            &feature.key,
-                            &FEATURE_VERSION,
-                            value,
-                        ],
-                    )?;
+                    num_rows.push(StreetNumInsertRow {
+                        hand_id: row.hand_id,
+                        seat_no: row.seat_no,
+                        street: row.street.clone(),
+                        feature_key: feature.key.to_string(),
+                        value: *value,
+                    });
                 }
                 FeatureTableFamily::Enum => {
                     let Some(value) = row.enum_values.get(feature.key) else {
                         continue;
                     };
-                    client.execute(
-                        "INSERT INTO analytics.player_street_enum_features (
-                            organization_id,
-                            player_profile_id,
-                            hand_id,
-                            seat_no,
-                            street,
-                            feature_key,
-                            feature_version,
-                            value
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-                        &[
-                            &organization_id,
-                            &player_profile_id,
-                            &row.hand_id,
-                            &row.seat_no,
-                            &row.street,
-                            &feature.key,
-                            &FEATURE_VERSION,
-                            value,
-                        ],
-                    )?;
+                    enum_rows.push(StreetEnumInsertRow {
+                        hand_id: row.hand_id,
+                        seat_no: row.seat_no,
+                        street: row.street.clone(),
+                        feature_key: feature.key.to_string(),
+                        value: value.clone(),
+                    });
                 }
             }
         }
+    }
+
+    insert_street_bool_rows(client, organization_id, player_profile_id, &bool_rows)?;
+    insert_street_num_rows(client, organization_id, player_profile_id, &num_rows)?;
+    insert_street_enum_rows(client, organization_id, player_profile_id, &enum_rows)?;
+
+    Ok(())
+}
+
+fn insert_street_bool_rows(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    rows: &[StreetBoolInsertRow],
+) -> Result<()> {
+    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn ToSql + Sync)> =
+            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
+        let mut values = String::new();
+        for (index, row) in chunk.iter().enumerate() {
+            let base = 4 + index * 5;
+            if !values.is_empty() {
+                values.push_str(", ");
+            }
+            values.push_str(&format!(
+                "($1, $2, ${}, ${}, ${}, ${}, $3, ${})",
+                base,
+                base + 1,
+                base + 2,
+                base + 3,
+                base + 4
+            ));
+            params.push(&row.hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.street);
+            params.push(&row.feature_key);
+            params.push(&row.value);
+        }
+        client.execute(
+            &format!(
+                "INSERT INTO analytics.player_street_bool_features (
+                    organization_id,
+                    player_profile_id,
+                    hand_id,
+                    seat_no,
+                    street,
+                    feature_key,
+                    feature_version,
+                    value
+                )
+                VALUES {values}"
+            ),
+            &params,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn insert_street_num_rows(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    rows: &[StreetNumInsertRow],
+) -> Result<()> {
+    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn ToSql + Sync)> =
+            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
+        let mut values = String::new();
+        for (index, row) in chunk.iter().enumerate() {
+            let base = 4 + index * 5;
+            if !values.is_empty() {
+                values.push_str(", ");
+            }
+            values.push_str(&format!(
+                "($1, $2, ${}, ${}, ${}, ${}, $3, (${}::double precision)::numeric(18,6))",
+                base,
+                base + 1,
+                base + 2,
+                base + 3,
+                base + 4
+            ));
+            params.push(&row.hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.street);
+            params.push(&row.feature_key);
+            params.push(&row.value);
+        }
+        client.execute(
+            &format!(
+                "INSERT INTO analytics.player_street_num_features (
+                    organization_id,
+                    player_profile_id,
+                    hand_id,
+                    seat_no,
+                    street,
+                    feature_key,
+                    feature_version,
+                    value
+                )
+                VALUES {values}"
+            ),
+            &params,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn insert_street_enum_rows(
+    client: &mut impl GenericClient,
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    rows: &[StreetEnumInsertRow],
+) -> Result<()> {
+    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
+        let mut params: Vec<&(dyn ToSql + Sync)> =
+            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
+        let mut values = String::new();
+        for (index, row) in chunk.iter().enumerate() {
+            let base = 4 + index * 5;
+            if !values.is_empty() {
+                values.push_str(", ");
+            }
+            values.push_str(&format!(
+                "($1, $2, ${}, ${}, ${}, ${}, $3, ${})",
+                base,
+                base + 1,
+                base + 2,
+                base + 3,
+                base + 4
+            ));
+            params.push(&row.hand_id);
+            params.push(&row.seat_no);
+            params.push(&row.street);
+            params.push(&row.feature_key);
+            params.push(&row.value);
+        }
+        client.execute(
+            &format!(
+                "INSERT INTO analytics.player_street_enum_features (
+                    organization_id,
+                    player_profile_id,
+                    hand_id,
+                    seat_no,
+                    street,
+                    feature_key,
+                    feature_version,
+                    value
+                )
+                VALUES {values}"
+            ),
+            &params,
+        )?;
     }
 
     Ok(())

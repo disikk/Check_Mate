@@ -17,7 +17,10 @@ pub use ft_dashboard::{
     FtDashboardInlineStat, FtDashboardMetricCard, FtDashboardSelectedFilters, FtDashboardSnapshot,
     FtValueState, query_ft_dashboard,
 };
-pub use materializer::materialize_player_hand_features;
+pub use materializer::{
+    materialize_player_hand_features, materialize_player_hand_features_for_bundle,
+    materialize_player_hand_features_for_tournaments,
+};
 pub use models::{
     CANONICAL_STAT_KEYS, CanonicalStatNumericValue, CanonicalStatPoint, CanonicalStatSnapshot,
     CanonicalStatState, EXPECTED_KEY_COUNT, EXPECTED_MODULE_COUNT, HandFeatureFacts,
