@@ -2,7 +2,8 @@ use std::{fs, path::PathBuf};
 
 use serde_json::to_value;
 use tracker_parser_core::{
-    SourceKind, detect_source_kind,
+    ParserError, SourceKind, detect_source_kind, quick_detect_source_kind,
+    quick_extract_gg_tournament_id,
     models::{ActionType, AllInReason, ParseIssue, ParseIssueCode, ParseIssueSeverity, Street},
     normalizer::normalize_hand,
     parsers::{
@@ -88,6 +89,51 @@ fn detects_fixture_kinds() {
         detect_source_kind(TS_BUBBLE).unwrap(),
         SourceKind::TournamentSummary
     );
+}
+
+#[test]
+fn quick_detector_matches_full_detector_on_committed_headers() {
+    assert_eq!(
+        quick_detect_source_kind(HH_FT).unwrap(),
+        detect_source_kind(HH_FT).unwrap()
+    );
+    assert_eq!(
+        quick_detect_source_kind(TS_WINNER).unwrap(),
+        detect_source_kind(TS_WINNER).unwrap()
+    );
+}
+
+#[test]
+fn quick_extracts_tournament_id_from_hh_and_ts_headers() {
+    assert_eq!(quick_extract_gg_tournament_id(HH_FT).unwrap(), Some(271_770_266));
+    assert_eq!(
+        quick_extract_gg_tournament_id(TS_WINNER).unwrap(),
+        Some(271_770_266)
+    );
+    assert_eq!(
+        quick_extract_gg_tournament_id(TS_TAIL_CONFLICT).unwrap(),
+        Some(271_770_266)
+    );
+}
+
+#[test]
+fn quick_extract_surfaces_missing_and_unsupported_tournament_headers() {
+    const HH_MISSING_TOURNAMENT_ID: &str =
+        "Poker Hand #BR727555280: Hold'em No Limit - Level4(40/80) - 2025/05/15 11:05:11";
+    const TS_MISSING_TOURNAMENT_ID: &str = "Tournament #, Mystery Battle Royale $25, Hold'em No Limit";
+
+    assert_eq!(
+        quick_extract_gg_tournament_id(HH_MISSING_TOURNAMENT_ID).unwrap(),
+        None
+    );
+    assert_eq!(
+        quick_extract_gg_tournament_id(TS_MISSING_TOURNAMENT_ID).unwrap(),
+        None
+    );
+    assert!(matches!(
+        quick_extract_gg_tournament_id("not a gg export"),
+        Err(ParserError::UnsupportedSourceFormat)
+    ));
 }
 
 #[test]
