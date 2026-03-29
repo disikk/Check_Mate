@@ -8,7 +8,8 @@ use postgres::{Client, NoTls};
 use sha2::{Digest, Sha256};
 use tracker_ingest_runner::{RunnerConfig, drain_once};
 use tracker_ingest_runtime::{
-    FileKind, IngestBundleInput, IngestFileInput, enqueue_bundle, load_bundle_summary,
+    FileKind, IngestBundleInput, IngestFileInput, IngestMemberInput, enqueue_bundle,
+    load_bundle_summary,
 };
 use uuid::Uuid;
 
@@ -133,6 +134,38 @@ fn sha256_hex(input: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+fn sha256_bytes_hex(input: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input);
+    format!("{:x}", hasher.finalize())
+}
+
+fn build_pair_archive(
+    ts_name: &str,
+    ts_text: &str,
+    hh_name: &str,
+    hh_text: &str,
+) -> (PathBuf, Vec<u8>) {
+    let archive_path =
+        std::env::temp_dir().join(format!("check-mate-runner-smoke-{}.zip", Uuid::new_v4()));
+    let file = fs::File::create(&archive_path).expect("archive must be created");
+    let mut writer = zip::ZipWriter::new(file);
+
+    writer
+        .start_file(ts_name, zip::write::SimpleFileOptions::default())
+        .expect("ts member must start");
+    std::io::Write::write_all(&mut writer, ts_text.as_bytes()).expect("ts member must write");
+
+    writer
+        .start_file(hh_name, zip::write::SimpleFileOptions::default())
+        .expect("hh member must start");
+    std::io::Write::write_all(&mut writer, hh_text.as_bytes()).expect("hh member must write");
+
+    writer.finish().expect("archive must finish");
+    let archive_bytes = fs::read(&archive_path).expect("archive bytes must read");
+    (archive_path, archive_bytes)
+}
+
 #[test]
 #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
 fn separate_runner_process_helper_drains_ingest_queue_until_idle() {
@@ -177,6 +210,7 @@ fn separate_runner_process_helper_drains_ingest_queue_until_idle() {
         &RunnerConfig {
             runner_name: "runner-smoke".to_string(),
             max_attempts: 3,
+            worker_count: 1,
         },
     )
     .unwrap();
@@ -191,4 +225,94 @@ fn separate_runner_process_helper_drains_ingest_queue_until_idle() {
     assert_eq!(summary.queued_file_jobs, 0);
     assert_eq!(summary.running_file_jobs, 0);
     assert!(summary.finalize_job_present);
+}
+
+#[test]
+#[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+fn separate_runner_process_helper_supports_parallel_worker_count() {
+    let _guard = db_test_guard();
+    let mut client = Client::connect(&db_url(), NoTls).unwrap();
+    apply_all_migrations(&mut client);
+    reset_ingest_runtime_tables(&mut client);
+
+    let ts_path = fixture_path(
+        "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+    );
+    let ts_text = fs::read_to_string(&ts_path).unwrap();
+    let hh_path = fixture_path("fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+    let hh_text = fs::read_to_string(&hh_path).unwrap();
+
+    let (archive_path, archive_bytes) = build_pair_archive(
+        ts_path.file_name().unwrap().to_str().unwrap(),
+        &ts_text,
+        hh_path.file_name().unwrap().to_str().unwrap(),
+        &hh_text,
+    );
+
+    let bundle_id = {
+        let mut tx = client.transaction().unwrap();
+        let (organization_id, user_id, player_profile_id) = seed_actor_shell(&mut tx);
+        let bundle = enqueue_bundle(
+            &mut tx,
+            &IngestBundleInput {
+                organization_id,
+                player_profile_id,
+                created_by_user_id: user_id,
+                files: vec![IngestFileInput {
+                    room: "gg".to_string(),
+                    file_kind: FileKind::Archive,
+                    sha256: sha256_bytes_hex(&archive_bytes),
+                    original_filename: archive_path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string(),
+                    byte_size: archive_bytes.len() as i64,
+                    storage_uri: format!("local://{}", archive_path.display()),
+                    members: vec![
+                        IngestMemberInput {
+                            member_path: ts_path.file_name().unwrap().to_string_lossy().to_string(),
+                            member_kind: FileKind::TournamentSummary,
+                            sha256: sha256_hex(&ts_text),
+                            byte_size: ts_text.len() as i64,
+                            depends_on_member_index: None,
+                        },
+                        IngestMemberInput {
+                            member_path: hh_path.file_name().unwrap().to_string_lossy().to_string(),
+                            member_kind: FileKind::HandHistory,
+                            sha256: sha256_hex(&hh_text),
+                            byte_size: hh_text.len() as i64,
+                            depends_on_member_index: Some(0),
+                        },
+                    ],
+                    diagnostics: vec![],
+                }],
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        bundle.bundle_id
+    };
+
+    let processed_jobs = drain_once(
+        &db_url(),
+        &RunnerConfig {
+            runner_name: "runner-smoke-parallel".to_string(),
+            max_attempts: 3,
+            worker_count: 2,
+        },
+    )
+    .unwrap();
+    assert_eq!(processed_jobs, 3);
+
+    let mut check_client = Client::connect(&db_url(), NoTls).unwrap();
+    let summary = load_bundle_summary(&mut check_client, bundle_id).unwrap();
+    assert_eq!(
+        summary.status,
+        tracker_ingest_runtime::BundleStatus::Succeeded
+    );
+    assert_eq!(summary.queued_file_jobs, 0);
+    assert_eq!(summary.running_file_jobs, 0);
+    assert!(summary.finalize_job_present);
+    let _ = fs::remove_file(archive_path);
 }

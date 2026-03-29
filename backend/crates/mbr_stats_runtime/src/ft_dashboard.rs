@@ -1368,9 +1368,7 @@ fn roi_from_totals(payout_cents: i64, buyin_cents: i64) -> Option<f64> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::{
-        FtValueState, build_big_ko_cards, build_inline_stats, build_stat_cards,
-    };
+    use super::{FtValueState, build_big_ko_cards, build_inline_stats, build_stat_cards};
     use crate::models::{CanonicalStatPoint, CanonicalStatSnapshot, SeedStatCoverage};
 
     fn snapshot_with_values(values: BTreeMap<String, CanonicalStatPoint>) -> CanonicalStatSnapshot {
@@ -1433,10 +1431,7 @@ mod tests {
         let big_ko_cards = build_big_ko_cards(&canonical);
 
         assert_eq!(stat_cards["winningsFromKo"].state, FtValueState::Ready);
-        assert_eq!(
-            stat_cards["winningsFromKo"].value,
-            Some(43.825069294733595)
-        );
+        assert_eq!(stat_cards["winningsFromKo"].value, Some(43.825069294733595));
         assert_eq!(stat_cards["winningsFromItm"].state, FtValueState::Ready);
         assert_eq!(
             stat_cards["winningsFromItm"].value,
@@ -1476,8 +1471,10 @@ mod tests {
         assert_eq!(stat_cards["winningsFromItm"].state, FtValueState::Blocked);
         assert_eq!(inline_stats["koLuck"].state, FtValueState::Blocked);
         assert_eq!(inline_stats["roiAdj"].state, FtValueState::Blocked);
-        assert!(big_ko_cards
-            .iter()
-            .all(|card| card.state == FtValueState::Blocked));
+        assert!(
+            big_ko_cards
+                .iter()
+                .all(|card| card.state == FtValueState::Blocked)
+        );
     }
 }

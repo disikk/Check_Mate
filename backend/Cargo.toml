@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/tracker_ingest_prepare",
   "crates/tracker_ingest_runner",
   "crates/tracker_web_api",
   "crates/tracker_ingest_runtime",

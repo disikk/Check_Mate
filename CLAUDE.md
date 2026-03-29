@@ -122,6 +122,7 @@ Backend foundation живёт в `backend/` и на текущем этапе в
 - `tracker_ingest_runtime` now owns the generic ingest orchestration layer:
   - DB-backed `ingest_bundles` + `ingest_bundle_files`;
   - `ingest_bundles.queue_order` is the explicit global queue contract for bundle scheduling, so cross-bundle `TS -> HH` file ordering no longer depends on timestamp or UUID accidents;
+  - `import.import_jobs.depends_on_job_id` is now the explicit intra-bundle dependency contract for pair-aware execution, so HH member jobs are claimable only after successful TS completion instead of relying on `file_order_index`;
   - runnable `file_ingest` / `bundle_finalize` jobs in `import.import_jobs`;
   - attempt history in `import.job_attempts`;
   - claim/retry/status recomputation logic for `queued | running | succeeded | failed_retriable | failed_terminal` file jobs and `queued | running | finalizing | succeeded | partial_success | failed` bundles.
@@ -211,12 +212,22 @@ Backend foundation живёт в `backend/` и на текущем этапе в
   - the proof surface for `street_strength` is now three-layered: synthetic acceptance coverage (`tests/street_hand_strength.rs`), independent reference/differential coverage (`tests/street_strength_reference.rs`), and corpus-backed golden coverage (`tests/street_strength_corpus_golden.rs`);
   - the corpus-backed layer snapshots the full active row contract for `Hero` and showdown-known opponents in two formats: curated raw real-hand goldens and an aggregated full-pack coverage sweep over committed HH fixtures; refresh remains explicit via `UPDATE_GOLDENS=1`.
 - Current real web slices:
-  - `tracker_web_api` is the active HTTP/WebSocket transport for v1 upload flow and exposes `GET /api/session`, `POST /api/ingest/bundles`, `GET /api/ingest/bundles/{bundle_id}`, and `GET /api/ingest/bundles/{bundle_id}/ws`;
-  - the same crate now also exposes `GET /api/ft/dashboard` as the page-specific MBR/FT snapshot endpoint over `mbr_stats_runtime`;
-  - upload accepts `.txt`, `.hh`, and `.zip`, spools raw files to local disk, expands ZIP members into member-level ingest jobs, and persists skipped-member diagnostics into `import.ingest_events`;
-  - `tracker_ingest_runner` is the separate runner process for this slice; `parser_worker` remains the shared execution engine, but it now resolves execution context from the job's `organization_id/player_profile_id` instead of hardcoded dev context;
-  - `UploadHandsPage` is now wired to real backend snapshot/event flow;
-  - `FtAnalyticsPage` is now wired to real backend FT snapshot flow via `ftDashboardApi.js` + `ftDashboardState.js`, preserving the existing screen structure while rendering honest blocked/empty states from backend coverage.
+- `tracker_web_api` is the active HTTP/WebSocket transport for v1 upload flow and exposes `GET /api/session`, `POST /api/ingest/bundles`, `GET /api/ingest/bundles/{bundle_id}`, and `GET /api/ingest/bundles/{bundle_id}/ws`;
+- the same crate now also exposes `GET /api/ft/dashboard` as the page-specific MBR/FT snapshot endpoint over `mbr_stats_runtime`;
+- upload accepts `.txt`, `.hh`, and `.zip`, spools raw files to local disk, and now uses a split contract:
+- a single flat `.txt/.hh` upload stays on the legacy debug-friendly path, so TS-only bundles can still produce honest `partial` FT coverage states;
+- `.zip` uploads and multipart batches with several files go through shared `tracker_ingest_prepare`, enqueue only valid HH+TS pairs, and persist reject diagnostics into `import.ingest_events` through the web upload path before runtime execution;
+- pair-first web uploads now materialize into dependency-aware member jobs: TS is queued first, HH depends on that TS through `depends_on_job_id`, and terminal TS failure auto-fails the dependent HH with `dependency_failed`;
+- `backend/crates/tracker_ingest_prepare` is now the shared phase-1 prepare-layer for directory/ZIP scan, quick `source_kind`/`tournament_id` sniffing, HH+TS pairing, duplicate collapse, and reject-report generation;
+- the same prepare-layer now treats non-UTF8 files or ZIP members as ordinary `unsupported_source` rejects, so one bad artifact no longer aborts a whole directory import;
+- `parser_worker` now exposes both `dir-import --prepare-only <path>` and `dir-import --player-profile-id <uuid> [--workers <n>] <path>`; the full dir-import path reuses `tracker_ingest_prepare`, materializes a synthetic pair-only archive, enqueues dependency-aware member jobs, drains them through the shared runner contract, and returns honest e2e telemetry (`rejected_by_reason`, `prep_elapsed_ms`, `runner_elapsed_ms`, `e2e_elapsed_ms`, `hands_per_minute_runner`, `hands_per_minute_e2e`, nested `e2e_profile`);
+- `tracker_ingest_runner` is the separate runner process for this slice; it now supports `--workers <n>` plus `CHECK_MATE_INGEST_RUNNER_WORKERS`, defaults to `min(available_parallelism, 8)`, and parallelizes only the dependency-aware queue path;
+- `parser_worker` remains the shared execution engine, resolves execution context from the job's `organization_id/player_profile_id` instead of hardcoded dev context, and now exposes `run_ingest_runner_parallel(...)` for the same dependency-aware queue contract;
+- real-corpus `MIHA` profiling exposed a same-bundle parallel claim bottleneck: mutating `import.ingest_bundles` during `claim_next_job` serialized large multi-worker bundles on one row, so claim-time bundle/file event payloads now use a read-only derived snapshot and bundle status writes stay on actual status transitions instead of every claim;
+- HH runtime profiling inside `parser_worker` is now split into `parse_ms`, `normalize_ms`, `derive_hand_local_ms`, `derive_tournament_ms`, `persist_db_ms`, `materialize_ms`, and `finalize_ms`; the legacy `stage_profile` is preserved as a compatibility aggregate where `persist_ms = derive_hand_local_ms + derive_tournament_ms + persist_db_ms`;
+- the legacy flat `bulk_local_import` path stays serial and legacy-only: its file-first enqueue contract still lacks explicit HH-on-TS dependencies, so pair-first dev benchmarking and multi-worker verification should go through `dir-import`;
+- `UploadHandsPage` is now wired to real backend snapshot/event flow;
+- `FtAnalyticsPage` is now wired to real backend FT snapshot flow via `ftDashboardApi.js` + `ftDashboardState.js`, preserving the existing screen structure while rendering honest blocked/empty states from backend coverage.
 - `backend/docs/street_strength_contract.md` is now the canonical exact contract for `tracker_parser_core::street_strength` and must be updated whenever its semantics change.
 - Current canonical parser correction:
   - repeated GG `collected ... from pot` lines for the same player are now accumulated instead of overwritten;

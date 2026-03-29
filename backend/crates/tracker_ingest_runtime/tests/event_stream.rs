@@ -140,6 +140,7 @@ fn bundle_snapshot_exposes_ui_friendly_progress_and_archive_diagnostics() {
                     member_kind: FileKind::HandHistory,
                     sha256: "r".repeat(64),
                     byte_size: 10,
+                    depends_on_member_index: None,
                 }],
                 diagnostics: vec![IngestDiagnosticInput {
                     code: "unsupported_archive_member".to_string(),
@@ -205,6 +206,7 @@ fn load_bundle_events_since_returns_ordered_updates_with_single_terminal_event()
                     member_kind: FileKind::HandHistory,
                     sha256: "t".repeat(64),
                     byte_size: 10,
+                    depends_on_member_index: None,
                 }],
                 diagnostics: vec![IngestDiagnosticInput {
                     code: "unsupported_archive_member".to_string(),

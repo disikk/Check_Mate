@@ -12,3 +12,4 @@ postgres = { version = "0.19.12", features = ["with-uuid-1"] }
 sha2 = "0.10.9"
 tracker_ingest_runtime = { path = "../tracker_ingest_runtime" }
 uuid = { version = "1.18.1", features = ["serde", "v4"] }
+zip = "4.6.1"

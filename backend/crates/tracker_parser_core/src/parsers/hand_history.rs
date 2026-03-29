@@ -116,8 +116,7 @@ pub fn parse_hand_header(hand_text: &str) -> Result<HandHeader, ParserError> {
         .expect("table regex must compile")
     });
     let ante_regex = ANTE_REGEX.get_or_init(|| {
-        Regex::new(r"^[^:]+: posts the ante (?P<ante>[\d,]+)$")
-            .expect("ante regex must compile")
+        Regex::new(r"^[^:]+: posts the ante (?P<ante>[\d,]+)$").expect("ante regex must compile")
     });
 
     let header_caps = first_regex

@@ -18,9 +18,8 @@ TS_DIR="${INGEST_V2_BENCH_TS_DIR:-$ROOT_DIR/backend/fixtures/mbr/ts}"
 HH_GLOB="${INGEST_V2_BENCH_HH_GLOB:-GG20260316-*.txt}"
 TS_GLOB="${INGEST_V2_BENCH_TS_GLOB:-GG20260316 - Tournament #*.txt}"
 OUTPUT_DIR="${INGEST_V2_BENCH_OUTPUT_DIR:-$ROOT_DIR/backend/target/ingest_v2_bench}"
-LIST_FILE="${INGEST_V2_BENCH_LIST_FILE:-$OUTPUT_DIR/happy_path_files.txt}"
 JSON_OUT="${INGEST_V2_BENCH_JSON_OUT:-$OUTPUT_DIR/latest_run.json}"
-RUNNER_NAME="${INGEST_V2_BENCH_RUNNER_NAME:-parser_worker_ingest_v2_bench}"
+WORKERS="${INGEST_V2_BENCH_WORKERS:-}"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -80,26 +79,42 @@ if [[ "$pair_count" != "$hh_count" || "$pair_count" != "$ts_count" ]]; then
   exit 1
 fi
 
-: > "$LIST_FILE"
+bench_dir="$tmp_dir/paired_corpus"
+mkdir -p "$bench_dir"
 while IFS="$(printf '\t')" read -r _ ts_path hh_path; do
-  printf '%s\n%s\n' "$ts_path" "$hh_path" >> "$LIST_FILE"
+  cp "$ts_path" "$bench_dir/$(basename "$ts_path")"
+  cp "$hh_path" "$bench_dir/$(basename "$hh_path")"
 done < "$pair_map"
 
 file_count="$((pair_count * 2))"
-chunk_size="${INGEST_V2_BENCH_CHUNK_SIZE:-$file_count}"
+worker_args=()
+if [[ -n "$WORKERS" ]]; then
+  worker_args+=(--workers "$WORKERS")
+fi
 
 printf 'running ingest v2 happy-path benchmark\n' >&2
 printf 'player_profile_id=%s\n' "$PLAYER_PROFILE_ID" >&2
 printf 'hh_dir=%s\n' "$HH_DIR" >&2
 printf 'ts_dir=%s\n' "$TS_DIR" >&2
-printf 'pairs=%s files=%s chunk_size=%s\n' "$pair_count" "$file_count" "$chunk_size" >&2
-printf 'list_file=%s\n' "$LIST_FILE" >&2
+printf 'pairs=%s files=%s\n' "$pair_count" "$file_count" >&2
+printf 'bench_dir=%s\n' "$bench_dir" >&2
+if [[ -n "$WORKERS" ]]; then
+  printf 'workers=%s\n' "$WORKERS" >&2
+fi
 printf 'json_out=%s\n' "$JSON_OUT" >&2
 
 cd "$ROOT_DIR/backend"
-cargo run -p parser_worker --bin bulk_local_import -- \
-  --player-profile-id "$PLAYER_PROFILE_ID" \
-  --list-file "$LIST_FILE" \
-  --chunk-size "$chunk_size" \
-  --runner-name "$RUNNER_NAME" \
-  | tee "$JSON_OUT"
+if [[ -n "$WORKERS" ]]; then
+  cargo run -p parser_worker --bin parser_worker -- \
+    dir-import \
+    --player-profile-id "$PLAYER_PROFILE_ID" \
+    --workers "$WORKERS" \
+    "$bench_dir" \
+    | tee "$JSON_OUT"
+else
+  cargo run -p parser_worker --bin parser_worker -- \
+    dir-import \
+    --player-profile-id "$PLAYER_PROFILE_ID" \
+    "$bench_dir" \
+    | tee "$JSON_OUT"
+fi

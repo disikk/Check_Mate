@@ -2,14 +2,14 @@ use std::{fs, path::PathBuf};
 
 use serde_json::to_value;
 use tracker_parser_core::{
-    ParserError, SourceKind, detect_source_kind, quick_detect_source_kind,
-    quick_extract_gg_tournament_id,
+    ParserError, SourceKind, detect_source_kind,
     models::{ActionType, AllInReason, ParseIssue, ParseIssueCode, ParseIssueSeverity, Street},
     normalizer::normalize_hand,
     parsers::{
         hand_history::{parse_canonical_hand, parse_hand_header, split_hand_history},
         tournament_summary::parse_tournament_summary,
     },
+    quick_detect_source_kind, quick_extract_gg_tournament_id,
 };
 
 const HH_RUSH: &str =
@@ -105,7 +105,10 @@ fn quick_detector_matches_full_detector_on_committed_headers() {
 
 #[test]
 fn quick_extracts_tournament_id_from_hh_and_ts_headers() {
-    assert_eq!(quick_extract_gg_tournament_id(HH_FT).unwrap(), Some(271_770_266));
+    assert_eq!(
+        quick_extract_gg_tournament_id(HH_FT).unwrap(),
+        Some(271_770_266)
+    );
     assert_eq!(
         quick_extract_gg_tournament_id(TS_WINNER).unwrap(),
         Some(271_770_266)
@@ -120,7 +123,8 @@ fn quick_extracts_tournament_id_from_hh_and_ts_headers() {
 fn quick_extract_surfaces_missing_and_unsupported_tournament_headers() {
     const HH_MISSING_TOURNAMENT_ID: &str =
         "Poker Hand #BR727555280: Hold'em No Limit - Level4(40/80) - 2025/05/15 11:05:11";
-    const TS_MISSING_TOURNAMENT_ID: &str = "Tournament #, Mystery Battle Royale $25, Hold'em No Limit";
+    const TS_MISSING_TOURNAMENT_ID: &str =
+        "Tournament #, Mystery Battle Royale $25, Hold'em No Limit";
 
     assert_eq!(
         quick_extract_gg_tournament_id(HH_MISSING_TOURNAMENT_ID).unwrap(),

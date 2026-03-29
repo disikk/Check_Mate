@@ -1,8 +1,10 @@
-use std::{env, fs, path::PathBuf, sync::{Mutex, OnceLock}};
-
-use mbr_stats_runtime::{
-    CanonicalStatNumericValue, SeedStatsFilters, query_canonical_stats,
+use std::{
+    env, fs,
+    path::PathBuf,
+    sync::{Mutex, OnceLock},
 };
+
+use mbr_stats_runtime::{CanonicalStatNumericValue, SeedStatsFilters, query_canonical_stats};
 use postgres::{Client, NoTls};
 use uuid::Uuid;
 
@@ -142,7 +144,12 @@ fn pre_ft_ko_does_not_double_count_boundary_ko_for_multi_elimination_hand() {
                 $1, $2, $3, $3, $4,
                 'gg', 'hh', repeat('a', 64), 'boundary.txt', 1, 'local:///tmp/boundary.txt'
              )",
-            &[&source_file_id, &organization_id, &user_id, &player_profile_id],
+            &[
+                &source_file_id,
+                &organization_id,
+                &user_id,
+                &player_profile_id,
+            ],
         )
         .unwrap();
     client

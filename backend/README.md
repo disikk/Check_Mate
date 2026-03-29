@@ -9,6 +9,7 @@
 - `fixtures/mbr/hh/` — committed GG HH;
 - `fixtures/mbr/ts/` — committed GG TS;
 - `crates/tracker_parser_core/` — parser + normalizer + street strength foundation;
+- `crates/tracker_ingest_prepare/` — shared prepare-layer для directory/ZIP scan, quick HH/TS sniffing, pairing и reject-report;
 - `crates/tracker_query_runtime/` — generic typed hand/street query engine over exact and derived filter surface;
 - `crates/parser_worker/` — dev-only CLI importer;
 - `crates/mbr_stats_runtime/` — первый materializer и seed-safe stat queries.
@@ -73,6 +74,7 @@
 - `hand_started_at` и `started_at` для GG теперь вычисляются только из `auth.users.timezone_name`; без настроенной IANA timezone canonical UTC остаётся `NULL`, а raw/local нельзя трактовать как глобально надёжное время;
 - `parser_worker import-local` больше не поднимает dev-контекст автоматически и требует явный `--player-profile-id`;
 - `tracker_ingest_runtime` уже даёт воспроизводимый DB-backed ingest contour: `bundle -> bundle_file -> file_ingest jobs -> single bundle_finalize`;
+- `tracker_ingest_runtime` теперь ещё и dependency-aware внутри bundle: `import.import_jobs.depends_on_job_id` делает `TS -> HH` явным контрактом, а не побочным эффектом `file_order_index`;
 - `source_files` дедуплицируются по `(player_profile_id, room, file_kind, sha256)`, а bundle membership живёт отдельно, так что повторные импорты не дублируют exact rows;
 - текущий entrypoint всё ещё dev-only: `parser_worker import-local` работает с локальными файлами и локальным runner loop, но это ещё не web upload pipeline;
 - runtime materializer теперь запускается один раз на bundle finalize, а не после каждого file job, и пересчитывает только турниры, затронутые текущим bundle, а не весь профиль целиком;
@@ -84,8 +86,15 @@
 - boundary KO persistence пока ограничена boundary v1 point estimate;
 - pure `big_ko` decoder ещё не подключён к final stat/materialization contract.
 - real upload/status vertical slice уже поднят:
-  - `tracker_web_api` принимает `.txt/.hh/.zip`, создаёт ingest bundles и стримит snapshot/events через WebSocket;
-  - `tracker_ingest_runner` — отдельный process-style runner, который дренирует queued ingest jobs;
+  - `tracker_web_api` принимает `.txt/.hh/.zip`, но теперь использует два upload-контракта:
+  - одиночный flat `.txt/.hh` остаётся debug-friendly path и поддерживает TS-only partial bundle;
+  - `.zip` и multipart batch из нескольких файлов проходят через shared `tracker_ingest_prepare`, enqueue-ят только валидные HH+TS пары, кладут их в dependency-aware member queue (`TS -> HH`) и пишут reject-диагностику в `import.ingest_events`;
+  - `tracker_ingest_runner` — отдельный process-style runner, который теперь умеет `--workers <n>` и по умолчанию использует `min(available_parallelism, 8)` worker-ов для dependency-aware queue path;
+  - `parser_worker dir-import --player-profile-id <uuid> [--workers <n>] <path>` теперь тоже идёт по pair-first path: использует shared prepare-layer, materialize-ит synthetic archive с member dependencies, дренирует runtime через тот же dependency-aware runner contract и возвращает честный e2e report с `rejected_by_reason`, `prep_elapsed_ms`, `runner_elapsed_ms`, `e2e_elapsed_ms`, `hands_per_minute_runner`, `hands_per_minute_e2e` и nested `e2e_profile`;
+  - после реального `MIHA` profiling выяснилось, что hot-path claim нельзя связывать с unconditional `ingest_bundles` update: runtime теперь не мутирует bundle row на каждом `claim_next_job`, а claim-time event payload строится из read-only derived snapshot, чтобы multi-worker запуск внутри одного большого bundle не сериализовался на одной строке;
+  - внутри HH runtime profile теперь разделён на `parse_ms`, `normalize_ms`, `derive_hand_local_ms`, `derive_tournament_ms`, `persist_db_ms`, `materialize_ms`, `finalize_ms`, а legacy `stage_profile` сохранён как совместимый aggregated view;
+  - prepare-layer теперь не валится на одиночных не-UTF8 артефактах в реальных директориях: такие файлы и ZIP members попадают в `unsupported_source` reject-report и не блокируют импорт остальных валидных пар;
+  - старый `bulk_local_import` остаётся legacy serial helper для list-file сценариев; новый happy-path benchmark и дальнейшая dev-отладка должны идти через `dir-import`;
   - `UploadHandsPage` во фронте больше не использует `mockHandUpload.js`.
 - real FT analytics slice тоже уже поднят:
   - `tracker_web_api` теперь отдаёт `GET /api/ft/dashboard` как page-specific MBR/FT snapshot endpoint;
@@ -94,9 +103,9 @@
 
 ## Что нужно следующим слоем
 
-1. hand/drilldown HTTP/API слой поверх `tracker_query_runtime`;
-2. hand/street explorer UI поверх реального derived-layer;
-3. auth / true session / cleanup / retention hardening для upload + FT slices.
+1. добить реальный `MIHA` full-corpus profiling и решить, нужно ли выносить HH compute из долгих транзакций до DB persist;
+2. отдельная алгоритмическая волна по `street_strength`, если честный e2e profile подтвердит его как главный CPU bottleneck;
+3. hand/drilldown HTTP/API слой поверх `tracker_query_runtime`;
 
 ## Основные команды
 
@@ -107,11 +116,14 @@ bash scripts/run_wide_corpus_triage.sh
 cargo run -p parser_worker -- "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local --player-profile-id <uuid> "fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt"
 cargo run -p parser_worker -- import-local --player-profile-id <uuid> "fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt"
+cargo run -p parser_worker -- dir-import --prepare-only fixtures/mbr/quarantine_sample
+cargo run -p parser_worker -- dir-import --player-profile-id <uuid> --workers 4 fixtures/mbr/quarantine_sample
 cargo run -p parser_worker --bin bulk_local_import -- --player-profile-id <uuid> --list-file /tmp/files.txt --chunk-size 2
 cargo run -p parser_worker -- set-user-timezone --user-id <uuid> --timezone Asia/Krasnoyarsk
 cargo run -p parser_worker -- clear-user-timezone --user-id <uuid>
 cargo run -p tracker_web_api --
 cargo run -p tracker_ingest_runner -- --once
+cargo run -p tracker_ingest_runner -- --once --workers 4
 bash ../scripts/run_ingest_v2_bench.sh <player-profile-id>
 bash ../scripts/run_ingest_v2_mixed_scan.sh [/absolute/path/to/local/mixed-root]
 ```

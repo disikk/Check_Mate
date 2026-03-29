@@ -297,6 +297,9 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
     );
     let ts_bytes = fs::read(&ts_path).unwrap();
     let ts_name = ts_path.file_name().unwrap().to_string_lossy().to_string();
+    let hh_path = fixture_path("fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt");
+    let hh_bytes = fs::read(&hh_path).unwrap();
+    let hh_name = hh_path.file_name().unwrap().to_string_lossy().to_string();
 
     let archive_path = spool_dir.join("upload-source.zip");
     let archive_file = fs::File::create(&archive_path).unwrap();
@@ -305,6 +308,10 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
         .start_file(ts_name.clone(), zip::write::SimpleFileOptions::default())
         .unwrap();
     writer.write_all(&ts_bytes).unwrap();
+    writer
+        .start_file(hh_name.clone(), zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(&hh_bytes).unwrap();
     writer
         .start_file("notes/readme.md", zip::write::SimpleFileOptions::default())
         .unwrap();
@@ -346,7 +353,7 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
             .get("data")
             .and_then(|data| data.get("total_files"))
             .and_then(Value::as_i64),
-        Some(1)
+        Some(2)
     );
 
     let bundle_id_for_runtime = Uuid::parse_str(&bundle_id).unwrap();
@@ -357,7 +364,7 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
             let mut client = PgClient::connect(&db_url_for_runtime, NoTls).unwrap();
             let mut tx = client.transaction().unwrap();
             let mut executor = SuccessExecutor {
-                file_results: VecDeque::from(vec![Ok(())]),
+                file_results: VecDeque::from(vec![Ok(()), Ok(())]),
                 finalize_calls: 0,
             };
 
@@ -365,6 +372,8 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
             assert!(first.is_some());
             let second = run_next_job(&mut tx, "api-smoke-ws", 3, &mut executor).unwrap();
             assert!(second.is_some());
+            let third = run_next_job(&mut tx, "api-smoke-ws", 3, &mut executor).unwrap();
+            assert!(third.is_some());
             assert_eq!(executor.finalize_calls, 1);
             tx.commit().unwrap();
             bundle_id_for_runtime
@@ -394,8 +403,11 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
             "file_updated".to_string(),
             "bundle_updated".to_string(),
             "file_updated".to_string(),
+            "file_updated".to_string(),
             "bundle_updated".to_string(),
-            "bundle_terminal".to_string(),
+            "file_updated".to_string(),
+            "bundle_updated".to_string(),
+            "bundle_terminal".to_string()
         ]
     );
 

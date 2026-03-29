@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS import.idx_file_fragments_source_fragment_unique;

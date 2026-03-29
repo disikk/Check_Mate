@@ -1,0 +1,14 @@
+[package]
+name = "tracker_ingest_prepare"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+serde = { version = "1.0.228", features = ["derive"] }
+sha2 = "0.10.9"
+tracker_parser_core = { path = "../tracker_parser_core" }
+zip = "4.6.1"
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -3,6 +3,7 @@ use std::{
     env, fs,
     io::Read,
     path::Path,
+    thread,
     time::Instant,
 };
 
@@ -14,10 +15,14 @@ use mbr_stats_runtime::{
 use postgres::{Client, NoTls, Transaction};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use tracker_ingest_prepare::{
+    PrepareReport, PreparedFileRef, PreparedSourceKind, RejectReasonCode, RejectedTournament,
+    prepare_path,
+};
 use tracker_ingest_runtime::{
     BundleStatus as IngestBundleStatus, ClaimedJob as IngestClaimedJob, FileKind as IngestFileKind,
-    IngestBundleInput, IngestFileInput, JobExecutionError, JobExecutor, enqueue_bundle,
-    load_bundle_summary, run_next_job,
+    IngestBundleInput, IngestDiagnosticInput, IngestFileInput, IngestMemberInput,
+    JobExecutionError, JobExecutor, enqueue_bundle, load_bundle_summary, run_next_job,
 };
 use tracker_parser_core::{
     EXACT_CORE_RESOLUTION_VERSION, SourceKind, detect_source_kind,
@@ -39,6 +44,7 @@ use uuid::Uuid;
 const HAND_RESOLUTION_VERSION: &str = EXACT_CORE_RESOLUTION_VERSION;
 const GG_TIMESTAMP_PROVENANCE_PRESENT: &str = "gg_user_timezone";
 const GG_TIMESTAMP_PROVENANCE_MISSING: &str = "gg_user_timezone_missing";
+const DEFAULT_RUNNER_WORKER_CAP: usize = 8;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
 pub struct IngestStageProfile {
@@ -59,6 +65,56 @@ impl IngestStageProfile {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
+pub struct PrepareProfile {
+    pub scan_ms: u64,
+    pub pair_ms: u64,
+    pub hash_ms: u64,
+    pub enqueue_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
+pub struct ComputeProfile {
+    pub parse_ms: u64,
+    pub normalize_ms: u64,
+    pub derive_hand_local_ms: u64,
+    pub derive_tournament_ms: u64,
+    pub persist_db_ms: u64,
+    pub materialize_ms: u64,
+    pub finalize_ms: u64,
+}
+
+impl ComputeProfile {
+    fn add_assign(&mut self, other: ComputeProfile) {
+        self.parse_ms += other.parse_ms;
+        self.normalize_ms += other.normalize_ms;
+        self.derive_hand_local_ms += other.derive_hand_local_ms;
+        self.derive_tournament_ms += other.derive_tournament_ms;
+        self.persist_db_ms += other.persist_db_ms;
+        self.materialize_ms += other.materialize_ms;
+        self.finalize_ms += other.finalize_ms;
+    }
+
+    fn legacy_stage_profile(self) -> IngestStageProfile {
+        IngestStageProfile {
+            parse_ms: self.parse_ms,
+            normalize_ms: self.normalize_ms,
+            persist_ms: self.derive_hand_local_ms + self.derive_tournament_ms + self.persist_db_ms,
+            materialize_ms: self.materialize_ms,
+            finalize_ms: self.finalize_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
+pub struct IngestE2eProfile {
+    pub prepare: PrepareProfile,
+    pub runtime: ComputeProfile,
+    pub prep_elapsed_ms: u64,
+    pub runner_elapsed_ms: u64,
+    pub e2e_elapsed_ms: u64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 pub struct IngestRunProfile {
     pub processed_jobs: usize,
@@ -66,6 +122,7 @@ pub struct IngestRunProfile {
     pub finalize_jobs: usize,
     pub files_persisted: usize,
     pub hands_persisted: usize,
+    pub runtime_profile: ComputeProfile,
     pub stage_profile: IngestStageProfile,
 }
 
@@ -74,12 +131,25 @@ impl IngestRunProfile {
         self.file_jobs += 1;
         self.files_persisted += 1;
         self.hands_persisted += report.hands_persisted;
+        self.runtime_profile.add_assign(report.runtime_profile);
         self.stage_profile.add_assign(report.stage_profile);
     }
 
-    fn record_finalize_job(&mut self, stage_profile: IngestStageProfile) {
+    fn record_finalize_job(&mut self, runtime_profile: ComputeProfile) {
         self.finalize_jobs += 1;
-        self.stage_profile.add_assign(stage_profile);
+        self.runtime_profile.add_assign(runtime_profile);
+        self.stage_profile
+            .add_assign(runtime_profile.legacy_stage_profile());
+    }
+
+    fn add_assign(&mut self, other: IngestRunProfile) {
+        self.processed_jobs += other.processed_jobs;
+        self.file_jobs += other.file_jobs;
+        self.finalize_jobs += other.finalize_jobs;
+        self.files_persisted += other.files_persisted;
+        self.hands_persisted += other.hands_persisted;
+        self.runtime_profile.add_assign(other.runtime_profile);
+        self.stage_profile.add_assign(other.stage_profile);
     }
 }
 
@@ -91,13 +161,40 @@ pub struct LocalImportReport {
     pub tournament_id: Uuid,
     pub fragments_persisted: usize,
     pub hands_persisted: usize,
+    pub runtime_profile: ComputeProfile,
+    pub stage_profile: IngestStageProfile,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct DirImportReport {
+    pub prepare_report: PrepareReport,
+    pub rejected_by_reason: BTreeMap<String, usize>,
+    pub bundle_id: Option<Uuid>,
+    pub workers_used: usize,
+    pub processed_jobs: usize,
+    pub file_jobs: usize,
+    pub finalize_jobs: usize,
+    pub hands_persisted: usize,
+    pub prep_elapsed_ms: u64,
+    pub runner_elapsed_ms: u64,
+    pub e2e_elapsed_ms: u64,
+    pub hands_per_minute: f64,
+    pub hands_per_minute_runner: f64,
+    pub hands_per_minute_e2e: f64,
+    pub e2e_profile: IngestE2eProfile,
     pub stage_profile: IngestStageProfile,
 }
 
 struct LocalImportExecutor {
     report: Option<LocalImportReport>,
     run_profile: IngestRunProfile,
-    last_finalize_profile: IngestStageProfile,
+    last_finalize_profile: ComputeProfile,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MaterializedPreparedArchive {
+    archive_path: std::path::PathBuf,
+    ingest_file: IngestFileInput,
 }
 
 #[derive(Debug)]
@@ -130,6 +227,28 @@ struct CanonicalHandPersistence {
     showdowns: Vec<HandShowdownRow>,
     summary_seat_outcomes: Vec<HandSummarySeatOutcomeRow>,
     parse_issues: Vec<ParseIssueRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NormalizedHandPersistence {
+    state_resolution: HandStateResolutionRow,
+    pot_rows: Vec<HandPotRow>,
+    eligibility_rows: Vec<HandPotEligibilityRow>,
+    contribution_rows: Vec<HandPotContributionRow>,
+    winner_rows: Vec<HandPotWinnerRow>,
+    return_rows: Vec<HandReturnRow>,
+    elimination_rows: Vec<HandEliminationRow>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct HandLocalComputeOutput {
+    canonical_persistence: CanonicalHandPersistence,
+    normalized_persistence: NormalizedHandPersistence,
+    ko_attempt_rows: Vec<HandKoAttemptRow>,
+    ko_opportunity_rows: Vec<HandKoOpportunityRow>,
+    preflop_starting_hand_rows: Vec<PreflopStartingHandRow>,
+    street_strength_rows: Vec<StreetHandStrengthRow>,
+    stage_fact: StageHandFact,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -431,7 +550,7 @@ pub fn import_path(path: &str, player_profile_id: Uuid) -> Result<LocalImportRep
     let mut executor = LocalImportExecutor {
         report: None,
         run_profile: IngestRunProfile::default(),
-        last_finalize_profile: IngestStageProfile::default(),
+        last_finalize_profile: ComputeProfile::default(),
     };
     loop {
         let mut tx = client
@@ -461,9 +580,157 @@ pub fn import_path(path: &str, player_profile_id: Uuid) -> Result<LocalImportRep
         anyhow!("ingest bundle for `{path}` finished without successful file import")
     })?;
     report
-        .stage_profile
+        .runtime_profile
         .add_assign(executor.last_finalize_profile);
+    report
+        .stage_profile
+        .add_assign(executor.last_finalize_profile.legacy_stage_profile());
     Ok(report)
+}
+
+pub fn dir_import_path(
+    path: &str,
+    player_profile_id: Uuid,
+    worker_count: usize,
+) -> Result<DirImportReport> {
+    let database_url = database_url_from_env()?;
+    dir_import_with_database_url(&database_url, path, player_profile_id, worker_count)
+}
+
+fn dir_import_with_database_url(
+    database_url: &str,
+    path: &str,
+    player_profile_id: Uuid,
+    worker_count: usize,
+) -> Result<DirImportReport> {
+    if worker_count == 0 {
+        return Err(anyhow!("worker_count must be greater than zero"));
+    }
+
+    let e2e_started_at = Instant::now();
+    let prepare_report = prepare_path(path)?;
+    let rejected_by_reason = summarize_rejected_by_reason(&prepare_report);
+    if prepare_report.paired_tournaments.is_empty() {
+        let prep_elapsed_ms = e2e_started_at.elapsed().as_millis() as u64;
+        let prepare_profile = PrepareProfile {
+            scan_ms: prepare_report.scan_ms,
+            pair_ms: prepare_report.pair_ms,
+            hash_ms: prepare_report.hash_ms,
+            enqueue_ms: 0,
+        };
+        return Ok(DirImportReport {
+            prepare_report,
+            rejected_by_reason,
+            bundle_id: None,
+            workers_used: worker_count,
+            processed_jobs: 0,
+            file_jobs: 0,
+            finalize_jobs: 0,
+            hands_persisted: 0,
+            prep_elapsed_ms,
+            runner_elapsed_ms: 0,
+            e2e_elapsed_ms: prep_elapsed_ms,
+            hands_per_minute: 0.0,
+            hands_per_minute_runner: 0.0,
+            hands_per_minute_e2e: 0.0,
+            e2e_profile: IngestE2eProfile {
+                prepare: prepare_profile,
+                runtime: ComputeProfile::default(),
+                prep_elapsed_ms,
+                runner_elapsed_ms: 0,
+                e2e_elapsed_ms: prep_elapsed_ms,
+            },
+            stage_profile: IngestStageProfile::default(),
+        });
+    }
+
+    let materialize_root =
+        std::env::temp_dir().join(format!("check-mate-dir-import-{}", Uuid::new_v4()));
+    fs::create_dir_all(&materialize_root).with_context(|| {
+        format!(
+            "failed to create dir-import temp dir `{}`",
+            materialize_root.display()
+        )
+    })?;
+
+    let result = (|| {
+        let enqueue_started_at = Instant::now();
+        let materialized = build_prepared_archive_input(&materialize_root, &prepare_report)?
+            .ok_or_else(|| {
+                anyhow!("prepare report unexpectedly contained no paired tournaments")
+            })?;
+
+        let mut client =
+            Client::connect(database_url, NoTls).context("failed to connect to PostgreSQL")?;
+        let mut tx = client
+            .transaction()
+            .context("failed to start dir-import enqueue transaction")?;
+        let context = load_import_context(&mut tx, player_profile_id)?;
+        let bundle = enqueue_bundle(
+            &mut tx,
+            &IngestBundleInput {
+                organization_id: context.organization_id,
+                player_profile_id: context.player_profile_id,
+                created_by_user_id: context.user_id,
+                files: vec![materialized.ingest_file],
+            },
+        )?;
+        tx.commit()
+            .context("failed to commit dir-import enqueue transaction")?;
+        let enqueue_ms = enqueue_started_at.elapsed().as_millis() as u64;
+        let prep_elapsed_ms = e2e_started_at.elapsed().as_millis() as u64;
+
+        let runner_started_at = Instant::now();
+        let run_profile =
+            run_ingest_runner_parallel(database_url, "parser_worker_dir_import", 3, worker_count)?;
+        let runner_elapsed_ms = runner_started_at.elapsed().as_millis() as u64;
+        let e2e_elapsed_ms = e2e_started_at.elapsed().as_millis() as u64;
+        let hands_per_minute_runner = if runner_elapsed_ms == 0 {
+            0.0
+        } else {
+            (run_profile.hands_persisted as f64) * 60_000.0 / (runner_elapsed_ms as f64)
+        };
+        let hands_per_minute_e2e = if e2e_elapsed_ms == 0 {
+            0.0
+        } else {
+            (run_profile.hands_persisted as f64) * 60_000.0 / (e2e_elapsed_ms as f64)
+        };
+        let prepare_profile = PrepareProfile {
+            scan_ms: prepare_report.scan_ms,
+            pair_ms: prepare_report.pair_ms,
+            hash_ms: prepare_report.hash_ms,
+            enqueue_ms,
+        };
+        let e2e_profile = IngestE2eProfile {
+            prepare: prepare_profile,
+            runtime: run_profile.runtime_profile,
+            prep_elapsed_ms,
+            runner_elapsed_ms,
+            e2e_elapsed_ms,
+        };
+
+        Ok(DirImportReport {
+            prepare_report,
+            rejected_by_reason,
+            bundle_id: Some(bundle.bundle_id),
+            workers_used: worker_count,
+            processed_jobs: run_profile.processed_jobs,
+            file_jobs: run_profile.file_jobs,
+            finalize_jobs: run_profile.finalize_jobs,
+            hands_persisted: run_profile.hands_persisted,
+            prep_elapsed_ms,
+            runner_elapsed_ms,
+            e2e_elapsed_ms,
+            hands_per_minute: hands_per_minute_runner,
+            hands_per_minute_runner,
+            hands_per_minute_e2e,
+            e2e_profile,
+            stage_profile: run_profile.stage_profile,
+        })
+    })();
+
+    let _ = fs::remove_dir_all(&materialize_root);
+    result
 }
 
 pub fn run_ingest_runner_until_idle(
@@ -482,12 +749,60 @@ pub fn run_ingest_runner_until_idle_with_profile(
     runner_name: &str,
     max_attempts: i32,
 ) -> Result<IngestRunProfile> {
+    run_ingest_runner_parallel(database_url, runner_name, max_attempts, 1)
+}
+
+pub fn default_runner_worker_count() -> usize {
+    thread::available_parallelism()
+        .map(|value| value.get().min(DEFAULT_RUNNER_WORKER_CAP))
+        .unwrap_or(1)
+}
+
+pub fn run_ingest_runner_parallel(
+    database_url: &str,
+    runner_name: &str,
+    max_attempts: i32,
+    worker_count: usize,
+) -> Result<IngestRunProfile> {
+    if worker_count == 0 {
+        return Err(anyhow!("worker_count must be greater than zero"));
+    }
+
+    if worker_count == 1 {
+        return run_ingest_runner_worker(database_url, runner_name, max_attempts);
+    }
+
+    let mut handles = Vec::with_capacity(worker_count);
+    for _ in 0..worker_count {
+        let database_url = database_url.to_string();
+        let runner_name = runner_name.to_string();
+        handles.push(thread::spawn(move || {
+            run_ingest_runner_worker(&database_url, &runner_name, max_attempts)
+        }));
+    }
+
+    let mut run_profile = IngestRunProfile::default();
+    for handle in handles {
+        let worker_profile = handle
+            .join()
+            .map_err(|_| anyhow!("ingest runner worker thread panicked"))??;
+        run_profile.add_assign(worker_profile);
+    }
+
+    Ok(run_profile)
+}
+
+fn run_ingest_runner_worker(
+    database_url: &str,
+    runner_name: &str,
+    max_attempts: i32,
+) -> Result<IngestRunProfile> {
     let mut client =
         Client::connect(database_url, NoTls).context("failed to connect to PostgreSQL")?;
     let mut executor = LocalImportExecutor {
         report: None,
         run_profile: IngestRunProfile::default(),
-        last_finalize_profile: IngestStageProfile::default(),
+        last_finalize_profile: ComputeProfile::default(),
     };
 
     loop {
@@ -524,6 +839,232 @@ fn build_ingest_file_input(path: &str, input: &str) -> Result<IngestFileInput> {
         members: vec![],
         diagnostics: vec![],
     })
+}
+
+fn build_prepared_archive_input(
+    output_root: &Path,
+    report: &PrepareReport,
+) -> Result<Option<MaterializedPreparedArchive>> {
+    if report.paired_tournaments.is_empty() {
+        return Ok(None);
+    }
+
+    fs::create_dir_all(output_root).with_context(|| {
+        format!(
+            "failed to create prepared archive dir `{}`",
+            output_root.display()
+        )
+    })?;
+    let archive_path = output_root.join("prepared-pairs.zip");
+    let file = fs::File::create(&archive_path).with_context(|| {
+        format!(
+            "failed to create prepared archive `{}`",
+            archive_path.display()
+        )
+    })?;
+    let mut writer = zip::ZipWriter::new(file);
+    let mut members = Vec::new();
+
+    for (pair_index, pair) in report.paired_tournaments.iter().enumerate() {
+        let ts_member_index = members.len() as i32;
+        let (ts_member, ts_bytes) =
+            build_prepared_archive_member(pair_index, "ts", &pair.ts, None)?;
+        writer
+            .start_file(
+                ts_member.member_path.clone(),
+                zip::write::SimpleFileOptions::default(),
+            )
+            .with_context(|| {
+                format!("failed to start archive member `{}`", ts_member.member_path)
+            })?;
+        std::io::Write::write_all(&mut writer, &ts_bytes).with_context(|| {
+            format!("failed to write archive member `{}`", ts_member.member_path)
+        })?;
+        members.push(ts_member);
+
+        let (hh_member, hh_bytes) =
+            build_prepared_archive_member(pair_index, "hh", &pair.hh, Some(ts_member_index))?;
+        writer
+            .start_file(
+                hh_member.member_path.clone(),
+                zip::write::SimpleFileOptions::default(),
+            )
+            .with_context(|| {
+                format!("failed to start archive member `{}`", hh_member.member_path)
+            })?;
+        std::io::Write::write_all(&mut writer, &hh_bytes).with_context(|| {
+            format!("failed to write archive member `{}`", hh_member.member_path)
+        })?;
+        members.push(hh_member);
+    }
+
+    writer.finish().with_context(|| {
+        format!(
+            "failed to finalize prepared archive `{}`",
+            archive_path.display()
+        )
+    })?;
+    let archive_bytes = fs::read(&archive_path).with_context(|| {
+        format!(
+            "failed to read prepared archive `{}`",
+            archive_path.display()
+        )
+    })?;
+
+    Ok(Some(MaterializedPreparedArchive {
+        archive_path: archive_path.clone(),
+        ingest_file: IngestFileInput {
+            room: "gg".to_string(),
+            file_kind: IngestFileKind::Archive,
+            sha256: sha256_bytes_hex(&archive_bytes),
+            original_filename: archive_path
+                .file_name()
+                .map(|value| value.to_string_lossy().to_string())
+                .unwrap_or_else(|| "prepared-pairs.zip".to_string()),
+            byte_size: archive_bytes.len() as i64,
+            storage_uri: format!("local://{}", archive_path.display()),
+            members,
+            diagnostics: report
+                .rejected_tournaments
+                .iter()
+                .map(build_reject_diagnostic)
+                .collect(),
+        },
+    }))
+}
+
+fn build_prepared_archive_member(
+    pair_index: usize,
+    role: &str,
+    file: &PreparedFileRef,
+    depends_on_member_index: Option<i32>,
+) -> Result<(IngestMemberInput, Vec<u8>)> {
+    let sha256 = file
+        .sha256
+        .clone()
+        .ok_or_else(|| anyhow!("prepared file is missing sha256"))?;
+    let member_path = format!(
+        "pair-{pair_index:04}-{role}-{}",
+        sanitize_filename(&prepared_file_display_path(file))
+    );
+    let bytes = read_prepared_file_bytes(file)?;
+
+    Ok((
+        IngestMemberInput {
+            member_path,
+            member_kind: map_prepared_source_kind(file.source_kind)?,
+            sha256,
+            byte_size: bytes.len() as i64,
+            depends_on_member_index,
+        },
+        bytes,
+    ))
+}
+
+fn read_prepared_file_bytes(file: &PreparedFileRef) -> Result<Vec<u8>> {
+    match &file.member_path {
+        Some(member_path) => read_archive_member_bytes(Path::new(&file.source_path), member_path),
+        None => fs::read(&file.source_path)
+            .with_context(|| format!("failed to read prepared source `{}`", file.source_path)),
+    }
+}
+
+fn read_archive_member_bytes(archive_path: &Path, member_path: &str) -> Result<Vec<u8>> {
+    let file = fs::File::open(archive_path)
+        .with_context(|| format!("failed to open archive `{}`", archive_path.display()))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .with_context(|| format!("failed to open ZIP archive `{}`", archive_path.display()))?;
+    let mut member = archive.by_name(member_path).with_context(|| {
+        format!(
+            "missing ZIP member `{member_path}` in `{}`",
+            archive_path.display()
+        )
+    })?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut member, &mut bytes)
+        .with_context(|| format!("failed to read archive member `{member_path}`"))?;
+    Ok(bytes)
+}
+
+fn build_reject_diagnostic(rejected: &RejectedTournament) -> IngestDiagnosticInput {
+    let target = rejected
+        .files
+        .first()
+        .and_then(rejected_file_display_path)
+        .or_else(|| rejected.tournament_id.clone());
+    let message = match &rejected.tournament_id {
+        Some(tournament_id) => {
+            format!(
+                "Rejected tournament `{tournament_id}`: {}",
+                rejected.reason_text
+            )
+        }
+        None => format!("Rejected upload source: {}", rejected.reason_text),
+    };
+
+    IngestDiagnosticInput {
+        code: reject_reason_code_as_str(rejected.reason_code).to_string(),
+        message,
+        member_path: target,
+    }
+}
+
+fn rejected_file_display_path(file: &PreparedFileRef) -> Option<String> {
+    file.member_path.clone().or_else(|| {
+        Path::new(&file.source_path)
+            .file_name()
+            .map(|value| value.to_string_lossy().to_string())
+    })
+}
+
+fn prepared_file_display_path(file: &PreparedFileRef) -> String {
+    rejected_file_display_path(file).unwrap_or_else(|| file.source_path.clone())
+}
+
+fn map_prepared_source_kind(kind: PreparedSourceKind) -> Result<IngestFileKind> {
+    match kind {
+        PreparedSourceKind::HandHistory => Ok(IngestFileKind::HandHistory),
+        PreparedSourceKind::TournamentSummary => Ok(IngestFileKind::TournamentSummary),
+        PreparedSourceKind::Unknown => Err(anyhow!("unknown prepared source kind cannot enqueue")),
+    }
+}
+
+fn reject_reason_code_as_str(code: RejectReasonCode) -> &'static str {
+    match code {
+        RejectReasonCode::MissingTs => "missing_ts",
+        RejectReasonCode::MissingHh => "missing_hh",
+        RejectReasonCode::ConflictingTs => "conflicting_ts",
+        RejectReasonCode::ConflictingHh => "conflicting_hh",
+        RejectReasonCode::UnsupportedSource => "unsupported_source",
+        RejectReasonCode::MissingTournamentId => "missing_tournament_id",
+        RejectReasonCode::DuplicateSameContent => "duplicate_same_content",
+    }
+}
+
+fn summarize_rejected_by_reason(report: &PrepareReport) -> BTreeMap<String, usize> {
+    let mut summary = BTreeMap::new();
+    for rejected in &report.rejected_tournaments {
+        *summary
+            .entry(reject_reason_code_as_str(rejected.reason_code).to_string())
+            .or_insert(0) += 1;
+    }
+    summary
+}
+
+fn sanitize_filename(filename: &str) -> String {
+    filename
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | ':' | '\0' => '_',
+            _ => ch,
+        })
+        .collect()
+}
+
+fn sha256_bytes_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
 }
 
 fn storage_path_from_uri(storage_uri: &str) -> std::result::Result<&str, JobExecutionError> {
@@ -659,13 +1200,13 @@ impl JobExecutor for LocalImportExecutor {
         )
         .map(|_| {
             let elapsed_ms = started_at.elapsed().as_millis() as u64;
-            let stage_profile = IngestStageProfile {
+            let runtime_profile = ComputeProfile {
                 materialize_ms: elapsed_ms,
                 finalize_ms: elapsed_ms,
-                ..IngestStageProfile::default()
+                ..ComputeProfile::default()
             };
-            self.last_finalize_profile = stage_profile;
-            self.run_profile.record_finalize_job(stage_profile);
+            self.last_finalize_profile = runtime_profile;
+            self.run_profile.record_finalize_job(runtime_profile);
         })
         .map_err(|error| JobExecutionError::retriable(error.to_string()))
     }
@@ -1080,6 +1621,7 @@ fn import_tournament_summary_registered(
         )?;
     }
 
+    let persist_db_ms = persist_started_at.elapsed().as_millis() as u64;
     Ok(LocalImportReport {
         file_kind: "ts",
         source_file_id,
@@ -1087,10 +1629,19 @@ fn import_tournament_summary_registered(
         tournament_id,
         fragments_persisted: 1,
         hands_persisted: 0,
+        runtime_profile: ComputeProfile {
+            parse_ms,
+            normalize_ms: 0,
+            derive_hand_local_ms: 0,
+            derive_tournament_ms: 0,
+            persist_db_ms,
+            materialize_ms: 0,
+            finalize_ms: 0,
+        },
         stage_profile: IngestStageProfile {
             parse_ms,
             normalize_ms: 0,
-            persist_ms: persist_started_at.elapsed().as_millis() as u64,
+            persist_ms: persist_db_ms,
             materialize_ms: 0,
             finalize_ms: 0,
         },
@@ -1141,7 +1692,13 @@ fn import_hand_history_registered(
         .map(normalize_hand)
         .collect::<Result<Vec<_>, _>>()?;
     let normalize_ms = normalize_started_at.elapsed().as_millis() as u64;
-    let persist_started_at = Instant::now();
+    let derive_hand_local_started_at = Instant::now();
+    let hand_local_outputs = canonical_hands
+        .iter()
+        .zip(normalized_hands.iter())
+        .map(|(hand, normalized_hand)| build_hand_local_compute_output(hand, normalized_hand))
+        .collect::<Result<Vec<_>>>()?;
+    let derive_hand_local_ms = derive_hand_local_started_at.elapsed().as_millis() as u64;
     let first_hand = hands
         .first()
         .ok_or_else(|| anyhow!("hand history contains no parsed hands"))?;
@@ -1205,23 +1762,15 @@ fn import_hand_history_registered(
             )
         })?;
 
-    let stage_facts = canonical_hands
+    let derive_tournament_started_at = Instant::now();
+    let stage_facts = hand_local_outputs
         .iter()
-        .zip(normalized_hands.iter())
-        .map(|(hand, normalized_hand)| {
-            let exact_hero_boundary_ko_share = exact_hero_boundary_ko_share(hand, normalized_hand);
-
-            StageHandFact {
-                hand_id: hand.header.hand_id.clone(),
-                played_at: hand.header.played_at.clone(),
-                max_players: hand.header.max_players,
-                seat_count: hand.seats.len(),
-                exact_hero_boundary_ko_share,
-            }
-        })
+        .map(|output| output.stage_fact.clone())
         .collect::<Vec<_>>();
     let mbr_stage_resolutions =
         build_mbr_stage_resolutions_from_facts(context.player_profile_id, &stage_facts);
+    let derive_tournament_ms = derive_tournament_started_at.elapsed().as_millis() as u64;
+    let persist_started_at = Instant::now();
     let mut tournament_ft_helper_source_hands = Vec::with_capacity(canonical_hands.len());
 
     for (index, hand) in hands.iter().enumerate() {
@@ -1243,21 +1792,25 @@ fn import_hand_history_registered(
             fragment_id,
             canonical_hand,
         )?;
-        persist_canonical_hand(
+        let hand_local_output = &hand_local_outputs[index];
+        persist_canonical_hand_rows(
             tx,
             context,
             source_file_id,
             fragment_id,
             hand_id,
-            canonical_hand,
+            &hand_local_output.canonical_persistence,
         )?;
-        let normalized_hand = &normalized_hands[index];
-        persist_normalized_hand(tx, hand_id, normalized_hand)?;
-        persist_hand_ko_events(tx, hand_id, context.player_profile_id, canonical_hand)?;
-        let preflop_starting_hand_rows = build_preflop_starting_hand_rows(canonical_hand)?;
-        persist_preflop_starting_hands(tx, hand_id, &preflop_starting_hand_rows)?;
-        let street_strength_rows = build_street_hand_strength_rows(canonical_hand)?;
-        persist_street_hand_strength(tx, hand_id, &street_strength_rows)?;
+        persist_normalized_hand_rows(tx, hand_id, &hand_local_output.normalized_persistence)?;
+        persist_hand_ko_event_rows(
+            tx,
+            hand_id,
+            context.player_profile_id,
+            &hand_local_output.ko_attempt_rows,
+            &hand_local_output.ko_opportunity_rows,
+        )?;
+        persist_preflop_starting_hands(tx, hand_id, &hand_local_output.preflop_starting_hand_rows)?;
+        persist_street_hand_strength(tx, hand_id, &hand_local_output.street_strength_rows)?;
         let mbr_stage_resolution = mbr_stage_resolutions
             .get(&canonical_hand.header.hand_id)
             .ok_or_else(|| {
@@ -1325,6 +1878,7 @@ fn import_hand_history_registered(
     );
     persist_mbr_tournament_ft_helper(tx, &tournament_ft_helper_row)?;
 
+    let persist_db_ms = persist_started_at.elapsed().as_millis() as u64;
     Ok(LocalImportReport {
         file_kind: "hh",
         source_file_id,
@@ -1332,10 +1886,19 @@ fn import_hand_history_registered(
         tournament_id,
         fragments_persisted: hands.len(),
         hands_persisted: hands.len(),
+        runtime_profile: ComputeProfile {
+            parse_ms,
+            normalize_ms,
+            derive_hand_local_ms,
+            derive_tournament_ms,
+            persist_db_ms,
+            materialize_ms: 0,
+            finalize_ms: 0,
+        },
         stage_profile: IngestStageProfile {
             parse_ms,
             normalize_ms,
-            persist_ms: persist_started_at.elapsed().as_millis() as u64,
+            persist_ms: derive_hand_local_ms + derive_tournament_ms + persist_db_ms,
             materialize_ms: 0,
             finalize_ms: 0,
         },
@@ -1431,15 +1994,14 @@ fn upsert_hand_row(
         .get(0))
 }
 
-fn persist_canonical_hand(
+fn persist_canonical_hand_rows(
     tx: &mut impl postgres::GenericClient,
     context: &ImportContext,
     source_file_id: Uuid,
     fragment_id: Uuid,
     hand_id: Uuid,
-    hand: &CanonicalParsedHand,
+    rows: &CanonicalHandPersistence,
 ) -> Result<()> {
-    let rows = build_canonical_persistence(hand)?;
     replace_hand_children(tx, source_file_id, fragment_id, hand_id)?;
 
     insert_hand_seat_rows(
@@ -1507,21 +2069,14 @@ fn persist_canonical_hand(
     Ok(())
 }
 
-fn persist_normalized_hand(
+fn persist_normalized_hand_rows(
     tx: &mut impl postgres::GenericClient,
     hand_id: Uuid,
-    normalized_hand: &tracker_parser_core::models::NormalizedHand,
+    rows: &NormalizedHandPersistence,
 ) -> Result<()> {
-    let row = build_hand_state_resolution(normalized_hand);
-    let pot_rows = build_hand_pot_rows(normalized_hand);
-    let eligibility_rows = build_hand_pot_eligibility_rows(normalized_hand);
-    let contribution_rows = build_hand_pot_contribution_rows(normalized_hand);
-    let winner_rows = build_hand_pot_winner_rows(normalized_hand);
-    let return_rows = build_hand_return_rows(normalized_hand);
-    let elimination_rows = build_hand_elimination_rows(normalized_hand);
-    let final_stacks_json = serde_json::to_string(&row.final_stacks)?;
-    let settlement_json = serde_json::to_string(&row.settlement)?;
-    let invariant_issues_json = serde_json::to_string(&row.invariant_issues)?;
+    let final_stacks_json = serde_json::to_string(&rows.state_resolution.final_stacks)?;
+    let settlement_json = serde_json::to_string(&rows.state_resolution.settlement)?;
+    let invariant_issues_json = serde_json::to_string(&rows.state_resolution.invariant_issues)?;
 
     tx.execute(
         "INSERT INTO derived.hand_state_resolutions (
@@ -1547,29 +2102,29 @@ fn persist_normalized_hand(
             invariant_issues = EXCLUDED.invariant_issues",
         &[
             &hand_id,
-            &row.resolution_version,
-            &row.chip_conservation_ok,
-            &row.pot_conservation_ok,
-            &row.settlement_state,
-            &row.rake_amount,
+            &rows.state_resolution.resolution_version,
+            &rows.state_resolution.chip_conservation_ok,
+            &rows.state_resolution.pot_conservation_ok,
+            &rows.state_resolution.settlement_state,
+            &rows.state_resolution.rake_amount,
             &final_stacks_json,
             &settlement_json,
             &invariant_issues_json,
         ],
     )?;
 
-    insert_hand_pot_rows(tx, hand_id, &pot_rows)?;
-    insert_hand_pot_eligibility_rows(tx, hand_id, &eligibility_rows)?;
-    insert_hand_pot_contribution_rows(tx, hand_id, &contribution_rows)?;
-    insert_hand_pot_winner_rows(tx, hand_id, &winner_rows)?;
-    insert_hand_return_rows(tx, hand_id, &return_rows)?;
+    insert_hand_pot_rows(tx, hand_id, &rows.pot_rows)?;
+    insert_hand_pot_eligibility_rows(tx, hand_id, &rows.eligibility_rows)?;
+    insert_hand_pot_contribution_rows(tx, hand_id, &rows.contribution_rows)?;
+    insert_hand_pot_winner_rows(tx, hand_id, &rows.winner_rows)?;
+    insert_hand_return_rows(tx, hand_id, &rows.return_rows)?;
 
     tx.execute(
         "DELETE FROM derived.hand_eliminations WHERE hand_id = $1",
         &[&hand_id],
     )?;
 
-    for elimination_row in elimination_rows {
+    for elimination_row in &rows.elimination_rows {
         let ko_share_fraction_by_winner_json =
             serde_json::to_string(&elimination_row.ko_share_fraction_by_winner)?;
         tx.execute(
@@ -1606,15 +2161,13 @@ fn persist_normalized_hand(
     Ok(())
 }
 
-fn persist_hand_ko_events(
+fn persist_hand_ko_event_rows(
     tx: &mut impl postgres::GenericClient,
     hand_id: Uuid,
     player_profile_id: Uuid,
-    hand: &CanonicalParsedHand,
+    attempt_rows: &[HandKoAttemptRow],
+    opportunity_rows: &[HandKoOpportunityRow],
 ) -> Result<()> {
-    let attempt_rows = build_hand_ko_attempt_rows(hand);
-    let opportunity_rows = build_hand_ko_opportunity_rows(hand);
-
     tx.execute(
         "DELETE FROM derived.hand_ko_attempts WHERE hand_id = $1",
         &[&hand_id],
@@ -1624,8 +2177,8 @@ fn persist_hand_ko_events(
         &[&hand_id],
     )?;
 
-    insert_hand_ko_attempt_rows(tx, hand_id, player_profile_id, &attempt_rows)?;
-    insert_hand_ko_opportunity_rows(tx, hand_id, player_profile_id, &opportunity_rows)?;
+    insert_hand_ko_attempt_rows(tx, hand_id, player_profile_id, attempt_rows)?;
+    insert_hand_ko_opportunity_rows(tx, hand_id, player_profile_id, opportunity_rows)?;
 
     Ok(())
 }
@@ -2342,6 +2895,20 @@ fn build_hand_state_resolution(
     }
 }
 
+fn build_normalized_persistence(
+    normalized_hand: &tracker_parser_core::models::NormalizedHand,
+) -> NormalizedHandPersistence {
+    NormalizedHandPersistence {
+        state_resolution: build_hand_state_resolution(normalized_hand),
+        pot_rows: build_hand_pot_rows(normalized_hand),
+        eligibility_rows: build_hand_pot_eligibility_rows(normalized_hand),
+        contribution_rows: build_hand_pot_contribution_rows(normalized_hand),
+        winner_rows: build_hand_pot_winner_rows(normalized_hand),
+        return_rows: build_hand_return_rows(normalized_hand),
+        elimination_rows: build_hand_elimination_rows(normalized_hand),
+    }
+}
+
 fn build_hand_pot_rows(
     normalized_hand: &tracker_parser_core::models::NormalizedHand,
 ) -> Vec<HandPotRow> {
@@ -2395,6 +2962,27 @@ fn build_preflop_starting_hand_rows(
             certainty_state: certainty_state_code(descriptor.certainty_state).to_string(),
         })
         .collect())
+}
+
+fn build_hand_local_compute_output(
+    hand: &CanonicalParsedHand,
+    normalized_hand: &tracker_parser_core::models::NormalizedHand,
+) -> Result<HandLocalComputeOutput> {
+    Ok(HandLocalComputeOutput {
+        canonical_persistence: build_canonical_persistence(hand)?,
+        normalized_persistence: build_normalized_persistence(normalized_hand),
+        ko_attempt_rows: build_hand_ko_attempt_rows(hand),
+        ko_opportunity_rows: build_hand_ko_opportunity_rows(hand),
+        preflop_starting_hand_rows: build_preflop_starting_hand_rows(hand)?,
+        street_strength_rows: build_street_hand_strength_rows(hand)?,
+        stage_fact: StageHandFact {
+            hand_id: hand.header.hand_id.clone(),
+            played_at: hand.header.played_at.clone(),
+            max_players: hand.header.max_players,
+            seat_count: hand.seats.len(),
+            exact_hero_boundary_ko_share: exact_hero_boundary_ko_share(hand, normalized_hand),
+        },
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3694,6 +4282,7 @@ mod tests {
         path::PathBuf,
         sync::{Mutex, OnceLock},
     };
+    use tempfile::tempdir;
     use tracker_query_runtime::{
         FeatureRef, FilterCondition, FilterOperator, FilterValue, HandQueryRequest,
         query_matching_hand_ids,
@@ -3954,6 +4543,213 @@ mod tests {
         assert_eq!(input, "hello from zip member".to_string());
 
         fs::remove_file(archive_path).unwrap();
+    }
+
+    #[test]
+    fn build_prepared_archive_input_orders_ts_then_hh_and_attaches_reject_diagnostics() {
+        let dir = tempdir().unwrap();
+        let ts_path = dir.path().join("winner.ts.txt");
+        let hh_path = dir.path().join("winner.hh.txt");
+        let orphan_path = dir.path().join("orphan.ts.txt");
+
+        fs::write(
+            &ts_path,
+            fs::read_to_string(
+                fixture_path(
+                    "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+                ),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            &hh_path,
+            fs::read_to_string(fixture_path(
+                "../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt",
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            &orphan_path,
+            fs::read_to_string(
+                fixture_path(
+                    "../../fixtures/mbr/ts/GG20260316 - Tournament #271767530 - Mystery Battle Royale 25.txt",
+                ),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        let report = tracker_ingest_prepare::prepare_path(dir.path()).unwrap();
+        let materialized = build_prepared_archive_input(dir.path(), &report)
+            .expect("prepared pair archive should materialize")
+            .expect("prepared pair archive should exist");
+
+        assert_eq!(materialized.ingest_file.file_kind, IngestFileKind::Archive);
+        assert_eq!(materialized.ingest_file.members.len(), 2);
+        assert_eq!(
+            materialized.ingest_file.members[0].member_kind,
+            IngestFileKind::TournamentSummary
+        );
+        assert_eq!(
+            materialized.ingest_file.members[0].depends_on_member_index,
+            None
+        );
+        assert_eq!(
+            materialized.ingest_file.members[1].member_kind,
+            IngestFileKind::HandHistory
+        );
+        assert_eq!(
+            materialized.ingest_file.members[1].depends_on_member_index,
+            Some(0)
+        );
+        assert_eq!(materialized.ingest_file.diagnostics.len(), 1);
+        assert_eq!(materialized.ingest_file.diagnostics[0].code, "missing_hh");
+        assert_eq!(
+            materialized.ingest_file.diagnostics[0]
+                .member_path
+                .as_deref(),
+            Some("orphan.ts.txt")
+        );
+    }
+
+    #[test]
+    fn compute_profile_collapses_into_legacy_stage_profile() {
+        let profile = ComputeProfile {
+            parse_ms: 10,
+            normalize_ms: 11,
+            derive_hand_local_ms: 12,
+            derive_tournament_ms: 13,
+            persist_db_ms: 14,
+            materialize_ms: 15,
+            finalize_ms: 16,
+        };
+
+        assert_eq!(
+            profile.legacy_stage_profile(),
+            IngestStageProfile {
+                parse_ms: 10,
+                normalize_ms: 11,
+                persist_ms: 39,
+                materialize_ms: 15,
+                finalize_ms: 16,
+            }
+        );
+    }
+
+    #[test]
+    fn summarize_rejected_by_reason_counts_each_code() {
+        let report = PrepareReport {
+            scanned_files: 3,
+            paired_tournaments: vec![],
+            rejected_tournaments: vec![
+                RejectedTournament {
+                    tournament_id: Some("1".to_string()),
+                    files: vec![],
+                    reason_code: RejectReasonCode::MissingHh,
+                    reason_text: "missing hh".to_string(),
+                },
+                RejectedTournament {
+                    tournament_id: Some("2".to_string()),
+                    files: vec![],
+                    reason_code: RejectReasonCode::MissingHh,
+                    reason_text: "missing hh again".to_string(),
+                },
+                RejectedTournament {
+                    tournament_id: None,
+                    files: vec![],
+                    reason_code: RejectReasonCode::UnsupportedSource,
+                    reason_text: "unsupported".to_string(),
+                },
+            ],
+            scan_ms: 1,
+            pair_ms: 2,
+            hash_ms: 3,
+        };
+
+        assert_eq!(
+            summarize_rejected_by_reason(&report),
+            BTreeMap::from([
+                ("missing_hh".to_string(), 2usize),
+                ("unsupported_source".to_string(), 1usize),
+            ])
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn dir_import_path_enqueues_pair_first_bundle_and_runs_parallel_workers() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut setup_client);
+        apply_core_schema_migrations(&mut setup_client);
+        apply_sql_file(
+            &mut setup_client,
+            &fixture_path("../../seeds/0001_reference_data.sql"),
+        );
+        let player_profile_id = ensure_test_import_actor(&mut setup_client).unwrap();
+        drop(setup_client);
+
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("winner.ts.txt"),
+            fs::read_to_string(fixture_path(
+                "../../fixtures/mbr/ts/GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("winner.hh.txt"),
+            fs::read_to_string(fixture_path(
+                "../../fixtures/mbr/hh/GG20260316-0344 - Mystery Battle Royale 25.txt",
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("orphan.ts.txt"),
+            fs::read_to_string(fixture_path(
+                "../../fixtures/mbr/ts/GG20260316 - Tournament #271767530 - Mystery Battle Royale 25.txt",
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let report = super::dir_import_with_database_url(
+            &database_url,
+            dir.path().to_str().unwrap(),
+            player_profile_id,
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(report.prepare_report.paired_tournaments.len(), 1);
+        assert_eq!(report.prepare_report.rejected_tournaments.len(), 1);
+        assert_eq!(report.rejected_by_reason.get("missing_hh"), Some(&1));
+        assert_eq!(report.workers_used, 2);
+        assert_eq!(report.file_jobs, 2);
+        assert_eq!(report.finalize_jobs, 1);
+        assert!(report.bundle_id.is_some());
+        assert!(report.hands_persisted > 0);
+        assert_eq!(report.hands_per_minute, report.hands_per_minute_runner);
+        assert!(report.e2e_elapsed_ms >= report.runner_elapsed_ms);
+        assert!(report.e2e_profile.prep_elapsed_ms <= report.e2e_elapsed_ms);
+        assert_eq!(
+            report.e2e_profile.prepare.scan_ms,
+            report.prepare_report.scan_ms
+        );
+        assert_eq!(
+            report.stage_profile,
+            report.e2e_profile.runtime.legacy_stage_profile()
+        );
+
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        let summary = load_bundle_summary(&mut client, report.bundle_id.unwrap()).unwrap();
+        assert_eq!(summary.status, IngestBundleStatus::Succeeded);
     }
 
     #[test]
@@ -6129,6 +6925,88 @@ mod tests {
                     "target_seat_no".to_string()
                 ),
             ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0028_adds_pair_aware_ingest_queue_contract() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_core_schema_migrations(&mut client);
+
+        let columns = client
+            .query(
+                "SELECT column_name, is_nullable
+                 FROM information_schema.columns
+                 WHERE table_schema = 'import'
+                   AND table_name = 'import_jobs'
+                   AND column_name = 'depends_on_job_id'",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            columns,
+            vec![("depends_on_job_id".to_string(), "YES".to_string())]
+        );
+
+        let indexes = client
+            .query(
+                "SELECT indexname
+                 FROM pg_indexes
+                 WHERE schemaname = 'import'
+                   AND indexname = 'idx_import_jobs_claim_dependency'",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            indexes,
+            vec!["idx_import_jobs_claim_dependency".to_string()]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn migration_v0029_removes_legacy_file_fragment_source_uniqueness() {
+        let _guard = db_test_guard();
+        let database_url = env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for integration test");
+        let mut client = Client::connect(&database_url, NoTls).unwrap();
+        reset_dev_player_data(&mut client);
+        apply_core_schema_migrations(&mut client);
+
+        let indexes = client
+            .query(
+                "SELECT indexname
+                 FROM pg_indexes
+                 WHERE schemaname = 'import'
+                   AND tablename = 'file_fragments'
+                   AND indexname IN (
+                       'idx_file_fragments_source_fragment_unique',
+                       'uniq_file_fragments_member_fragment'
+                   )
+                 ORDER BY indexname",
+                &[],
+            )
+            .unwrap()
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            indexes,
+            vec!["uniq_file_fragments_member_fragment".to_string()]
         );
     }
 
@@ -11193,11 +12071,23 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
         );
         apply_sql_file(
             client,
+            &fixture_path("../../migrations/0025_ingest_bundle_queue_order.sql"),
+        );
+        apply_sql_file(
+            client,
             &fixture_path("../../migrations/0026_preflop_matrix_filters.sql"),
         );
         apply_sql_file(
             client,
             &fixture_path("../../migrations/0027_mbr_ko_attempts.sql"),
+        );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0028_pair_aware_ingest_queue.sql"),
+        );
+        apply_sql_file(
+            client,
+            &fixture_path("../../migrations/0029_file_fragments_source_uniqueness_cleanup.sql"),
         );
     }
 
@@ -11605,18 +12495,18 @@ Seat 2: Villain (big blind) showed [Kd Kh] and lost"#
                 .unwrap();
             client
                 .execute(
-                    "DELETE FROM import.source_file_members
-                     WHERE source_file_id IN (
-                         SELECT id FROM import.source_files WHERE player_profile_id = $1
+                    "DELETE FROM import.ingest_bundle_files
+                     WHERE bundle_id IN (
+                         SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
                      )",
                     &[&player_profile_id],
                 )
                 .unwrap();
             client
                 .execute(
-                    "DELETE FROM import.ingest_bundle_files
-                     WHERE bundle_id IN (
-                         SELECT id FROM import.ingest_bundles WHERE player_profile_id = $1
+                    "DELETE FROM import.source_file_members
+                     WHERE source_file_id IN (
+                         SELECT id FROM import.source_files WHERE player_profile_id = $1
                      )",
                     &[&player_profile_id],
                 )

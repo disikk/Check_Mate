@@ -13,6 +13,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 sha2 = "0.10.9"
 tokio = { version = "1.48.0", features = ["fs", "macros", "rt-multi-thread", "time"] }
+tracker_ingest_prepare = { path = "../tracker_ingest_prepare" }
 tracker_ingest_runtime = { path = "../tracker_ingest_runtime" }
 tracker_parser_core = { path = "../tracker_parser_core" }
 uuid = { version = "1.18.1", features = ["serde", "v4"] }
@@ -22,4 +23,5 @@ zip = "4.6.1"
 futures-util = "0.3.31"
 parser_worker = { path = "../parser_worker" }
 reqwest = { version = "0.12.24", default-features = false, features = ["json", "multipart", "stream", "rustls-tls"] }
+tempfile = "3.27.0"
 tokio-tungstenite = "0.28.0"

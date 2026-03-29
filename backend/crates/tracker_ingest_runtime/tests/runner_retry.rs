@@ -4,8 +4,9 @@ use std::sync::{Mutex, OnceLock};
 
 use postgres::{Client, NoTls};
 use tracker_ingest_runtime::{
-    BundleStatus, FailureDisposition, FileKind, IngestBundleInput, IngestFileInput, claim_next_job,
-    enqueue_bundle, load_bundle_summary, mark_job_failed, retry_failed_job,
+    BundleStatus, FailureDisposition, FileKind, IngestBundleInput, IngestFileInput,
+    IngestMemberInput, claim_next_job, enqueue_bundle, load_bundle_summary, mark_job_failed,
+    retry_failed_job,
 };
 use uuid::Uuid;
 
@@ -107,6 +108,77 @@ fn sample_bundle_input(
     }
 }
 
+fn independent_bundle_input(
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    user_id: Uuid,
+) -> IngestBundleInput {
+    IngestBundleInput {
+        organization_id,
+        player_profile_id,
+        created_by_user_id: user_id,
+        files: vec![
+            IngestFileInput {
+                room: "gg".to_string(),
+                file_kind: FileKind::HandHistory,
+                sha256: "1".repeat(64),
+                original_filename: "first-hh.txt".to_string(),
+                byte_size: 12,
+                storage_uri: "local://first-hh.txt".to_string(),
+                members: vec![],
+                diagnostics: vec![],
+            },
+            IngestFileInput {
+                room: "gg".to_string(),
+                file_kind: FileKind::HandHistory,
+                sha256: "2".repeat(64),
+                original_filename: "second-hh.txt".to_string(),
+                byte_size: 12,
+                storage_uri: "local://second-hh.txt".to_string(),
+                members: vec![],
+                diagnostics: vec![],
+            },
+        ],
+    }
+}
+
+fn paired_archive_bundle_input(
+    organization_id: Uuid,
+    player_profile_id: Uuid,
+    user_id: Uuid,
+) -> IngestBundleInput {
+    IngestBundleInput {
+        organization_id,
+        player_profile_id,
+        created_by_user_id: user_id,
+        files: vec![IngestFileInput {
+            room: "gg".to_string(),
+            file_kind: FileKind::Archive,
+            sha256: "paired-archive".repeat(5).chars().take(64).collect(),
+            original_filename: "paired.zip".to_string(),
+            byte_size: 120,
+            storage_uri: "local://paired.zip".to_string(),
+            members: vec![
+                IngestMemberInput {
+                    member_path: "pair.ts.txt".to_string(),
+                    member_kind: FileKind::TournamentSummary,
+                    sha256: "t".repeat(64),
+                    byte_size: 10,
+                    depends_on_member_index: None,
+                },
+                IngestMemberInput {
+                    member_path: "pair.hh.txt".to_string(),
+                    member_kind: FileKind::HandHistory,
+                    sha256: "u".repeat(64),
+                    byte_size: 10,
+                    depends_on_member_index: Some(0),
+                },
+            ],
+            diagnostics: vec![],
+        }],
+    }
+}
+
 #[test]
 #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
 fn claim_next_job_creates_attempt_and_marks_job_running() {
@@ -143,6 +215,47 @@ fn claim_next_job_creates_attempt_and_marks_job_running() {
     assert_eq!(summary.running_file_jobs, 1);
 
     tx.rollback().unwrap();
+}
+
+#[test]
+#[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+fn second_claim_can_start_while_first_claim_transaction_is_open() {
+    let _guard = db_test_guard();
+    let database_url = db_url();
+    let mut setup_client = Client::connect(&database_url, NoTls).unwrap();
+    apply_all_migrations(&mut setup_client);
+    reset_ingest_runtime_tables(&mut setup_client);
+
+    let mut setup_tx = setup_client.transaction().unwrap();
+    let (organization_id, user_id, player_profile_id) = seed_actor_shell(&mut setup_tx);
+    enqueue_bundle(
+        &mut setup_tx,
+        &independent_bundle_input(organization_id, player_profile_id, user_id),
+    )
+    .unwrap();
+    setup_tx.commit().unwrap();
+
+    let mut first_client = Client::connect(&database_url, NoTls).unwrap();
+    let mut second_client = Client::connect(&database_url, NoTls).unwrap();
+
+    let mut first_tx = first_client.transaction().unwrap();
+    let first = claim_next_job(&mut first_tx, "runner-one")
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.member_path.as_deref(), Some("first-hh.txt"));
+
+    let mut second_tx = second_client.transaction().unwrap();
+    second_tx
+        .batch_execute("SET LOCAL statement_timeout = '1000ms'")
+        .unwrap();
+
+    let second = claim_next_job(&mut second_tx, "runner-two")
+        .expect("second worker should claim another file without waiting on bundle row")
+        .expect("second worker should find remaining queued job");
+    assert_eq!(second.member_path.as_deref(), Some("second-hh.txt"));
+
+    second_tx.rollback().unwrap();
+    first_tx.rollback().unwrap();
 }
 
 #[test]
@@ -347,6 +460,119 @@ fn claim_next_job_preserves_bundle_file_order_across_uploaded_bundles() {
             FileKind::TournamentSummary,
             FileKind::HandHistory,
         ]
+    );
+
+    tx.rollback().unwrap();
+}
+
+#[test]
+#[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+fn dependent_hh_job_waits_for_successful_ts_job() {
+    let _guard = db_test_guard();
+    let mut client = Client::connect(&db_url(), NoTls).unwrap();
+    apply_all_migrations(&mut client);
+    reset_ingest_runtime_tables(&mut client);
+    let mut tx = client.transaction().unwrap();
+    let (organization_id, user_id, player_profile_id) = seed_actor_shell(&mut tx);
+    let bundle = enqueue_bundle(
+        &mut tx,
+        &paired_archive_bundle_input(organization_id, player_profile_id, user_id),
+    )
+    .unwrap();
+
+    assert_eq!(bundle.file_jobs.len(), 2);
+
+    let first = claim_next_job(&mut tx, "test-runner").unwrap().unwrap();
+    assert_eq!(first.member_path.as_deref(), Some("pair.ts.txt"));
+    assert_eq!(first.file_kind, Some(FileKind::TournamentSummary));
+    assert!(
+        claim_next_job(&mut tx, "test-runner").unwrap().is_none(),
+        "dependent HH must stay blocked while TS is still running"
+    );
+
+    tracker_ingest_runtime::mark_job_succeeded(&mut tx, first.job_id, first.attempt_no).unwrap();
+
+    let second = claim_next_job(&mut tx, "test-runner").unwrap().unwrap();
+    assert_eq!(second.member_path.as_deref(), Some("pair.hh.txt"));
+    assert_eq!(second.file_kind, Some(FileKind::HandHistory));
+
+    tx.rollback().unwrap();
+}
+
+#[test]
+#[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+fn terminal_failure_propagates_dependency_failed_to_hh_job() {
+    let _guard = db_test_guard();
+    let mut client = Client::connect(&db_url(), NoTls).unwrap();
+    apply_all_migrations(&mut client);
+    reset_ingest_runtime_tables(&mut client);
+    let mut tx = client.transaction().unwrap();
+    let (organization_id, user_id, player_profile_id) = seed_actor_shell(&mut tx);
+    let bundle = enqueue_bundle(
+        &mut tx,
+        &paired_archive_bundle_input(organization_id, player_profile_id, user_id),
+    )
+    .unwrap();
+
+    let first = claim_next_job(&mut tx, "test-runner").unwrap().unwrap();
+    assert_eq!(first.member_path.as_deref(), Some("pair.ts.txt"));
+
+    mark_job_failed(
+        &mut tx,
+        first.job_id,
+        first.attempt_no,
+        FailureDisposition::Terminal,
+        "parse_error",
+    )
+    .unwrap();
+
+    let summary = load_bundle_summary(&mut tx, bundle.bundle_id).unwrap();
+    assert_eq!(summary.status, BundleStatus::Failed);
+    assert_eq!(summary.failed_terminal_file_jobs, 2);
+
+    let hh_row = tx
+        .query_one(
+            "SELECT jobs.status, jobs.error_code
+             FROM import.import_jobs jobs
+             JOIN import.source_file_members members
+               ON members.id = jobs.source_file_member_id
+             WHERE jobs.bundle_id = $1
+               AND members.member_path = 'pair.hh.txt'",
+            &[&bundle.bundle_id],
+        )
+        .unwrap();
+    assert_eq!(hh_row.get::<_, String>(0), "failed_terminal".to_string());
+    assert_eq!(
+        hh_row.get::<_, Option<String>>(1),
+        Some("dependency_failed".to_string())
+    );
+
+    let hh_diagnostic = tx
+        .query_one(
+            "SELECT message, payload->>'code'
+             FROM import.ingest_events
+             WHERE bundle_id = $1
+               AND bundle_file_id = (
+                   SELECT jobs.bundle_file_id
+                   FROM import.import_jobs jobs
+                   JOIN import.source_file_members members
+                     ON members.id = jobs.source_file_member_id
+                   WHERE jobs.bundle_id = $1
+                     AND members.member_path = 'pair.hh.txt'
+               )
+               AND event_kind = 'diagnostic_logged'
+             ORDER BY sequence_no DESC
+             LIMIT 1",
+            &[&bundle.bundle_id],
+        )
+        .unwrap();
+    assert_eq!(
+        hh_diagnostic.get::<_, Option<String>>(1),
+        Some("dependency_failed".to_string())
+    );
+    assert!(
+        hh_diagnostic.get::<_, String>(0).contains("зависимого"),
+        "dependency diagnostic should explain why HH was skipped"
     );
 
     tx.rollback().unwrap();

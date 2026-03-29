@@ -16,6 +16,10 @@ load_project_env() {
         value="${value:1:-1}"
       fi
 
+      if [[ -n "${!key+x}" ]]; then
+        continue
+      fi
+
       export "$key=$value"
     done < "$env_file"
   fi

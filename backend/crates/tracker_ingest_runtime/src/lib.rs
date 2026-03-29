@@ -1,4 +1,6 @@
-use anyhow::Result;
+use std::collections::BTreeMap;
+
+use anyhow::{Result, anyhow};
 use postgres::GenericClient;
 use serde_json::{Value as JsonValue, json};
 use uuid::Uuid;
@@ -116,6 +118,7 @@ pub struct IngestMemberInput {
     pub member_kind: FileKind,
     pub sha256: String,
     pub byte_size: i64,
+    pub depends_on_member_index: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -389,8 +392,10 @@ pub fn enqueue_bundle(
                 member_kind: file.file_kind,
                 sha256: file.sha256.clone(),
                 byte_size: file.byte_size,
+                depends_on_member_index: None,
             }]
         };
+        let mut job_id_by_member_index = BTreeMap::<i32, Uuid>::new();
 
         for diagnostic in &file.diagnostics {
             append_ingest_event(
@@ -407,15 +412,30 @@ pub fn enqueue_bundle(
         }
 
         for (member_index, member) in executable_members.iter().enumerate() {
+            let member_index = member_index as i32;
             let source_file_member_id = upsert_source_file_member(
                 client,
                 source_file_id,
-                member_index as i32,
+                member_index,
                 &member.member_path,
                 member.member_kind,
                 &member.sha256,
                 member.byte_size,
             )?;
+            let depends_on_job_id = match member.depends_on_member_index {
+                Some(depends_on_member_index) => Some(
+                    *job_id_by_member_index
+                        .get(&depends_on_member_index)
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "member `{}` depends on missing earlier member index {}",
+                                member.member_path,
+                                depends_on_member_index
+                            )
+                        })?,
+                ),
+                None => None,
+            };
 
             let bundle_file_id: Uuid = client
                 .query_one(
@@ -444,11 +464,12 @@ pub fn enqueue_bundle(
                         bundle_file_id,
                         source_file_id,
                         source_file_member_id,
+                        depends_on_job_id,
                         job_kind,
                         status,
                         stage
                     )
-                    VALUES ($1, $2, $3, $4, $5, 'file_ingest', $6, 'queued')
+                    VALUES ($1, $2, $3, $4, $5, $6, 'file_ingest', $7, 'queued')
                     RETURNING id",
                     &[
                         &input.organization_id,
@@ -456,10 +477,12 @@ pub fn enqueue_bundle(
                         &bundle_file_id,
                         &source_file_id,
                         &source_file_member_id,
+                        &depends_on_job_id,
                         &FileJobStatus::Queued.as_str(),
                     ],
                 )?
                 .get(0);
+            job_id_by_member_index.insert(member_index, job_id);
 
             file_jobs.push(EnqueuedFileJob {
                 bundle_file_id,
@@ -691,7 +714,22 @@ pub fn load_bundle_snapshot(
     client: &mut impl GenericClient,
     bundle_id: Uuid,
 ) -> Result<BundleSnapshot> {
-    let summary = load_bundle_summary(client, bundle_id)?;
+    load_bundle_snapshot_inner(client, bundle_id, true)
+}
+
+fn load_bundle_snapshot_readonly(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+) -> Result<BundleSnapshot> {
+    load_bundle_snapshot_inner(client, bundle_id, false)
+}
+
+fn load_bundle_snapshot_inner(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+    persist_status: bool,
+) -> Result<BundleSnapshot> {
+    let summary = load_bundle_summary_inner(client, bundle_id, persist_status)?;
     let rows = client.query(
         "SELECT
              bundle_files.id,
@@ -762,7 +800,7 @@ fn emit_bundle_event(
     event_kind: &str,
     message: &str,
 ) -> Result<()> {
-    let snapshot = load_bundle_snapshot(client, bundle_id)?;
+    let snapshot = load_bundle_snapshot_readonly(client, bundle_id)?;
 
     append_ingest_event(
         client,
@@ -787,7 +825,7 @@ fn emit_file_updated_event(
     bundle_file_id: Uuid,
     message: &str,
 ) -> Result<()> {
-    let snapshot = load_bundle_snapshot(client, bundle_id)?;
+    let snapshot = load_bundle_snapshot_readonly(client, bundle_id)?;
     let file = snapshot
         .files
         .iter()
@@ -815,6 +853,14 @@ fn emit_file_updated_event(
 pub fn load_bundle_summary(
     client: &mut impl GenericClient,
     bundle_id: Uuid,
+) -> Result<BundleSummary> {
+    load_bundle_summary_inner(client, bundle_id, true)
+}
+
+fn load_bundle_summary_inner(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+    persist_status: bool,
 ) -> Result<BundleSummary> {
     let stored_bundle_status: String = client
         .query_one(
@@ -856,7 +902,7 @@ pub fn load_bundle_summary(
         finalize_job_running,
     );
 
-    if stored_bundle_status != derived_status.as_str() {
+    if persist_status && stored_bundle_status != derived_status.as_str() {
         client.execute(
             "UPDATE import.ingest_bundles
              SET status = $2
@@ -897,8 +943,14 @@ pub fn claim_next_job(
                ON bundle_files.id = jobs.bundle_file_id
              LEFT JOIN import.ingest_bundles AS bundles
                ON bundles.id = jobs.bundle_id
+             LEFT JOIN import.import_jobs AS dependency_jobs
+               ON dependency_jobs.id = jobs.depends_on_job_id
              WHERE jobs.status = 'queued'
                AND jobs.job_kind IN ('file_ingest', 'bundle_finalize')
+               AND (
+                   jobs.depends_on_job_id IS NULL
+                   OR dependency_jobs.status = 'succeeded'
+               )
              ORDER BY
                  bundles.queue_order NULLS LAST,
                  CASE WHEN jobs.job_kind = 'file_ingest' THEN 0 ELSE 1 END,
@@ -995,7 +1047,6 @@ pub fn claim_next_job(
         &[&job_id, &attempt_no],
     )?;
 
-    refresh_bundle_status(client, bundle_id)?;
     if let Some(bundle_file_id) = bundle_file_id {
         let member_path = member_path.clone().unwrap_or_else(|| "файл".to_string());
         emit_file_updated_event(
@@ -1130,6 +1181,14 @@ pub fn mark_job_failed(
         &[&job_id, &attempt_no, &status, &error_code],
     )?;
 
+    let propagated_bundle_files = if matches!(job_kind, JobKind::FileIngest)
+        && matches!(disposition, FailureDisposition::Terminal)
+    {
+        propagate_dependency_failure(client, job_id)?
+    } else {
+        Vec::new()
+    };
+
     refresh_bundle_status(client, bundle_id)?;
     match job_kind {
         JobKind::FileIngest => {
@@ -1140,6 +1199,7 @@ pub fn mark_job_failed(
                 };
                 emit_file_updated_event(client, bundle_id, bundle_file_id, message)?;
             }
+            emit_dependency_failed_events(client, &propagated_bundle_files)?;
         }
         JobKind::BundleFinalize => {
             emit_bundle_event(
@@ -1182,13 +1242,14 @@ pub fn retry_failed_job(
         )?
         .get(0);
 
-    if attempt_count >= i64::from(max_attempts) {
+    let propagated_bundle_files = if attempt_count >= i64::from(max_attempts) {
         client.execute(
             "UPDATE import.import_jobs
              SET status = 'failed_terminal'
              WHERE id = $1",
             &[&job_id],
         )?;
+        propagate_dependency_failure(client, job_id)?
     } else {
         client.execute(
             "UPDATE import.import_jobs
@@ -1200,7 +1261,8 @@ pub fn retry_failed_job(
              WHERE id = $1",
             &[&job_id],
         )?;
-    }
+        Vec::new()
+    };
 
     refresh_bundle_status(client, bundle_id)?;
     if let Some(bundle_file_id) = bundle_file_id {
@@ -1217,6 +1279,79 @@ pub fn retry_failed_job(
             "Партия ожидает повторной обработки.",
         )?;
     }
+    emit_dependency_failed_events(client, &propagated_bundle_files)?;
+    Ok(())
+}
+
+fn propagate_dependency_failure(
+    client: &mut impl GenericClient,
+    failed_job_id: Uuid,
+) -> Result<Vec<(Uuid, Uuid)>> {
+    let rows = client.query(
+        "WITH RECURSIVE dependent_jobs AS (
+             SELECT jobs.id, jobs.bundle_id, jobs.bundle_file_id
+             FROM import.import_jobs AS jobs
+             WHERE jobs.depends_on_job_id = $1
+               AND jobs.status = 'queued'
+             UNION ALL
+             SELECT jobs.id, jobs.bundle_id, jobs.bundle_file_id
+             FROM import.import_jobs AS jobs
+             INNER JOIN dependent_jobs
+               ON jobs.depends_on_job_id = dependent_jobs.id
+             WHERE jobs.status = 'queued'
+         )
+         UPDATE import.import_jobs AS jobs
+         SET status = 'failed_terminal',
+             stage = 'failed',
+             error_code = 'dependency_failed',
+             finished_at = now()
+         FROM dependent_jobs
+         WHERE jobs.id = dependent_jobs.id
+         RETURNING jobs.bundle_id, jobs.bundle_file_id",
+        &[&failed_job_id],
+    )?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| Some((row.get::<_, Uuid>(0), row.get::<_, Option<Uuid>>(1)?)))
+        .collect())
+}
+
+fn emit_dependency_failed_events(
+    client: &mut impl GenericClient,
+    propagated_bundle_files: &[(Uuid, Uuid)],
+) -> Result<()> {
+    for (bundle_id, bundle_file_id) in propagated_bundle_files {
+        let member_path = client
+            .query_one(
+                "SELECT members.member_path
+                 FROM import.ingest_bundle_files AS bundle_files
+                 INNER JOIN import.source_file_members AS members
+                    ON members.id = bundle_files.source_file_member_id
+                 WHERE bundle_files.id = $1",
+                &[bundle_file_id],
+            )?
+            .get::<_, String>(0);
+
+        append_ingest_event(
+            client,
+            *bundle_id,
+            Some(*bundle_file_id),
+            "diagnostic_logged",
+            &format!("Файл `{member_path}` пропущен из-за ошибки зависимого TS-job."),
+            &json!({
+                "code": "dependency_failed",
+                "member_path": member_path,
+            }),
+        )?;
+        emit_file_updated_event(
+            client,
+            *bundle_id,
+            *bundle_file_id,
+            &format!("Файл `{member_path}` пропущен из-за ошибки зависимости."),
+        )?;
+    }
+
     Ok(())
 }
 
@@ -1339,6 +1474,19 @@ pub fn run_next_job<E: JobExecutor>(
 }
 
 fn refresh_bundle_status(client: &mut impl GenericClient, bundle_id: Uuid) -> Result<BundleStatus> {
+    let bundle_row = client.query_one(
+        "SELECT
+             status,
+             started_at IS NOT NULL AS started_at_present,
+             finished_at IS NOT NULL AS finished_at_present
+         FROM import.ingest_bundles
+         WHERE id = $1",
+        &[&bundle_id],
+    )?;
+    let stored_status: String = bundle_row.get(0);
+    let started_at_present: bool = bundle_row.get(1);
+    let finished_at_present: bool = bundle_row.get(2);
+
     let counts_row = client.query_one(
         "SELECT
              COUNT(*) FILTER (WHERE job_kind = 'file_ingest' AND status = 'queued') AS queued_count,
@@ -1371,20 +1519,39 @@ fn refresh_bundle_status(client: &mut impl GenericClient, bundle_id: Uuid) -> Re
         finalize_job_running,
     );
 
-    client.execute(
-        "UPDATE import.ingest_bundles
-         SET status = $2,
-             started_at = CASE WHEN $2 IN ('running', 'finalizing', 'succeeded', 'partial_success', 'failed')
-                 THEN COALESCE(started_at, now())
-                 ELSE started_at
-             END,
-             finished_at = CASE WHEN $2 IN ('succeeded', 'partial_success', 'failed')
-                 THEN now()
-                 ELSE NULL
-             END
-         WHERE id = $1",
-        &[&bundle_id, &status.as_str()],
-    )?;
+    let should_have_started_at = matches!(
+        status,
+        BundleStatus::Running
+            | BundleStatus::Finalizing
+            | BundleStatus::Succeeded
+            | BundleStatus::PartialSuccess
+            | BundleStatus::Failed
+    );
+    let should_have_finished_at = matches!(
+        status,
+        BundleStatus::Succeeded | BundleStatus::PartialSuccess | BundleStatus::Failed
+    );
+    let needs_update = stored_status != status.as_str()
+        || (should_have_started_at && !started_at_present)
+        || (should_have_finished_at && !finished_at_present)
+        || (!should_have_finished_at && finished_at_present);
+
+    if needs_update {
+        client.execute(
+            "UPDATE import.ingest_bundles
+             SET status = $2,
+                 started_at = CASE WHEN $2 IN ('running', 'finalizing', 'succeeded', 'partial_success', 'failed')
+                     THEN COALESCE(started_at, now())
+                     ELSE started_at
+                 END,
+                 finished_at = CASE WHEN $2 IN ('succeeded', 'partial_success', 'failed')
+                     THEN now()
+                     ELSE NULL
+                 END
+             WHERE id = $1",
+            &[&bundle_id, &status.as_str()],
+        )?;
+    }
 
     Ok(status)
 }

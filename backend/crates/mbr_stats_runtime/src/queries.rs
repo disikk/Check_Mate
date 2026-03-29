@@ -4,9 +4,7 @@ use anyhow::Result;
 use postgres::GenericClient;
 use uuid::Uuid;
 
-use crate::big_ko::{
-    MysteryEnvelope, expected_hero_mystery_cents, posterior_big_ko_bucket_counts,
-};
+use crate::big_ko::{MysteryEnvelope, expected_hero_mystery_cents, posterior_big_ko_bucket_counts};
 use crate::models::{
     CanonicalStatPoint, CanonicalStatSnapshot, SeedStatCoverage, SeedStatSnapshot, SeedStatsFilters,
 };
@@ -1311,7 +1309,8 @@ pub(crate) fn build_canonical_stat_snapshot(
             estimated_supported_ko_cents += *estimated_ko_cents;
         }
 
-        if let Some(buyin_total_cents) = tournament_buyin_by_tournament.get(&summary_fact.tournament_id)
+        if let Some(buyin_total_cents) =
+            tournament_buyin_by_tournament.get(&summary_fact.tournament_id)
             && let Some(envelopes) = envelopes_by_buyin.get(buyin_total_cents)
         {
             let mystery_money_cents = summary_fact.payout_cents - summary_fact.regular_prize_cents;
@@ -1326,11 +1325,8 @@ pub(crate) fn build_canonical_stat_snapshot(
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            let posterior_counts = posterior_big_ko_bucket_counts(
-                mystery_money_cents,
-                &hero_shares,
-                envelopes,
-            );
+            let posterior_counts =
+                posterior_big_ko_bucket_counts(mystery_money_cents, &hero_shares, envelopes);
             for (bucket_key, value) in posterior_counts {
                 if let Some(total) = big_ko_bucket_counts.get_mut(&bucket_key) {
                     *total += value;

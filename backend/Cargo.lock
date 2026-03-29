@@ -1042,6 +1042,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
+ "tracker_ingest_prepare",
  "tracker_ingest_runtime",
  "tracker_parser_core",
  "tracker_query_runtime",
@@ -1950,6 +1952,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracker_ingest_prepare"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "sha2",
+ "tempfile",
+ "tracker_parser_core",
+ "zip",
+]
+
+[[package]]
 name = "tracker_ingest_runner"
 version = "0.1.0"
 dependencies = [
@@ -1959,6 +1973,7 @@ dependencies = [
  "sha2",
  "tracker_ingest_runtime",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -2006,8 +2021,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
+ "tracker_ingest_prepare",
  "tracker_ingest_runtime",
  "tracker_parser_core",
  "uuid",

@@ -113,16 +113,16 @@ pub fn posterior_big_ko_bucket_counts(
                 })
         })
         .collect::<Vec<_>>();
-    let total_weight = allocation_weights
-        .iter()
-        .flatten()
-        .copied()
-        .sum::<f64>();
+    let total_weight = allocation_weights.iter().flatten().copied().sum::<f64>();
     if total_weight <= 0.0 {
         return counts;
     }
 
-    for (allocation, weight) in decode.allocations.iter().zip(allocation_weights.into_iter()) {
+    for (allocation, weight) in decode
+        .allocations
+        .iter()
+        .zip(allocation_weights.into_iter())
+    {
         let Some(weight) = weight else {
             continue;
         };

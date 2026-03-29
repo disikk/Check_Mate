@@ -177,12 +177,14 @@ fn archive_enqueue_expands_supported_members_and_logs_skipped_entries() {
                         member_kind: FileKind::HandHistory,
                         sha256: "o".repeat(64),
                         byte_size: 10,
+                        depends_on_member_index: None,
                     },
                     IngestMemberInput {
                         member_path: "tables/two.ts".to_string(),
                         member_kind: FileKind::TournamentSummary,
                         sha256: "p".repeat(64),
                         byte_size: 10,
+                        depends_on_member_index: None,
                     },
                 ],
                 diagnostics: vec![IngestDiagnosticInput {
@@ -220,6 +222,75 @@ fn archive_enqueue_expands_supported_members_and_logs_skipped_entries() {
             && row.get::<_, String>(1).contains("unsupported ZIP member")
             && row.get::<_, Option<String>>(2) == Some("notes/readme.md".to_string())
     }));
+
+    tx.rollback().unwrap();
+}
+
+#[test]
+#[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+fn archive_enqueue_persists_member_dependency_for_hh_after_ts() {
+    let _guard = db_test_guard();
+    let mut client = Client::connect(&db_url(), NoTls).unwrap();
+    apply_all_migrations(&mut client);
+    reset_ingest_runtime_tables(&mut client);
+    let mut tx = client.transaction().unwrap();
+    let (organization_id, user_id, player_profile_id) = seed_actor_shell(&mut tx);
+
+    let bundle = enqueue_bundle(
+        &mut tx,
+        &IngestBundleInput {
+            organization_id,
+            player_profile_id,
+            created_by_user_id: user_id,
+            files: vec![IngestFileInput {
+                room: "gg".to_string(),
+                file_kind: FileKind::Archive,
+                sha256: "q".repeat(64),
+                original_filename: "paired.zip".to_string(),
+                byte_size: 100,
+                storage_uri: "local://paired.zip".to_string(),
+                members: vec![
+                    IngestMemberInput {
+                        member_path: "pair.ts.txt".to_string(),
+                        member_kind: FileKind::TournamentSummary,
+                        sha256: "r".repeat(64),
+                        byte_size: 10,
+                        depends_on_member_index: None,
+                    },
+                    IngestMemberInput {
+                        member_path: "pair.hh.txt".to_string(),
+                        member_kind: FileKind::HandHistory,
+                        sha256: "s".repeat(64),
+                        byte_size: 10,
+                        depends_on_member_index: Some(0),
+                    },
+                ],
+                diagnostics: vec![],
+            }],
+        },
+    )
+    .unwrap();
+
+    assert_eq!(bundle.file_jobs.len(), 2);
+
+    let rows = tx
+        .query(
+            "SELECT jobs.id, members.member_path, jobs.depends_on_job_id
+             FROM import.import_jobs jobs
+             JOIN import.source_file_members members
+               ON members.id = jobs.source_file_member_id
+             WHERE jobs.bundle_id = $1
+               AND jobs.job_kind = 'file_ingest'
+             ORDER BY members.member_index",
+            &[&bundle.bundle_id],
+        )
+        .unwrap();
+
+    let ts_job_id: Uuid = rows[0].get(0);
+    assert_eq!(rows[0].get::<_, String>(1), "pair.ts.txt".to_string());
+    assert_eq!(rows[0].get::<_, Option<Uuid>>(2), None);
+    assert_eq!(rows[1].get::<_, String>(1), "pair.hh.txt".to_string());
+    assert_eq!(rows[1].get::<_, Option<Uuid>>(2), Some(ts_job_id));
 
     tx.rollback().unwrap();
 }
