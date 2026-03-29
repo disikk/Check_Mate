@@ -112,6 +112,8 @@ cargo run -p parser_worker -- set-user-timezone --user-id <uuid> --timezone Asia
 cargo run -p parser_worker -- clear-user-timezone --user-id <uuid>
 cargo run -p tracker_web_api --
 cargo run -p tracker_ingest_runner -- --once
+bash ../scripts/run_ingest_v2_bench.sh <player-profile-id>
+bash ../scripts/run_ingest_v2_mixed_scan.sh [/absolute/path/to/local/mixed-root]
 ```
 
 Canonical first-run path для проекта всё равно идёт **из корня репозитория** через:

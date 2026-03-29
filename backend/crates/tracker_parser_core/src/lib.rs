@@ -12,6 +12,8 @@ pub mod street_strength;
 pub mod wide_corpus_triage;
 
 pub use error::ParserError;
-pub use file_kind::{SourceKind, detect_source_kind};
+pub use file_kind::{
+    SourceKind, detect_source_kind, quick_detect_source_kind, quick_extract_gg_tournament_id,
+};
 
 pub const EXACT_CORE_RESOLUTION_VERSION: &str = "gg_mbr_v2";
