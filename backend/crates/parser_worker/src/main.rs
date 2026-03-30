@@ -462,6 +462,7 @@ mod tests {
                     persist_db_ms: 25,
                     materialize_ms: 26,
                     finalize_ms: 27,
+                    ..ComputeProfile::default()
                 },
                 prep_elapsed_ms: 20,
                 runner_elapsed_ms: 40,
@@ -522,7 +523,13 @@ mod tests {
                             "derive_tournament_ms": 24,
                             "persist_db_ms": 25,
                             "materialize_ms": 26,
-                            "finalize_ms": 27
+                            "finalize_ms": 27,
+                            "persist_upsert_roots_ms": 0,
+                            "persist_delete_ms": 0,
+                            "persist_canonical_ms": 0,
+                            "persist_normalized_ms": 0,
+                            "persist_derived_ms": 0,
+                            "persist_hand_order_ms": 0
                         },
                         "prep_elapsed_ms": 20,
                         "runner_elapsed_ms": 40,

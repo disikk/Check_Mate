@@ -9,8 +9,8 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use mbr_stats_runtime::{
-    GG_MBR_FT_MAX_PLAYERS, materialize_player_hand_features,
-    materialize_player_hand_features_for_bundle,
+    GG_MBR_FT_MAX_PLAYERS, load_bundle_tournament_ids, materialize_player_hand_features,
+    materialize_player_hand_features_for_tournaments,
 };
 use postgres::{Client, NoTls, Transaction};
 use serde::Serialize;
@@ -84,6 +84,13 @@ pub struct ComputeProfile {
     pub persist_db_ms: u64,
     pub materialize_ms: u64,
     pub finalize_ms: u64,
+    // Sub-timing breakdown within persist_db_ms (diagnostic)
+    pub persist_upsert_roots_ms: u64,
+    pub persist_delete_ms: u64,
+    pub persist_canonical_ms: u64,
+    pub persist_normalized_ms: u64,
+    pub persist_derived_ms: u64,
+    pub persist_hand_order_ms: u64,
 }
 
 impl ComputeProfile {
@@ -95,6 +102,12 @@ impl ComputeProfile {
         self.persist_db_ms += other.persist_db_ms;
         self.materialize_ms += other.materialize_ms;
         self.finalize_ms += other.finalize_ms;
+        self.persist_upsert_roots_ms += other.persist_upsert_roots_ms;
+        self.persist_delete_ms += other.persist_delete_ms;
+        self.persist_canonical_ms += other.persist_canonical_ms;
+        self.persist_normalized_ms += other.persist_normalized_ms;
+        self.persist_derived_ms += other.persist_derived_ms;
+        self.persist_hand_order_ms += other.persist_hand_order_ms;
     }
 
     fn legacy_stage_profile(self) -> IngestStageProfile {
@@ -1397,6 +1410,24 @@ fn import_path_with_database_url(
         }
         SourceKind::HandHistory => import_hand_history(&mut tx, &context, path, &input)?,
     };
+
+    // Legacy path: tournament_hand_order + FT helper are deferred from persist to here
+    // (in runner path they run in bundle_finalize instead).
+    if report.file_kind == "hh" {
+        compute_tournament_hand_order(&mut tx, report.tournament_id)?;
+        let source_hands = load_ft_helper_source_hands_from_db(
+            &mut tx,
+            report.tournament_id,
+            context.player_profile_id,
+        )?;
+        let ft_helper_row = build_mbr_tournament_ft_helper_row(
+            report.tournament_id,
+            context.player_profile_id,
+            &source_hands,
+        );
+        persist_mbr_tournament_ft_helper(&mut tx, &ft_helper_row)?;
+    }
+
     materialize_player_hand_features(&mut tx, context.organization_id, context.player_profile_id)?;
 
     tx.commit().context("failed to commit import transaction")?;
@@ -1478,24 +1509,64 @@ impl LocalImportExecutor {
         client: &mut C,
         job: &IngestClaimedJob,
     ) -> std::result::Result<(), ExecutionFailure> {
-        let started_at = Instant::now();
-        materialize_player_hand_features_for_bundle(
+        let finalize_started_at = Instant::now();
+
+        // Step 1: Load tournament_ids via member-aware path (same SQL as materializer).
+        let tournament_ids = load_bundle_tournament_ids(
+            client,
+            job.bundle_id,
+            job.organization_id,
+            job.player_profile_id,
+        )
+        .map_err(|error| ExecutionFailure::retriable(error.to_string()))?;
+
+        // Step 2: Compute tournament_hand_order once per tournament (deferred from file jobs
+        // to eliminate row lock contention between workers on the same tournament).
+        let t_hand_order = Instant::now();
+        for tournament_id in &tournament_ids {
+            compute_tournament_hand_order(client, *tournament_id)
+                .map_err(|error| ExecutionFailure::retriable(error.to_string()))?;
+        }
+        let hand_order_ms = t_hand_order.elapsed().as_millis() as u64;
+
+        // Step 3: Build and persist FT helpers from DB (all data already persisted by file jobs).
+        let t_ft_helper = Instant::now();
+        for tournament_id in &tournament_ids {
+            let source_hands =
+                load_ft_helper_source_hands_from_db(client, *tournament_id, job.player_profile_id)
+                    .map_err(|error| ExecutionFailure::retriable(error.to_string()))?;
+            let ft_helper_row = build_mbr_tournament_ft_helper_row(
+                *tournament_id,
+                job.player_profile_id,
+                &source_hands,
+            );
+            persist_mbr_tournament_ft_helper(client, &ft_helper_row)
+                .map_err(|error| ExecutionFailure::retriable(error.to_string()))?;
+        }
+        let _ft_helper_ms = t_ft_helper.elapsed().as_millis() as u64;
+
+        // Step 4: Materialize analytics features directly with already-loaded tournament_ids
+        // (skips redundant load_bundle_tournament_ids inside _for_bundle).
+        let materialize_started_at = Instant::now();
+        materialize_player_hand_features_for_tournaments(
             client,
             job.organization_id,
             job.player_profile_id,
-            job.bundle_id,
+            &tournament_ids,
         )
-        .map(|_| {
-            let elapsed_ms = started_at.elapsed().as_millis() as u64;
-            let runtime_profile = ComputeProfile {
-                materialize_ms: elapsed_ms,
-                finalize_ms: elapsed_ms,
-                ..ComputeProfile::default()
-            };
-            self.last_finalize_profile = runtime_profile;
-            self.run_profile.record_finalize_job(runtime_profile);
-        })
-        .map_err(|error| ExecutionFailure::retriable(error.to_string()))
+        .map_err(|error| ExecutionFailure::retriable(error.to_string()))?;
+        let materialize_ms = materialize_started_at.elapsed().as_millis() as u64;
+
+        let finalize_ms = finalize_started_at.elapsed().as_millis() as u64;
+        let runtime_profile = ComputeProfile {
+            materialize_ms,
+            finalize_ms,
+            persist_hand_order_ms: hand_order_ms,
+            ..ComputeProfile::default()
+        };
+        self.last_finalize_profile = runtime_profile;
+        self.run_profile.record_finalize_job(runtime_profile);
+        Ok(())
     }
 }
 
@@ -2047,19 +2118,13 @@ fn persist_prepared_tournament_summary_registered(
         hands_persisted: 0,
         runtime_profile: ComputeProfile {
             parse_ms: prepared.parse_ms,
-            normalize_ms: 0,
-            derive_hand_local_ms: 0,
-            derive_tournament_ms: 0,
             persist_db_ms,
-            materialize_ms: 0,
-            finalize_ms: 0,
+            ..ComputeProfile::default()
         },
         stage_profile: IngestStageProfile {
             parse_ms: prepared.parse_ms,
-            normalize_ms: 0,
             persist_ms: persist_db_ms,
-            materialize_ms: 0,
-            finalize_ms: 0,
+            ..IngestStageProfile::default()
         },
     })
 }
@@ -2181,6 +2246,8 @@ fn persist_prepared_hand_history_registered(
         })?;
 
     let persist_started_at = Instant::now();
+
+    let t_upsert_roots = Instant::now();
     let fragment_ids =
         bulk_upsert_file_fragments(tx, source_file_id, source_file_member_id, &prepared.hands)?;
     let (hand_ids, is_new_flags) = bulk_upsert_hand_rows(
@@ -2191,6 +2258,9 @@ fn persist_prepared_hand_history_registered(
         &prepared.canonical_hands,
         &fragment_ids,
     )?;
+    let upsert_roots_ms = t_upsert_roots.elapsed().as_millis() as u64;
+
+    let t_delete = Instant::now();
     let updated_fragment_ids = fragment_ids
         .iter()
         .zip(is_new_flags.iter())
@@ -2202,6 +2272,9 @@ fn persist_prepared_hand_history_registered(
         .filter_map(|(hand_id, is_new)| (!*is_new).then_some(*hand_id))
         .collect::<Vec<_>>();
     bulk_delete_hand_children(tx, source_file_id, &updated_fragment_ids, &updated_hand_ids)?;
+    let delete_ms = t_delete.elapsed().as_millis() as u64;
+
+    let t_canonical = Instant::now();
     bulk_insert_canonical_hand_rows(
         tx,
         context,
@@ -2210,7 +2283,13 @@ fn persist_prepared_hand_history_registered(
         &fragment_ids,
         &prepared.hand_local_outputs,
     )?;
+    let canonical_ms = t_canonical.elapsed().as_millis() as u64;
+
+    let t_normalized = Instant::now();
     bulk_insert_normalized_hand_rows(tx, &hand_ids, &prepared.hand_local_outputs)?;
+    let normalized_ms = t_normalized.elapsed().as_millis() as u64;
+
+    let t_derived = Instant::now();
     bulk_insert_hand_ko_event_rows(
         tx,
         context.player_profile_id,
@@ -2219,72 +2298,11 @@ fn persist_prepared_hand_history_registered(
     )?;
     bulk_insert_preflop_starting_hand_rows(tx, &hand_ids, &prepared.hand_local_outputs)?;
     bulk_insert_street_hand_strength_rows(tx, &hand_ids, &prepared.hand_local_outputs)?;
-
     bulk_upsert_mbr_stage_resolution_rows(tx, &hand_ids, &prepared.ordered_stage_resolutions)?;
+    let derived_ms = t_derived.elapsed().as_millis() as u64;
 
-    let mut tournament_ft_helper_source_hands = Vec::with_capacity(prepared.canonical_hands.len());
-    for ((hand_id, canonical_hand), mbr_stage_resolution) in hand_ids
-        .iter()
-        .zip(prepared.canonical_hands.iter())
-        .zip(prepared.ordered_stage_resolutions.iter())
-    {
-        tournament_ft_helper_source_hands.push(build_tournament_ft_helper_source_hand(
-            *hand_id,
-            canonical_hand,
-            mbr_stage_resolution,
-        ));
-    }
-
-    // F2-T2: Compute stable tournament_hand_order for all hands in this tournament.
-    // Uses the same sort criteria as Rust-side chronological sort: timestamp + external_hand_id + id.
-    tx.execute(
-        "WITH ordered AS (
-            SELECT id,
-                   ROW_NUMBER() OVER (
-                       ORDER BY hand_started_at_local NULLS LAST,
-                                external_hand_id,
-                                id
-                   )::int AS computed_order
-            FROM core.hands
-            WHERE tournament_id = $1
-        )
-        UPDATE core.hands h
-        SET tournament_hand_order = ordered.computed_order
-        FROM ordered
-        WHERE h.id = ordered.id",
-        &[&tournament_id],
-    )?;
-
-    let tournament_hand_order_by_id = tx
-        .query(
-            "SELECT id, tournament_hand_order
-             FROM core.hands
-             WHERE tournament_id = $1",
-            &[&tournament_id],
-        )?
-        .into_iter()
-        .map(|row| (row.get::<_, Uuid>(0), row.get::<_, Option<i32>>(1)))
-        .collect::<BTreeMap<_, _>>();
-    for source_hand in &mut tournament_ft_helper_source_hands {
-        source_hand.tournament_hand_order = tournament_hand_order_by_id
-            .get(&source_hand.hand_id)
-            .copied()
-            .flatten()
-            .ok_or_else(|| {
-                anyhow!(
-                    "missing tournament_hand_order for hand {} in tournament {}",
-                    source_hand.hand_id,
-                    tournament_id
-                )
-            })?;
-    }
-
-    let tournament_ft_helper_row = build_mbr_tournament_ft_helper_row(
-        tournament_id,
-        context.player_profile_id,
-        &tournament_ft_helper_source_hands,
-    );
-    persist_mbr_tournament_ft_helper(tx, &tournament_ft_helper_row)?;
+    // tournament_hand_order + FT helper deferred to bundle_finalize to avoid
+    // row lock contention when multiple workers process files from the same tournament.
 
     let persist_db_ms = persist_started_at.elapsed().as_millis() as u64;
     Ok(LocalImportReport {
@@ -2302,6 +2320,12 @@ fn persist_prepared_hand_history_registered(
             persist_db_ms,
             materialize_ms: 0,
             finalize_ms: 0,
+            persist_upsert_roots_ms: upsert_roots_ms,
+            persist_delete_ms: delete_ms,
+            persist_canonical_ms: canonical_ms,
+            persist_normalized_ms: normalized_ms,
+            persist_derived_ms: derived_ms,
+            persist_hand_order_ms: 0,
         },
         stage_profile: IngestStageProfile {
             parse_ms: prepared.parse_ms,
@@ -2706,6 +2730,94 @@ fn persist_mbr_stage_resolution(
     )?;
 
     Ok(())
+}
+
+/// Compute stable tournament_hand_order for all hands in this tournament.
+/// Uses the same sort criteria as Rust-side chronological sort: timestamp + external_hand_id + id.
+fn compute_tournament_hand_order(
+    client: &mut impl postgres::GenericClient,
+    tournament_id: Uuid,
+) -> Result<()> {
+    client.execute(
+        "WITH ordered AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       ORDER BY hand_started_at_local NULLS LAST,
+                                external_hand_id,
+                                id
+                   )::int AS computed_order
+            FROM core.hands
+            WHERE tournament_id = $1
+        )
+        UPDATE core.hands h
+        SET tournament_hand_order = ordered.computed_order
+        FROM ordered
+        WHERE h.id = ordered.id",
+        &[&tournament_id],
+    )?;
+    Ok(())
+}
+
+/// Load FT helper source hands from DB for a tournament.
+/// All data is already persisted by file jobs: core.hands, derived.mbr_stage_resolution,
+/// core.hand_seats. INNER JOIN on mbr_stage_resolution enforces 1:1 mapping — missing
+/// stage resolution rows are bugs, not silent fallbacks.
+fn load_ft_helper_source_hands_from_db(
+    client: &mut impl postgres::GenericClient,
+    tournament_id: Uuid,
+    player_profile_id: Uuid,
+) -> Result<Vec<TournamentFtHelperSourceHand>> {
+    let rows = client.query(
+        "SELECT
+            h.id AS hand_id,
+            h.tournament_hand_order,
+            h.external_hand_id,
+            h.hand_started_at_local::text,
+            msr.played_ft_hand,
+            msr.played_ft_hand_state,
+            msr.ft_table_size,
+            msr.entered_boundary_zone,
+            msr.boundary_resolution_state,
+            hero_seat.starting_stack AS hero_starting_stack,
+            h.big_blind
+        FROM core.hands h
+        INNER JOIN derived.mbr_stage_resolution msr
+            ON msr.hand_id = h.id AND msr.player_profile_id = h.player_profile_id
+        LEFT JOIN LATERAL (
+            SELECT hs.starting_stack
+            FROM core.hand_seats hs
+            WHERE hs.hand_id = h.id AND hs.is_hero = TRUE
+            LIMIT 1
+        ) hero_seat ON TRUE
+        WHERE h.tournament_id = $1
+            AND h.player_profile_id = $2
+        ORDER BY h.tournament_hand_order NULLS LAST, h.external_hand_id, h.id",
+        &[&tournament_id, &player_profile_id],
+    )?;
+    rows.into_iter()
+        .map(|row| {
+            let tournament_hand_order: Option<i32> = row.get(1);
+            Ok(TournamentFtHelperSourceHand {
+                hand_id: row.get(0),
+                tournament_hand_order: tournament_hand_order.ok_or_else(|| {
+                    anyhow!(
+                        "missing tournament_hand_order for hand {} in tournament {}",
+                        row.get::<_, Uuid>(0),
+                        tournament_id
+                    )
+                })?,
+                external_hand_id: row.get(2),
+                hand_started_at_local: row.get(3),
+                played_ft_hand: row.get(4),
+                played_ft_hand_state: row.get(5),
+                ft_table_size: row.get(6),
+                entered_boundary_zone: row.get(7),
+                boundary_resolution_state: row.get(8),
+                hero_starting_stack: row.get(9),
+                big_blind: row.get(10),
+            })
+        })
+        .collect()
 }
 
 fn persist_mbr_tournament_ft_helper(
@@ -3223,49 +3335,9 @@ fn bulk_insert_normalized_hand_rows(
 ) -> Result<()> {
     debug_assert_eq!(hand_ids.len(), outputs.len());
 
-    for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-        let resolution = &output.normalized_persistence.state_resolution;
-        let final_stacks_json = serde_json::to_string(&resolution.final_stacks)?;
-        let settlement_json = serde_json::to_string(&resolution.settlement)?;
-        let invariant_issues_json = serde_json::to_string(&resolution.invariant_issues)?;
-
-        tx.execute(
-            "INSERT INTO derived.hand_state_resolutions (
-                hand_id,
-                resolution_version,
-                chip_conservation_ok,
-                pot_conservation_ok,
-                settlement_state,
-                rake_amount,
-                final_stacks,
-                settlement,
-                invariant_issues
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, ($7::text)::jsonb, ($8::text)::jsonb, ($9::text)::jsonb)
-            ON CONFLICT (hand_id, resolution_version)
-            DO UPDATE SET
-                chip_conservation_ok = EXCLUDED.chip_conservation_ok,
-                pot_conservation_ok = EXCLUDED.pot_conservation_ok,
-                settlement_state = EXCLUDED.settlement_state,
-                rake_amount = EXCLUDED.rake_amount,
-                final_stacks = EXCLUDED.final_stacks,
-                settlement = EXCLUDED.settlement,
-                invariant_issues = EXCLUDED.invariant_issues",
-            &[
-                hand_id,
-                &resolution.resolution_version,
-                &resolution.chip_conservation_ok,
-                &resolution.pot_conservation_ok,
-                &resolution.settlement_state,
-                &resolution.rake_amount,
-                &final_stacks_json,
-                &settlement_json,
-                &invariant_issues_json,
-            ],
-        )?;
-    }
-
-    if false {
+    // Batched UPSERT for hand_state_resolutions (serde_json::Value binds as jsonb
+    // directly via postgres feature `with-serde_json-1`).
+    {
         const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
         const INSERT_PREFIX: &str = "INSERT INTO derived.hand_state_resolutions (        hand_id,        resolution_version,        chip_conservation_ok,        pot_conservation_ok,        settlement_state,        rake_amount,        final_stacks,        settlement,        invariant_issues    )";
         const INSERT_SUFFIX: &str = "ON CONFLICT (hand_id, resolution_version) DO UPDATE SET chip_conservation_ok = EXCLUDED.chip_conservation_ok, pot_conservation_ok = EXCLUDED.pot_conservation_ok, settlement_state = EXCLUDED.settlement_state, rake_amount = EXCLUDED.rake_amount, final_stacks = EXCLUDED.final_stacks, settlement = EXCLUDED.settlement, invariant_issues = EXCLUDED.invariant_issues";
@@ -4912,6 +4984,7 @@ fn build_mbr_stage_resolutions_from_facts(
         .collect()
 }
 
+#[cfg(test)]
 fn build_tournament_ft_helper_source_hand(
     hand_id: Uuid,
     hand: &CanonicalParsedHand,
@@ -6391,6 +6464,7 @@ mod tests {
             persist_db_ms: 14,
             materialize_ms: 15,
             finalize_ms: 16,
+            ..ComputeProfile::default()
         };
 
         assert_eq!(

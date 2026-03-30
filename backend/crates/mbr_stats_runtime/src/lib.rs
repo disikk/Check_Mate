@@ -18,8 +18,8 @@ pub use ft_dashboard::{
     FtValueState, query_ft_dashboard,
 };
 pub use materializer::{
-    materialize_player_hand_features, materialize_player_hand_features_for_bundle,
-    materialize_player_hand_features_for_tournaments,
+    load_bundle_tournament_ids, materialize_player_hand_features,
+    materialize_player_hand_features_for_bundle, materialize_player_hand_features_for_tournaments,
 };
 pub use models::{
     CANONICAL_STAT_KEYS, CanonicalStatNumericValue, CanonicalStatPoint, CanonicalStatSnapshot,

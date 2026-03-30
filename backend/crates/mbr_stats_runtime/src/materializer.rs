@@ -179,7 +179,7 @@ fn empty_materialization_report() -> MaterializationReport {
     }
 }
 
-fn load_bundle_tournament_ids(
+pub fn load_bundle_tournament_ids(
     client: &mut impl GenericClient,
     bundle_id: Uuid,
     organization_id: Uuid,
