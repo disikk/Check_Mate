@@ -7,6 +7,7 @@ use std::{path::Path, time::Instant};
 use anyhow::Result;
 use serde::Serialize;
 
+pub use crate::archive::decode_archive_member_path;
 use crate::{pair::build_prepare_report, scan::scan_path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Ord, PartialOrd)]

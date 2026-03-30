@@ -264,6 +264,35 @@ pub fn evaluate_street_hand_strength(
     Ok(rows)
 }
 
+pub(crate) fn evaluate_river_showdown_ranks(
+    hand: &CanonicalParsedHand,
+) -> Result<BTreeMap<String, i64>, ParserError> {
+    let settlement_hand = settlement_hand_with_summary_showdowns(hand);
+    let board_cards = final_board_cards(&settlement_hand)?;
+    if board_cards.len() < 5 {
+        return Ok(BTreeMap::new());
+    }
+
+    let known_seats = known_seat_cards(&settlement_hand)?;
+    let player_by_seat = settlement_hand
+        .seats
+        .iter()
+        .map(|seat| (seat.seat_no, seat.player_name.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let river_board = street_board_cards(&board_cards, Street::River);
+    let mut showdown_ranks = BTreeMap::new();
+
+    for (seat_no, seat_context) in known_seats {
+        if let Some(player_name) = player_by_seat.get(&seat_no) {
+            let all_cards = all_cards(&seat_context.cards, &river_board);
+            let evaluated = evaluate_best_hand(&all_cards);
+            showdown_ranks.insert(player_name.clone(), evaluated.best_hand_rank_value);
+        }
+    }
+
+    Ok(showdown_ranks)
+}
+
 fn final_board_cards(hand: &CanonicalParsedHand) -> Result<Vec<Card>, ParserError> {
     let source = if !hand.board_final.is_empty() {
         &hand.board_final
@@ -300,6 +329,28 @@ fn known_seat_cards(
     }
 
     Ok(known)
+}
+
+fn settlement_hand_with_summary_showdowns(hand: &CanonicalParsedHand) -> CanonicalParsedHand {
+    let mut settlement_hand = hand.clone();
+    for outcome in &hand.summary_seat_outcomes {
+        let summary_shows_cards = matches!(
+            outcome.outcome_kind,
+            crate::models::SummarySeatOutcomeKind::ShowedWon
+                | crate::models::SummarySeatOutcomeKind::ShowedLost
+        );
+        if summary_shows_cards
+            && let Some(cards) = &outcome.shown_cards
+            && cards.len() == 2
+        {
+            settlement_hand
+                .showdown_hands
+                .entry(outcome.player_name.clone())
+                .or_insert_with(|| cards.clone());
+        }
+    }
+
+    settlement_hand
 }
 
 fn build_seat_context(
@@ -916,4 +967,97 @@ fn is_flush_family(best_hand_class: BestHandClass) -> bool {
         best_hand_class,
         BestHandClass::Flush | BestHandClass::StraightFlush
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::parsers::hand_history::parse_canonical_hand;
+
+    #[test]
+    fn evaluate_river_showdown_ranks_returns_only_river_showdown_player_ranks() {
+        let hand = parse_canonical_hand(&showdown_hand_with_summary_reveal()).unwrap();
+
+        let ranks = evaluate_river_showdown_ranks(&hand).unwrap();
+        let expected = expected_river_showdown_ranks(&hand).unwrap();
+        assert_eq!(ranks, expected);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn showdown_hand_with_summary_reveal() -> String {
+        let flop = ["Kd", "7h", "2h"];
+        let turn = Some("4c");
+        let river = Some("3s");
+        let turn_line = turn
+            .map(|card| {
+                format!(
+                    "*** TURN *** [{} {} {}] [{}]\nVillain: checks\nHero: checks\n",
+                    flop[0], flop[1], flop[2], card
+                )
+            })
+            .unwrap_or_default();
+        let board_after_turn = turn
+            .map(|card| format!("{} {} {} {}", flop[0], flop[1], flop[2], card))
+            .unwrap_or_else(|| format!("{} {} {}", flop[0], flop[1], flop[2]));
+        let river_line = river
+            .map(|card| format!("*** RIVER *** [{board_after_turn}] [{card}]\n"))
+            .unwrap_or_default();
+
+        format!(
+            "Poker Hand #BRSTRPARTIALSUMMARY: Tournament #999001, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:00:00\n\
+Table '1' 9-max Seat #1 is the button\n\
+Seat 1: Villain (1,000 in chips)\n\
+Seat 2: Hero (1,000 in chips)\n\
+Villain: posts small blind 50\n\
+Hero: posts big blind 100\n\
+*** HOLE CARDS ***\n\
+Dealt to Hero [Ah Kh]\n\
+Villain: calls 50\n\
+Hero: checks\n\
+*** FLOP *** [{flop0} {flop1} {flop2}]\n\
+Villain: checks\n\
+Hero: checks\n\
+{turn_line}\
+{river_line}\
+*** SHOWDOWN ***\n\
+Villain: shows [Qc]\n\
+Hero: shows [Ah Kh]\n\
+Hero collected 200 from pot\n\
+*** SUMMARY ***\n\
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0\n\
+Board [Kd 7h 2h 4c 3s]\n\
+Seat 1: Villain (small blind) showed [Qc Qd] and lost with a pair of Queens\n\
+Seat 2: Hero (big blind) showed [Ah Kh] and collected (200) with a pair of Kings",
+            flop0 = flop[0],
+            flop1 = flop[1],
+            flop2 = flop[2],
+        )
+    }
+
+    fn expected_river_showdown_ranks(
+        hand: &CanonicalParsedHand,
+    ) -> Result<BTreeMap<String, i64>, ParserError> {
+        let settlement_hand = settlement_hand_with_summary_showdowns(hand);
+        let board_cards = final_board_cards(&settlement_hand)?;
+        let known_seats = known_seat_cards(&settlement_hand)?;
+        let player_by_seat = settlement_hand
+            .seats
+            .iter()
+            .map(|seat| (seat.seat_no, seat.player_name.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let river_board = street_board_cards(&board_cards, Street::River);
+        let mut ranks = BTreeMap::new();
+
+        for (seat_no, seat_context) in known_seats {
+            if let Some(player_name) = player_by_seat.get(&seat_no) {
+                let all_cards = all_cards(&seat_context.cards, &river_board);
+                let evaluated = evaluate_best_hand(&all_cards);
+                ranks.insert(player_name.clone(), evaluated.best_hand_rank_value);
+            }
+        }
+
+        Ok(ranks)
+    }
 }

@@ -10,7 +10,7 @@ use tracker_parser_core::{SourceKind, quick_detect_source_kind, quick_extract_gg
 
 use crate::{
     PreparedFileRef, PreparedSourceKind, RejectReasonCode, RejectedTournament,
-    archive::{hash_archive_member, list_archive_members},
+    archive::{ArchiveScanEntry, hash_archive_member, list_archive_members},
 };
 
 #[derive(Debug, Clone)]
@@ -41,6 +41,7 @@ pub(crate) enum HeaderProbe {
     FirstNonEmptyLine(String),
     Empty,
     InvalidUtf8,
+    ContainsNul,
 }
 
 #[derive(Debug)]
@@ -59,19 +60,45 @@ pub(crate) fn scan_path(path: &Path) -> Result<ScanOutcome> {
 
     for file_path in file_paths {
         if is_zip_path(&file_path) {
-            let archive_members = list_archive_members(&file_path)?;
-            for member in archive_members {
-                scanned_files += 1;
-                entries.push(classify_line(
-                    file_path.display().to_string(),
-                    Some(member.member_path.clone()),
-                    member.byte_size,
-                    member.header_probe,
-                    ScanLocation::ArchiveMember {
-                        archive_path: file_path.clone(),
-                        member_path: member.member_path,
-                    },
-                ));
+            let source_path = file_path.display().to_string();
+            match list_archive_members(&file_path) {
+                Ok(archive_members) => {
+                    for member in archive_members {
+                        scanned_files += 1;
+                        match member {
+                            ArchiveScanEntry::Candidate(member) => entries.push(classify_line(
+                                source_path.clone(),
+                                Some(member.member_path.clone()),
+                                member.byte_size,
+                                member.header_probe,
+                                ScanLocation::ArchiveMember {
+                                    archive_path: file_path.clone(),
+                                    member_path: member.member_path,
+                                },
+                            )),
+                            ArchiveScanEntry::Rejected(member) => {
+                                entries.push(reject_unsupported_source(
+                                    source_path.clone(),
+                                    Some(member.member_path),
+                                    member.byte_size,
+                                    member.reason_text,
+                                ));
+                            }
+                        }
+                    }
+                }
+                Err(error) => {
+                    let metadata = fs::metadata(&file_path).with_context(|| {
+                        format!("failed to read metadata for `{}`", file_path.display())
+                    })?;
+                    scanned_files += 1;
+                    entries.push(reject_unsupported_source(
+                        source_path,
+                        None,
+                        metadata.len() as i64,
+                        format!("Failed to read ZIP archive: {error:#}"),
+                    ));
+                }
             }
             continue;
         }
@@ -144,53 +171,40 @@ fn classify_line(
     let first_line = match header_probe {
         HeaderProbe::FirstNonEmptyLine(first_line) => first_line,
         HeaderProbe::Empty => {
-            return PreparedScanEntry::Rejected(RejectedTournament {
-                tournament_id: None,
-                files: vec![PreparedFileRef {
-                    source_path,
-                    member_path,
-                    source_kind: PreparedSourceKind::Unknown,
-                    tournament_id: None,
-                    byte_size,
-                    sha256: None,
-                }],
-                reason_code: RejectReasonCode::UnsupportedSource,
-                reason_text: "Source has no non-empty header line".to_string(),
-            });
+            return reject_unsupported_source(
+                source_path,
+                member_path,
+                byte_size,
+                "Source has no non-empty header line".to_string(),
+            );
         }
         HeaderProbe::InvalidUtf8 => {
-            return PreparedScanEntry::Rejected(RejectedTournament {
-                tournament_id: None,
-                files: vec![PreparedFileRef {
-                    source_path,
-                    member_path,
-                    source_kind: PreparedSourceKind::Unknown,
-                    tournament_id: None,
-                    byte_size,
-                    sha256: None,
-                }],
-                reason_code: RejectReasonCode::UnsupportedSource,
-                reason_text: "Source header is not valid UTF-8".to_string(),
-            });
+            return reject_unsupported_source(
+                source_path,
+                member_path,
+                byte_size,
+                "Source header is not valid UTF-8".to_string(),
+            );
+        }
+        HeaderProbe::ContainsNul => {
+            return reject_unsupported_source(
+                source_path,
+                member_path,
+                byte_size,
+                "Source header contains embedded NUL bytes".to_string(),
+            );
         }
     };
 
     let source_kind = match quick_detect_source_kind(&first_line) {
         Ok(kind) => map_source_kind(kind),
         Err(_) => {
-            return PreparedScanEntry::Rejected(RejectedTournament {
-                tournament_id: None,
-                files: vec![PreparedFileRef {
-                    source_path,
-                    member_path,
-                    source_kind: PreparedSourceKind::Unknown,
-                    tournament_id: None,
-                    byte_size,
-                    sha256: None,
-                }],
-                reason_code: RejectReasonCode::UnsupportedSource,
-                reason_text: format!("Unsupported source header `{first_line}`"),
-            });
+            return reject_unsupported_source(
+                source_path,
+                member_path,
+                byte_size,
+                format!("Unsupported source header `{first_line}`"),
+            );
         }
     };
 
@@ -259,6 +273,9 @@ pub(crate) fn read_first_non_empty_line_from_reader<R: Read>(reader: R) -> Resul
             Ok(value) => value.trim(),
             Err(_) => return Ok(HeaderProbe::InvalidUtf8),
         };
+        if trimmed.contains('\0') {
+            return Ok(HeaderProbe::ContainsNul);
+        }
         if !trimmed.is_empty() {
             return Ok(HeaderProbe::FirstNonEmptyLine(trimmed.to_string()));
         }
@@ -269,6 +286,27 @@ fn read_first_non_empty_line_from_file(path: &Path) -> Result<HeaderProbe> {
     let file =
         File::open(path).with_context(|| format!("failed to open file `{}`", path.display()))?;
     read_first_non_empty_line_from_reader(file)
+}
+
+fn reject_unsupported_source(
+    source_path: String,
+    member_path: Option<String>,
+    byte_size: i64,
+    reason_text: String,
+) -> PreparedScanEntry {
+    PreparedScanEntry::Rejected(RejectedTournament {
+        tournament_id: None,
+        files: vec![PreparedFileRef {
+            source_path,
+            member_path,
+            source_kind: PreparedSourceKind::Unknown,
+            tournament_id: None,
+            byte_size,
+            sha256: None,
+        }],
+        reason_code: RejectReasonCode::UnsupportedSource,
+        reason_text,
+    })
 }
 
 fn is_zip_path(path: &Path) -> bool {

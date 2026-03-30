@@ -141,7 +141,7 @@ fn assert_draw_surface_matches_reference(
     hand: &tracker_parser_core::models::CanonicalParsedHand,
     seat_no: u8,
 ) {
-    let production_rows = evaluate_street_hand_strength(&hand).unwrap();
+    let production_rows = evaluate_street_hand_strength(hand).unwrap();
     let reference_rows = reference_draw_rows_for_seat(hand, seat_no);
 
     let production_draw_surface = production_rows

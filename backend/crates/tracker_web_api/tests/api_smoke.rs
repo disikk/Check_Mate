@@ -1,3 +1,5 @@
+#![allow(clippy::await_holding_lock)]
+
 use std::{
     collections::VecDeque,
     fs,
@@ -167,6 +169,7 @@ impl JobExecutor for SuccessExecutor {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
 async fn session_upload_and_snapshot_endpoints_work_on_real_backend_contract() {
     let _guard = db_test_guard();
@@ -275,6 +278,7 @@ async fn session_upload_and_snapshot_endpoints_work_on_real_backend_contract() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
 async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
     let _guard = db_test_guard();
@@ -417,6 +421,7 @@ async fn websocket_streams_initial_snapshot_and_ordered_runtime_updates() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
 async fn ft_dashboard_endpoint_returns_live_snapshot_and_respects_filters() {
     let _guard = db_test_guard();
@@ -568,6 +573,7 @@ async fn ft_dashboard_endpoint_returns_live_snapshot_and_respects_filters() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
 async fn ft_dashboard_endpoint_rejects_invalid_filters_and_preserves_session_scope() {
     let _guard = db_test_guard();

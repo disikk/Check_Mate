@@ -8,7 +8,7 @@
 
 ## Current batch
 
-- Current target: finish real-corpus profiling on `MIHA` after the multi-worker claim-path fix and decide whether the next wave should target long-lived HH transactions, `street_strength`, or DB persist.
+- Current target: implement the next HH/runtime acceleration wave on top of the real-corpus `MIHA` profile: lightweight runtime events, showdown rank dedup, new-hand fast path, table-wise batch persist, and CPU/persist transaction split, then re-measure the full `MIHA` import.
 
 ## Checklist
 
@@ -41,6 +41,15 @@
 - [x] Harden prepare-layer so non-UTF8 files and ZIP members are rejected as `unsupported_source` instead of aborting the whole directory import.
 - [x] Red: reproduce same-bundle multi-worker claim serialization with two concurrent DB transactions.
 - [x] Green: remove bundle-row mutation from the claim hot path, switch claim-time event snapshots to read-only mode, and keep bundle-status writes only for real status transitions.
+- [x] Red: add failing coverage for lightweight event telemetry payload assembly.
+- [x] Green: switch claim/success/fail event emission to lightweight bundle/file summary queries.
+- [x] Red: add failing coverage for a lightweight river-only showdown rank kernel.
+- [x] Green: reuse the cheap showdown rank kernel from pot resolution and keep derived street-strength output unchanged.
+- [x] Red: add failing coverage for `is_new` hand detection on fresh import vs re-import.
+- [x] Green: skip child-table DELETEs for fresh hands and propagate `is_new` through derived persist.
+- [x] Red: add failing coverage for collect-then-persist hand writes and split runner transactions.
+- [x] Green: batch root/child hand persistence across the whole HH file and run compute outside the DB transaction.
+- [x] Re-run focused crate tests, backend checks, and fresh `MIHA` measurements with stage diagnostics.
 
 ## Log
 
@@ -68,3 +77,13 @@
 - `2026-03-29`: Re-ran `MIHA` profiling after the claim-path fix. On the `sample-50` paired subset, `8 workers` improved from `554.28` to `2287.86 hands/min` (`4.13x`).
 - `2026-03-29`: Stopped the fresh full `MIHA` run after the bottleneck picture became clear: at `1450s` it had already persisted `22142` hands / `850` tournaments with `1693` succeeded file jobs and zero terminal file failures, which confirms the queue/runtime fix works on the real corpus too.
 - `2026-03-29`: The next likely hotspot is no longer bundle-row locking but expensive event/snapshot telemetry on large bundles: `file_updated/bundle_updated` still build payloads through full bundle snapshot reads, which is now the main candidate for the next acceleration wave together with separating HH compute from long transactions.
+- `2026-03-30`: Added lightweight runtime event telemetry in `tracker_ingest_runtime`: `bundle_updated/bundle_terminal` now read a count-based bundle progress summary, and `file_updated` reads only the targeted bundle file/member status instead of a full bundle snapshot.
+- `2026-03-30`: Added `evaluate_river_showdown_ranks()` in `tracker_parser_core::street_strength` and switched `pot_resolution` to the cheap river-only showdown kernel, so settlement winner ranking no longer pays for the full street-strength surface twice.
+- `2026-03-30`: Reworked HH persistence in `parser_worker` around a collect-then-persist batch flow: bulk fragment/hand upserts, `xmax`-based `is_new` detection, bulk delete only for updated hands, bulk child-table inserts, and split `claim -> compute outside tx -> persist` runner transactions.
+- `2026-03-30`: Added regression coverage for the new wave with DB tests for lightweight telemetry payloads and `is_new` detection, plus a `dir-import` DB smoke that now exercises the split runner path and batch HH persistence.
+- `2026-03-30`: Re-ran `bash backend/scripts/run_backend_checks.sh` after stabilizing the parser-worker analytics smoke and making `mbr_stats_runtime` golden snapshot tests self-seed the committed 9-pair pack on an isolated actor, so the backend gate no longer depends on whatever `Hero` data happens to be left in the dev DB.
+- `2026-03-30`: Measured full release `parser_worker dir-import` on `/Users/cyberjam/!Poker/HHs/MIHA` with fresh profiles. `workers=8`: `36404` hands, `6688.24 hands/min e2e`, `326.58s` e2e. `workers=1`: `36404` hands, `5659.34 hands/min e2e`, `385.95s` e2e. The gain from `8` workers is only about `18%`, while the single-worker stage profile now shows parse+normalize under `1%`, `derive_hand_local_ms ≈ 31%`, `persist_db_ms ≈ 34%`, and a `~62.8s` finalize/materialization tail; Phase 6 `Rayon` is therefore not the next leverage point compared to persist/finalize follow-up work.
+- `2026-03-30`: Extended the shared ingest prepare/runtime path for recursive nested ZIP support without schema changes: nested archive leaf-files are now addressed through the existing `member_path` contract, valid HH/TS leaf pairs are discovered inside nested ZIPs for CLI and web upload alike, corrupt/non-text nested artifacts are downgraded to `unsupported_source`, and runtime archive reads now guard against embedded NUL text before any PostgreSQL write path.
+- `2026-03-30`: Investigated the anomalously slow `KONFA/Orange` dir-import and traced the hottest runtime stack to repeated `ZipArchive::new` calls while reading members from the same synthetic `prepared-pairs.zip`. Added a regression test that proves cached member reads survive deletion of the source ZIP file, then introduced a per-worker archive cache reused by both prepared-archive materialization and runtime member reads so the same archive central directory is parsed only once per worker.
+- `2026-03-30`: Discovered and fixed a critical `materialize_refresh` query bottleneck in `mbr_stats_runtime::materializer::load_bundle_tournament_ids`: the old query joined `import_jobs` to `core.hands` via `source_file_id`, but for member-aware archives all member jobs share one parent `source_file_id` (prepared-pairs.zip), creating a 16K × 220K = ~3.6 billion row cross product. Fixed by joining through `source_file_member_id → import.file_fragments → core.hands.raw_fragment_id` (681ms instead of infinite hang). Added migration `0030_hands_source_file_index.sql` for the legacy source_file join path.
+- `2026-03-30`: Clean `Orange` benchmark (220,679 hands, 8,288 tournaments, 8 workers): **E2E 782.5s (13.0 min), 16,920 hands/min e2e, 282 hands/sec e2e**. Stage breakdown: prepare 57.3s, runner 725.2s (finalize/materialize 305.7s), peak RSS 3.4 GB. The finalize tail (materialize_refresh for 8288 tournaments) is now the dominant bottleneck at ~42% of runner time.

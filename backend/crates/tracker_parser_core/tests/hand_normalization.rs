@@ -1520,9 +1520,7 @@ fn surfaces_illegal_heads_up_postflop_actor_order() {
     let normalized = normalize_hand(&hand).unwrap();
 
     assert!(
-        invariant_issue_codes(&normalized)
-            .iter()
-            .any(|issue| *issue == "illegal_actor_order"),
+        invariant_issue_codes(&normalized).contains(&"illegal_actor_order"),
         "expected illegal_actor_order, got {:?}",
         normalized.invariants.issues
     );
@@ -1534,9 +1532,7 @@ fn surfaces_non_reopening_short_all_in_reraise() {
     let normalized = normalize_hand(&hand).unwrap();
 
     assert!(
-        invariant_issue_codes(&normalized)
-            .iter()
-            .any(|issue| *issue == "action_not_reopened_after_short_all_in"),
+        invariant_issue_codes(&normalized).contains(&"action_not_reopened_after_short_all_in"),
         "expected short-all-in non-reopen error, got {:?}",
         normalized.invariants.issues
     );
@@ -1558,9 +1554,7 @@ fn surfaces_premature_street_close_when_pending_actor_is_skipped() {
     let normalized = normalize_hand(&hand).unwrap();
 
     assert!(
-        invariant_issue_codes(&normalized)
-            .iter()
-            .any(|issue| *issue == "premature_street_close"),
+        invariant_issue_codes(&normalized).contains(&"premature_street_close"),
         "expected premature_street_close, got {:?}",
         normalized.invariants.issues
     );

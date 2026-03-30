@@ -185,15 +185,20 @@ fn load_bundle_tournament_ids(
     organization_id: Uuid,
     player_profile_id: Uuid,
 ) -> Result<Vec<Uuid>> {
+    // Join through source_file_member_id → file_fragments → hands.
+    // The old source_file_id join caused a combinatorial explosion when
+    // all member jobs shared one parent archive (prepared-pairs.zip):
+    // 16K jobs × 220K hands = ~3.6 billion row cross product.
     Ok(client
         .query(
             "SELECT DISTINCT h.tournament_id
              FROM import.import_jobs jobs
+             INNER JOIN import.file_fragments ff
+               ON ff.source_file_member_id = jobs.source_file_member_id
              INNER JOIN core.hands h
-               ON h.source_file_id = jobs.source_file_id
+               ON h.raw_fragment_id = ff.id
              WHERE jobs.bundle_id = $1
                AND jobs.job_kind = 'file_ingest'
-               AND jobs.source_file_id IS NOT NULL
                AND h.organization_id = $2
                AND h.player_profile_id = $3
              ORDER BY h.tournament_id",

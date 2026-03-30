@@ -1306,6 +1306,35 @@ mod tests {
     }
 
     #[test]
+    fn classify_upload_file_orders_nested_zip_pair_as_ts_then_hh() {
+        let inner_zip_bytes =
+            build_zip_bytes(&[("deep/history.txt", HH_FT), ("deep/summary.txt", TS_WINNER)]);
+        let outer_zip_bytes = build_zip_bytes_bytes(&[("nested/inner.zip", &inner_zip_bytes)]);
+
+        let input = classify_upload_file(
+            "bundle.zip",
+            &outer_zip_bytes,
+            "local:///tmp/bundle.zip".to_string(),
+        )
+        .expect("nested ZIP with one valid pair should classify");
+
+        assert_eq!(input.file_kind, FileKind::Archive);
+        assert_eq!(input.members.len(), 2);
+        assert_eq!(input.members[0].member_kind, FileKind::TournamentSummary);
+        assert_eq!(
+            input.members[0].member_path,
+            "nested/inner.zip!/deep/summary.txt"
+        );
+        assert_eq!(input.members[0].depends_on_member_index, None);
+        assert_eq!(input.members[1].member_kind, FileKind::HandHistory);
+        assert_eq!(
+            input.members[1].member_path,
+            "nested/inner.zip!/deep/history.txt"
+        );
+        assert_eq!(input.members[1].depends_on_member_index, Some(0));
+    }
+
+    #[test]
     fn classify_upload_batch_pairs_multi_file_uploads_and_logs_orphans() {
         let dir = tempdir().unwrap();
         let winner_ts = write_text_upload(dir.path(), "winner.ts.txt", TS_WINNER);
@@ -1350,6 +1379,15 @@ mod tests {
     }
 
     fn build_zip_bytes(members: &[(&str, &str)]) -> Vec<u8> {
+        build_zip_bytes_bytes(
+            &members
+                .iter()
+                .map(|(member_path, contents)| (*member_path, contents.as_bytes()))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    fn build_zip_bytes_bytes(members: &[(&str, &[u8])]) -> Vec<u8> {
         let mut cursor = Cursor::new(Vec::<u8>::new());
         {
             let mut writer = zip::ZipWriter::new(&mut cursor);
@@ -1357,7 +1395,7 @@ mod tests {
                 writer
                     .start_file((*member_path).to_string(), SimpleFileOptions::default())
                     .unwrap();
-                writer.write_all(contents.as_bytes()).unwrap();
+                writer.write_all(contents).unwrap();
             }
             writer.finish().unwrap();
         }

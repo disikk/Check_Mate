@@ -203,6 +203,24 @@ pub struct BundleSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct BundleProgressSummary {
+    bundle_id: Uuid,
+    status: BundleStatus,
+    total_files: i64,
+    completed_files: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileJobStatusSummary {
+    bundle_file_id: Uuid,
+    source_file_id: Uuid,
+    source_file_member_id: Uuid,
+    member_path: String,
+    status: FileJobStatus,
+    stage: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaimedJob {
     pub job_id: Uuid,
     pub bundle_id: Uuid,
@@ -254,6 +272,14 @@ impl JobExecutionError {
             disposition: FailureDisposition::Terminal,
             error_code: error_code.into(),
         }
+    }
+
+    pub fn disposition(&self) -> FailureDisposition {
+        self.disposition
+    }
+
+    pub fn error_code(&self) -> &str {
+        &self.error_code
     }
 }
 
@@ -717,13 +743,6 @@ pub fn load_bundle_snapshot(
     load_bundle_snapshot_inner(client, bundle_id, true)
 }
 
-fn load_bundle_snapshot_readonly(
-    client: &mut impl GenericClient,
-    bundle_id: Uuid,
-) -> Result<BundleSnapshot> {
-    load_bundle_snapshot_inner(client, bundle_id, false)
-}
-
 fn load_bundle_snapshot_inner(
     client: &mut impl GenericClient,
     bundle_id: Uuid,
@@ -794,13 +813,116 @@ fn load_bundle_snapshot_inner(
     })
 }
 
+fn load_bundle_progress_summary(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+) -> Result<BundleProgressSummary> {
+    let counts_row = client.query_one(
+        "SELECT
+             COUNT(*) FILTER (WHERE job_kind = 'file_ingest') AS total_file_jobs,
+             COUNT(*) FILTER (WHERE job_kind = 'file_ingest' AND status = 'succeeded') AS succeeded_file_jobs,
+             COUNT(*) FILTER (WHERE job_kind = 'file_ingest' AND status = 'queued') AS queued_file_jobs,
+             COUNT(*) FILTER (WHERE job_kind = 'file_ingest' AND status = 'running') AS running_file_jobs,
+             COUNT(*) FILTER (WHERE job_kind = 'file_ingest' AND status = 'failed_retriable') AS failed_retriable_file_jobs,
+             COUNT(*) FILTER (WHERE job_kind = 'file_ingest' AND status = 'failed_terminal') AS failed_terminal_file_jobs,
+             COUNT(*) FILTER (WHERE job_kind = 'bundle_finalize') AS finalize_job_present,
+             COUNT(*) FILTER (WHERE job_kind = 'bundle_finalize' AND status IN ('queued', 'running', 'failed_retriable')) AS finalize_job_running
+         FROM import.import_jobs
+         WHERE bundle_id = $1",
+        &[&bundle_id],
+    )?;
+
+    let total_files = counts_row.get::<_, i64>(0);
+    let completed_files = counts_row.get::<_, i64>(1);
+    let queued_file_jobs = counts_row.get::<_, i64>(2);
+    let running_file_jobs = counts_row.get::<_, i64>(3);
+    let failed_retriable_file_jobs = counts_row.get::<_, i64>(4);
+    let failed_terminal_file_jobs = counts_row.get::<_, i64>(5);
+    let finalize_job_present = counts_row.get::<_, i64>(6) > 0;
+    let finalize_job_running = counts_row.get::<_, i64>(7) > 0;
+    let status = derive_bundle_status_from_counts(
+        queued_file_jobs,
+        running_file_jobs,
+        completed_files,
+        failed_retriable_file_jobs,
+        failed_terminal_file_jobs,
+        finalize_job_present,
+        finalize_job_running,
+    );
+
+    Ok(BundleProgressSummary {
+        bundle_id,
+        status,
+        total_files,
+        completed_files,
+    })
+}
+
+fn bundle_progress_percent_from_summary(summary: &BundleProgressSummary) -> i32 {
+    match summary.status {
+        BundleStatus::Succeeded | BundleStatus::PartialSuccess | BundleStatus::Failed => 100,
+        BundleStatus::Finalizing => 95,
+        BundleStatus::Queued | BundleStatus::Running => {
+            if summary.total_files == 0 {
+                0
+            } else {
+                ((summary.completed_files * 100) / summary.total_files) as i32
+            }
+        }
+    }
+}
+
+fn bundle_stage_label_from_summary(summary: &BundleProgressSummary) -> String {
+    match summary.status {
+        BundleStatus::Queued => "Проверка структуры".to_string(),
+        BundleStatus::Running => "Парсинг раздач".to_string(),
+        BundleStatus::Finalizing => "Подготовка индекса".to_string(),
+        BundleStatus::Succeeded => "Готово".to_string(),
+        BundleStatus::PartialSuccess => "Готово с ошибками".to_string(),
+        BundleStatus::Failed => "Импорт завершился с ошибкой".to_string(),
+    }
+}
+
+fn load_file_job_status(
+    client: &mut impl GenericClient,
+    bundle_id: Uuid,
+    bundle_file_id: Uuid,
+) -> Result<FileJobStatusSummary> {
+    let row = client.query_one(
+        "SELECT
+             bundle_files.source_file_id,
+             bundle_files.source_file_member_id,
+             members.member_path,
+             jobs.status,
+             COALESCE(jobs.stage, 'queued')
+         FROM import.ingest_bundle_files bundle_files
+         JOIN import.source_file_members members
+           ON members.id = bundle_files.source_file_member_id
+         LEFT JOIN import.import_jobs jobs
+           ON jobs.bundle_file_id = bundle_files.id
+          AND jobs.job_kind = 'file_ingest'
+         WHERE bundle_files.bundle_id = $1
+           AND bundle_files.id = $2",
+        &[&bundle_id, &bundle_file_id],
+    )?;
+
+    Ok(FileJobStatusSummary {
+        bundle_file_id,
+        source_file_id: row.get(0),
+        source_file_member_id: row.get(1),
+        member_path: row.get(2),
+        status: FileJobStatus::from_db(&row.get::<_, String>(3)),
+        stage: row.get(4),
+    })
+}
+
 fn emit_bundle_event(
     client: &mut impl GenericClient,
     bundle_id: Uuid,
     event_kind: &str,
     message: &str,
 ) -> Result<()> {
-    let snapshot = load_bundle_snapshot_readonly(client, bundle_id)?;
+    let summary = load_bundle_progress_summary(client, bundle_id)?;
 
     append_ingest_event(
         client,
@@ -809,12 +931,12 @@ fn emit_bundle_event(
         event_kind,
         message,
         &json!({
-            "bundle_id": snapshot.bundle_id,
-            "status": snapshot.status.as_str(),
-            "progress_percent": snapshot.progress_percent,
-            "stage_label": snapshot.stage_label,
-            "total_files": snapshot.total_files,
-            "completed_files": snapshot.completed_files,
+            "bundle_id": summary.bundle_id,
+            "status": summary.status.as_str(),
+            "progress_percent": bundle_progress_percent_from_summary(&summary),
+            "stage_label": bundle_stage_label_from_summary(&summary),
+            "total_files": summary.total_files,
+            "completed_files": summary.completed_files,
         }),
     )
 }
@@ -825,12 +947,7 @@ fn emit_file_updated_event(
     bundle_file_id: Uuid,
     message: &str,
 ) -> Result<()> {
-    let snapshot = load_bundle_snapshot_readonly(client, bundle_id)?;
-    let file = snapshot
-        .files
-        .iter()
-        .find(|file| file.bundle_file_id == bundle_file_id)
-        .expect("bundle file snapshot must exist for file_updated event");
+    let file = load_file_job_status(client, bundle_id, bundle_file_id)?;
 
     append_ingest_event(
         client,
@@ -844,8 +961,8 @@ fn emit_file_updated_event(
             "source_file_member_id": file.source_file_member_id,
             "member_path": file.member_path,
             "status": file.status.as_str(),
-            "stage_label": file.stage_label,
-            "progress_percent": file.progress_percent,
+            "stage_label": file_stage_label(file.status, &file.stage),
+            "progress_percent": file_progress_percent(file.status, &file.stage),
         }),
     )
 }
@@ -1567,9 +1684,7 @@ fn derive_bundle_status_from_counts(
 ) -> BundleStatus {
     if finalize_job_running {
         BundleStatus::Finalizing
-    } else if running_count > 0 {
-        BundleStatus::Running
-    } else if failed_retriable_count > 0 {
+    } else if running_count > 0 || failed_retriable_count > 0 {
         BundleStatus::Running
     } else if queued_count > 0 {
         BundleStatus::Queued
@@ -1589,5 +1704,345 @@ fn derive_bundle_status_from_counts(
         BundleStatus::Failed
     } else {
         BundleStatus::Queued
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::{Mutex, OnceLock},
+    };
+
+    use postgres::{Client, NoTls};
+
+    fn migrations_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|path| path.parent())
+            .expect("backend root must exist")
+            .join("migrations")
+    }
+
+    fn apply_all_migrations(client: &mut Client) {
+        let mut paths = fs::read_dir(migrations_dir())
+            .expect("migrations dir must exist")
+            .map(|entry| entry.expect("entry must load").path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("sql"))
+            .collect::<Vec<_>>();
+        paths.sort();
+
+        for path in paths {
+            let sql = fs::read_to_string(&path).unwrap_or_else(|error| {
+                panic!("failed to read migration {}: {error}", path.display())
+            });
+            client
+                .batch_execute(&sql)
+                .unwrap_or_else(|error| panic!("failed to apply {}: {error}", path.display()));
+        }
+    }
+
+    fn db_url() -> String {
+        std::env::var("CHECK_MATE_DATABASE_URL")
+            .expect("CHECK_MATE_DATABASE_URL must exist for ingest runtime DB tests")
+    }
+
+    fn db_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn reset_ingest_runtime_tables(client: &mut Client) {
+        client
+            .batch_execute(
+                "DELETE FROM import.ingest_events;
+                 DELETE FROM import.job_attempts;
+                 DELETE FROM import.import_jobs;
+                 DELETE FROM import.ingest_bundle_files;
+                 DELETE FROM import.ingest_bundles;",
+            )
+            .unwrap();
+    }
+
+    fn seed_actor_shell(client: &mut impl postgres::GenericClient) -> (Uuid, Uuid, Uuid) {
+        let organization_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let player_profile_id = Uuid::new_v4();
+
+        client
+            .execute(
+                "INSERT INTO org.organizations (id, name) VALUES ($1, $2)",
+                &[&organization_id, &format!("org-{organization_id}")],
+            )
+            .unwrap();
+        client
+            .execute(
+                "INSERT INTO auth.users (id, email, auth_provider, status) VALUES ($1, $2, 'seed', 'active')",
+                &[&user_id, &format!("{user_id}@example.com")],
+            )
+            .unwrap();
+        client
+            .execute(
+                "INSERT INTO core.player_profiles (id, organization_id, owner_user_id, room, network, screen_name)
+                 VALUES ($1, $2, $3, 'gg', 'gg', $4)",
+                &[&player_profile_id, &organization_id, &user_id, &format!("Hero-{player_profile_id}")],
+            )
+            .unwrap();
+
+        (organization_id, user_id, player_profile_id)
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn load_bundle_progress_summary_uses_counts_for_progress_and_status() {
+        let _guard = db_test_guard();
+        let mut client = Client::connect(&db_url(), NoTls).unwrap();
+        apply_all_migrations(&mut client);
+        reset_ingest_runtime_tables(&mut client);
+        let mut tx = client.transaction().unwrap();
+        let (organization_id, user_id, player_profile_id) = seed_actor_shell(&mut tx);
+
+        let bundle = enqueue_bundle(
+            &mut tx,
+            &IngestBundleInput {
+                organization_id,
+                player_profile_id,
+                created_by_user_id: user_id,
+                files: vec![
+                    IngestFileInput {
+                        room: "gg".to_string(),
+                        file_kind: FileKind::HandHistory,
+                        sha256: "a".repeat(64),
+                        original_filename: "one.hh".to_string(),
+                        byte_size: 10,
+                        storage_uri: "local://one.hh".to_string(),
+                        members: vec![IngestMemberInput {
+                            member_path: "one.hh".to_string(),
+                            member_kind: FileKind::HandHistory,
+                            sha256: "b".repeat(64),
+                            byte_size: 10,
+                            depends_on_member_index: None,
+                        }],
+                        diagnostics: vec![],
+                    },
+                    IngestFileInput {
+                        room: "gg".to_string(),
+                        file_kind: FileKind::HandHistory,
+                        sha256: "c".repeat(64),
+                        original_filename: "two.hh".to_string(),
+                        byte_size: 10,
+                        storage_uri: "local://two.hh".to_string(),
+                        members: vec![IngestMemberInput {
+                            member_path: "two.hh".to_string(),
+                            member_kind: FileKind::HandHistory,
+                            sha256: "d".repeat(64),
+                            byte_size: 10,
+                            depends_on_member_index: None,
+                        }],
+                        diagnostics: vec![],
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
+        let first_job_id: Uuid = tx
+            .query_one(
+                "SELECT id
+                 FROM import.import_jobs
+                 WHERE bundle_id = $1 AND job_kind = 'file_ingest'
+                 ORDER BY created_at
+                 LIMIT 1",
+                &[&bundle.bundle_id],
+            )
+            .unwrap()
+            .get(0);
+        tx.execute(
+            "UPDATE import.import_jobs
+             SET status = 'succeeded',
+                 stage = 'done'
+             WHERE id = $1",
+            &[&first_job_id],
+        )
+        .unwrap();
+
+        let summary = load_bundle_progress_summary(&mut tx, bundle.bundle_id).unwrap();
+
+        assert_eq!(summary.bundle_id, bundle.bundle_id);
+        assert_eq!(summary.status, BundleStatus::Queued);
+        assert_eq!(summary.total_files, 2);
+        assert_eq!(summary.completed_files, 1);
+        assert_eq!(bundle_progress_percent_from_summary(&summary), 50);
+
+        tx.rollback().unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn load_file_job_status_reads_one_bundle_file_without_full_snapshot() {
+        let _guard = db_test_guard();
+        let mut client = Client::connect(&db_url(), NoTls).unwrap();
+        apply_all_migrations(&mut client);
+        reset_ingest_runtime_tables(&mut client);
+        let mut tx = client.transaction().unwrap();
+        let (organization_id, user_id, player_profile_id) = seed_actor_shell(&mut tx);
+
+        let bundle = enqueue_bundle(
+            &mut tx,
+            &IngestBundleInput {
+                organization_id,
+                player_profile_id,
+                created_by_user_id: user_id,
+                files: vec![IngestFileInput {
+                    room: "gg".to_string(),
+                    file_kind: FileKind::HandHistory,
+                    sha256: "e".repeat(64),
+                    original_filename: "single.hh".to_string(),
+                    byte_size: 10,
+                    storage_uri: "local://single.hh".to_string(),
+                    members: vec![IngestMemberInput {
+                        member_path: "single.hh".to_string(),
+                        member_kind: FileKind::HandHistory,
+                        sha256: "f".repeat(64),
+                        byte_size: 10,
+                        depends_on_member_index: None,
+                    }],
+                    diagnostics: vec![],
+                }],
+            },
+        )
+        .unwrap();
+
+        let bundle_file_id: Uuid = tx
+            .query_one(
+                "SELECT id
+                 FROM import.ingest_bundle_files
+                 WHERE bundle_id = $1
+                 LIMIT 1",
+                &[&bundle.bundle_id],
+            )
+            .unwrap()
+            .get(0);
+        let job_id: Uuid = tx
+            .query_one(
+                "SELECT id
+                 FROM import.import_jobs
+                 WHERE bundle_file_id = $1
+                 LIMIT 1",
+                &[&bundle_file_id],
+            )
+            .unwrap()
+            .get(0);
+        tx.execute(
+            "UPDATE import.import_jobs
+             SET status = 'running',
+                 stage = 'parse'
+             WHERE id = $1",
+            &[&job_id],
+        )
+        .unwrap();
+
+        let source_file_id: Uuid = tx
+            .query_one(
+                "SELECT source_file_id
+                 FROM import.ingest_bundle_files
+                 WHERE id = $1",
+                &[&bundle_file_id],
+            )
+            .unwrap()
+            .get(0);
+        let file_status = load_file_job_status(&mut tx, bundle.bundle_id, bundle_file_id).unwrap();
+
+        assert_eq!(file_status.bundle_file_id, bundle_file_id);
+        assert_eq!(file_status.source_file_id, source_file_id);
+        assert_eq!(file_status.status, FileJobStatus::Running);
+        assert_eq!(file_status.member_path, "single.hh");
+        assert_eq!(
+            file_stage_label(file_status.status, &file_status.stage),
+            "Парсинг раздач"
+        );
+        assert_eq!(
+            file_progress_percent(file_status.status, &file_status.stage),
+            72
+        );
+
+        tx.rollback().unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires CHECK_MATE_DATABASE_URL and local PostgreSQL"]
+    fn emit_bundle_event_uses_count_based_progress_payload() {
+        let _guard = db_test_guard();
+        let mut client = Client::connect(&db_url(), NoTls).unwrap();
+        apply_all_migrations(&mut client);
+        reset_ingest_runtime_tables(&mut client);
+        let mut tx = client.transaction().unwrap();
+        let (organization_id, user_id, player_profile_id) = seed_actor_shell(&mut tx);
+
+        let bundle = enqueue_bundle(
+            &mut tx,
+            &IngestBundleInput {
+                organization_id,
+                player_profile_id,
+                created_by_user_id: user_id,
+                files: vec![IngestFileInput {
+                    room: "gg".to_string(),
+                    file_kind: FileKind::HandHistory,
+                    sha256: "g".repeat(64),
+                    original_filename: "queued.hh".to_string(),
+                    byte_size: 10,
+                    storage_uri: "local://queued.hh".to_string(),
+                    members: vec![IngestMemberInput {
+                        member_path: "queued.hh".to_string(),
+                        member_kind: FileKind::HandHistory,
+                        sha256: "h".repeat(64),
+                        byte_size: 10,
+                        depends_on_member_index: None,
+                    }],
+                    diagnostics: vec![],
+                }],
+            },
+        )
+        .unwrap();
+
+        emit_bundle_event(
+            &mut tx,
+            bundle.bundle_id,
+            "bundle_updated",
+            "bundle telemetry check",
+        )
+        .unwrap();
+
+        let event = load_bundle_events_since(&mut tx, bundle.bundle_id, None)
+            .unwrap()
+            .into_iter()
+            .find(|event| event.event_kind == "bundle_updated")
+            .expect("bundle_updated event must exist");
+
+        assert_eq!(
+            event
+                .payload
+                .get("progress_percent")
+                .and_then(JsonValue::as_i64),
+            Some(0)
+        );
+        assert_eq!(
+            event.payload.get("total_files").and_then(JsonValue::as_i64),
+            Some(1)
+        );
+        assert_eq!(
+            event
+                .payload
+                .get("completed_files")
+                .and_then(JsonValue::as_i64),
+            Some(0)
+        );
+
+        tx.rollback().unwrap();
     }
 }

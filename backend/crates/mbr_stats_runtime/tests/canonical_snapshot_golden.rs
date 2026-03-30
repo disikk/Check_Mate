@@ -10,16 +10,22 @@
 //!   2. Review the diff in the golden JSON file
 //!   3. Commit the updated golden alongside the code change
 
-use std::collections::BTreeMap;
-use std::env;
-use std::fs;
-use std::path::PathBuf;
+use std::{
+    collections::BTreeMap,
+    env, fs,
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
+};
 
 use mbr_stats_runtime::CANONICAL_STAT_KEYS;
 use mbr_stats_runtime::models::{
     CanonicalStatNumericValue, CanonicalStatPoint, CanonicalStatState, SeedStatsFilters,
 };
 use mbr_stats_runtime::queries::query_canonical_stats;
+use parser_worker::local_import::run_ingest_runner_until_idle;
+use postgres::{Client, NoTls};
+use tracker_ingest_runtime::{FileKind, IngestBundleInput, IngestFileInput, enqueue_bundle};
+use uuid::Uuid;
 
 /// Serializable representation of a single stat point for golden comparison.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -67,29 +73,245 @@ fn golden_path() -> PathBuf {
         .join("canonical_snapshot_committed_pack.json")
 }
 
-fn connect_test_db() -> Option<postgres::Client> {
-    let url = env::var("CHECK_MATE_DATABASE_URL").ok()?;
-    postgres::Client::connect(&url, postgres::NoTls).ok()
+fn backend_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("backend root must exist")
+        .to_path_buf()
 }
 
-fn resolve_dev_ids(client: &mut postgres::Client) -> Option<(uuid::Uuid, uuid::Uuid)> {
-    let row = client
-        .query_opt(
-            "SELECT pp.organization_id, pp.id
-             FROM core.player_profiles pp
-             WHERE pp.room = 'gg' AND pp.screen_name = 'Hero'
-             LIMIT 1",
-            &[],
+fn migrations_dir() -> PathBuf {
+    backend_root().join("migrations")
+}
+
+fn seed_path() -> PathBuf {
+    backend_root().join("seeds").join("0001_reference_data.sql")
+}
+
+fn fixture_path(relative: &str) -> PathBuf {
+    backend_root().join(relative)
+}
+
+fn db_url() -> String {
+    env::var("CHECK_MATE_DATABASE_URL")
+        .expect("CHECK_MATE_DATABASE_URL must exist for mbr_stats_runtime DB tests")
+}
+
+fn db_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn connect_test_db() -> Option<Client> {
+    Client::connect(&db_url(), NoTls).ok()
+}
+
+fn apply_all_migrations(client: &mut Client) {
+    let mut paths = fs::read_dir(migrations_dir())
+        .expect("migrations dir must exist")
+        .map(|entry| entry.expect("entry must load").path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("sql"))
+        .collect::<Vec<_>>();
+    paths.sort();
+
+    for path in paths {
+        let sql = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read migration {}: {error}", path.display()));
+        client
+            .batch_execute(&sql)
+            .unwrap_or_else(|error| panic!("failed to apply {}: {error}", path.display()));
+    }
+
+    let seed_sql = fs::read_to_string(seed_path()).expect("reference seed must exist");
+    client
+        .batch_execute(&seed_sql)
+        .expect("reference seed must apply");
+}
+
+fn seed_actor_shell(
+    client: &mut impl postgres::GenericClient,
+    timezone_name: &str,
+) -> (Uuid, Uuid, Uuid) {
+    let organization_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4();
+    let player_profile_id = Uuid::new_v4();
+
+    client
+        .execute(
+            "INSERT INTO org.organizations (id, name) VALUES ($1, $2)",
+            &[&organization_id, &format!("golden-org-{organization_id}")],
         )
-        .ok()??;
-    Some((row.get(0), row.get(1)))
+        .unwrap();
+    client
+        .execute(
+            "INSERT INTO auth.users (id, email, auth_provider, status, timezone_name)
+             VALUES ($1, $2, 'seed', 'active', $3)",
+            &[&user_id, &format!("{user_id}@example.com"), &timezone_name],
+        )
+        .unwrap();
+    client
+        .execute(
+            "INSERT INTO org.organization_memberships (organization_id, user_id, role)
+             VALUES ($1, $2, 'student')",
+            &[&organization_id, &user_id],
+        )
+        .unwrap();
+    client
+        .execute(
+            "INSERT INTO core.player_profiles (id, organization_id, owner_user_id, room, network, screen_name)
+             VALUES ($1, $2, $3, 'gg', 'gg', 'Hero')",
+            &[&player_profile_id, &organization_id, &user_id],
+        )
+        .unwrap();
+    client
+        .execute(
+            "INSERT INTO core.player_aliases (
+                organization_id,
+                player_profile_id,
+                room,
+                alias,
+                is_primary,
+                source
+             )
+             VALUES ($1, $2, 'gg', 'Hero', TRUE, 'golden_test')",
+            &[&organization_id, &player_profile_id],
+        )
+        .unwrap();
+
+    (organization_id, user_id, player_profile_id)
+}
+
+fn build_flat_ingest_file_input(path: &Path) -> IngestFileInput {
+    let input = fs::read_to_string(path)
+        .unwrap_or_else(|error| panic!("failed to read fixture {}: {error}", path.display()));
+    let original_filename = path.file_name().unwrap().to_string_lossy().to_string();
+    let file_kind = if original_filename.contains("Tournament #") {
+        FileKind::TournamentSummary
+    } else {
+        FileKind::HandHistory
+    };
+
+    IngestFileInput {
+        room: "gg".to_string(),
+        file_kind,
+        sha256: Uuid::new_v4().simple().to_string().repeat(2),
+        original_filename,
+        byte_size: input.len() as i64,
+        storage_uri: format!("local://{}", path.display()),
+        members: vec![],
+        diagnostics: vec![],
+    }
+}
+
+fn committed_pack_fixture_paths() -> Vec<PathBuf> {
+    const FULL_PACK_FIXTURE_PAIRS: &[(&str, &str)] = &[
+        (
+            "GG20260316 - Tournament #271767530 - Mystery Battle Royale 25.txt",
+            "GG20260316-0307 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271767841 - Mystery Battle Royale 25.txt",
+            "GG20260316-0312 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271768265 - Mystery Battle Royale 25.txt",
+            "GG20260316-0316 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271768505 - Mystery Battle Royale 25.txt",
+            "GG20260316-0319 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271768917 - Mystery Battle Royale 25.txt",
+            "GG20260316-0323 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271769484 - Mystery Battle Royale 25.txt",
+            "GG20260316-0338 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271769772 - Mystery Battle Royale 25.txt",
+            "GG20260316-0342 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271770266 - Mystery Battle Royale 25.txt",
+            "GG20260316-0344 - Mystery Battle Royale 25.txt",
+        ),
+        (
+            "GG20260316 - Tournament #271771269 - Mystery Battle Royale 25.txt",
+            "GG20260316-0351 - Mystery Battle Royale 25.txt",
+        ),
+    ];
+
+    let mut paths = Vec::with_capacity(FULL_PACK_FIXTURE_PAIRS.len() * 2);
+    for (ts_fixture, hh_fixture) in FULL_PACK_FIXTURE_PAIRS {
+        paths.push(fixture_path(&format!("fixtures/mbr/ts/{ts_fixture}")));
+        paths.push(fixture_path(&format!("fixtures/mbr/hh/{hh_fixture}")));
+    }
+    paths
+}
+
+fn enqueue_fixture_bundle(
+    database_url: &str,
+    organization_id: Uuid,
+    user_id: Uuid,
+    player_profile_id: Uuid,
+    fixture_paths: &[PathBuf],
+) {
+    let mut client = Client::connect(database_url, NoTls).expect("database connection");
+    let mut tx = client.transaction().expect("bundle enqueue transaction");
+    enqueue_bundle(
+        &mut tx,
+        &IngestBundleInput {
+            organization_id,
+            player_profile_id,
+            created_by_user_id: user_id,
+            files: fixture_paths
+                .iter()
+                .map(|path| build_flat_ingest_file_input(path))
+                .collect(),
+        },
+    )
+    .expect("bundle enqueue");
+    tx.commit().expect("bundle enqueue commit");
+
+    let processed_jobs =
+        run_ingest_runner_until_idle(database_url, "canonical_snapshot_golden", 3).expect("runner");
+    assert!(processed_jobs > 0, "runner must process at least one job");
+}
+
+fn committed_pack_context() -> (Uuid, Uuid) {
+    static CONTEXT: OnceLock<(Uuid, Uuid)> = OnceLock::new();
+
+    *CONTEXT.get_or_init(|| {
+        let _guard = db_test_guard();
+        let database_url = db_url();
+        let mut client = Client::connect(&database_url, NoTls).expect("database connection");
+        apply_all_migrations(&mut client);
+        let (organization_id, user_id, player_profile_id) =
+            seed_actor_shell(&mut client, "Asia/Krasnoyarsk");
+        drop(client);
+
+        enqueue_fixture_bundle(
+            &database_url,
+            organization_id,
+            user_id,
+            player_profile_id,
+            &committed_pack_fixture_paths(),
+        );
+
+        (organization_id, player_profile_id)
+    })
 }
 
 #[test]
 #[ignore = "requires CHECK_MATE_DATABASE_URL with committed fixtures imported"]
 fn golden_canonical_snapshot_matches_committed_pack() {
+    let (org_id, player_id) = committed_pack_context();
     let mut client = connect_test_db().expect("database connection");
-    let (org_id, player_id) = resolve_dev_ids(&mut client).expect("dev player context");
 
     let snapshot = query_canonical_stats(
         &mut client,
@@ -193,8 +415,8 @@ fn golden_canonical_snapshot_matches_committed_pack() {
 #[test]
 #[ignore = "requires CHECK_MATE_DATABASE_URL with committed fixtures imported"]
 fn golden_snapshot_has_no_blocked_or_missing_keys() {
+    let (org_id, player_id) = committed_pack_context();
     let mut client = connect_test_db().expect("database connection");
-    let (org_id, player_id) = resolve_dev_ids(&mut client).expect("dev player context");
 
     let snapshot = query_canonical_stats(
         &mut client,

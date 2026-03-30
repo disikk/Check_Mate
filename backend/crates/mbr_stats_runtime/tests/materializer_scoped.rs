@@ -188,8 +188,10 @@ fn load_bundle_tournament_stats(
         .query_one(
             "SELECT h.tournament_id, COUNT(DISTINCT h.id)::bigint
              FROM import.import_jobs jobs
+             INNER JOIN import.file_fragments ff
+               ON ff.source_file_member_id = jobs.source_file_member_id
              INNER JOIN core.hands h
-               ON h.source_file_id = jobs.source_file_id
+               ON h.raw_fragment_id = ff.id
              WHERE jobs.bundle_id = $1
                AND jobs.job_kind = 'file_ingest'
                AND h.player_profile_id = $2

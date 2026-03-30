@@ -121,6 +121,31 @@ fn prepares_zip_archive_members_into_pairs() {
 }
 
 #[test]
+fn prepares_nested_zip_archive_members_into_pairs() {
+    let dir = tempdir().unwrap();
+    let archive_path = dir.path().join("sample.zip");
+    let inner_zip = zip_bytes(&[
+        ("deep/one.ts.txt", TS_WINNER.as_bytes()),
+        ("deep/one.hh.txt", HH_FT.as_bytes()),
+    ]);
+    write_zip_bytes(&archive_path, &[("nested/inner.zip", inner_zip.as_slice())]);
+
+    let report = prepare_path(&archive_path).unwrap();
+
+    assert_eq!(report.scanned_files, 2);
+    assert_eq!(report.paired_tournaments.len(), 1);
+    assert!(report.rejected_tournaments.is_empty());
+    assert_eq!(
+        report.paired_tournaments[0].ts.member_path.as_deref(),
+        Some("nested/inner.zip!/deep/one.ts.txt")
+    );
+    assert_eq!(
+        report.paired_tournaments[0].hh.member_path.as_deref(),
+        Some("nested/inner.zip!/deep/one.hh.txt")
+    );
+}
+
+#[test]
 fn rejects_non_utf8_file_as_unsupported_instead_of_failing_scan() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("bad.hh.txt"), [0xff, 0xfe, b'\n']).unwrap();
@@ -138,6 +163,31 @@ fn rejects_non_utf8_file_as_unsupported_instead_of_failing_scan() {
 }
 
 #[test]
+fn rejects_nul_containing_header_file_as_unsupported_instead_of_echoing_raw_header() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("desktop.ini"),
+        b"[\0.\0S\0h\0e\0l\0l\0C\0l\0a\0s\0s\0I\0n\0f\0o\0]\0\n",
+    )
+    .unwrap();
+
+    let report = prepare_path(dir.path()).unwrap();
+
+    assert_eq!(report.scanned_files, 1);
+    assert!(report.paired_tournaments.is_empty());
+    assert_eq!(report.rejected_tournaments.len(), 1);
+    assert_eq!(
+        report.rejected_tournaments[0].reason_code,
+        RejectReasonCode::UnsupportedSource
+    );
+    assert!(
+        report.rejected_tournaments[0]
+            .reason_text
+            .contains("embedded NUL")
+    );
+}
+
+#[test]
 fn rejects_non_utf8_zip_member_as_unsupported_instead_of_failing_scan() {
     let dir = tempdir().unwrap();
     let archive_path = dir.path().join("bad.zip");
@@ -151,6 +201,31 @@ fn rejects_non_utf8_zip_member_as_unsupported_instead_of_failing_scan() {
     assert_eq!(report.scanned_files, 1);
     assert!(report.paired_tournaments.is_empty());
     assert_eq!(report.rejected_tournaments.len(), 1);
+    assert_eq!(
+        report.rejected_tournaments[0].reason_code,
+        RejectReasonCode::UnsupportedSource
+    );
+    assert!(report.rejected_tournaments[0].reason_text.contains("UTF-8"));
+}
+
+#[test]
+fn rejects_non_utf8_nested_zip_member_as_unsupported_instead_of_failing_scan() {
+    let dir = tempdir().unwrap();
+    let archive_path = dir.path().join("bad.zip");
+    let inner_zip = zip_bytes(&[("deep/bad.hh.txt", &[0xff, 0xfe, b'\n'])]);
+    write_zip_bytes(&archive_path, &[("nested/inner.zip", inner_zip.as_slice())]);
+
+    let report = prepare_path(&archive_path).unwrap();
+
+    assert_eq!(report.scanned_files, 1);
+    assert!(report.paired_tournaments.is_empty());
+    assert_eq!(report.rejected_tournaments.len(), 1);
+    assert_eq!(
+        report.rejected_tournaments[0].files[0]
+            .member_path
+            .as_deref(),
+        Some("nested/inner.zip!/deep/bad.hh.txt")
+    );
     assert_eq!(
         report.rejected_tournaments[0].reason_code,
         RejectReasonCode::UnsupportedSource
@@ -188,4 +263,18 @@ fn write_zip_bytes(path: &Path, members: &[(&str, &[u8])]) {
     }
 
     writer.finish().unwrap();
+}
+
+fn zip_bytes(members: &[(&str, &[u8])]) -> Vec<u8> {
+    let cursor = std::io::Cursor::new(Vec::new());
+    let mut writer = zip::ZipWriter::new(cursor);
+
+    for (member_path, contents) in members {
+        writer
+            .start_file((*member_path).to_string(), SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(contents).unwrap();
+    }
+
+    writer.finish().unwrap().into_inner()
 }

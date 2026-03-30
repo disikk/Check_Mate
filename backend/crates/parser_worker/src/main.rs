@@ -34,7 +34,7 @@ enum WorkerOutput {
         stage_profile: local_import::IngestStageProfile,
     },
     DirImport {
-        report: local_import::DirImportReport,
+        report: Box<local_import::DirImportReport>,
     },
     DirImportPrepare {
         report: PrepareReport,
@@ -90,7 +90,11 @@ fn run() -> Result<()> {
             player_profile_id,
             worker_count,
         } => WorkerOutput::DirImport {
-            report: local_import::dir_import_path(&path, player_profile_id, worker_count)?,
+            report: Box::new(local_import::dir_import_path(
+                &path,
+                player_profile_id,
+                worker_count,
+            )?),
         },
         WorkerCommand::DirImportPrepare { path } => WorkerOutput::DirImportPrepare {
             report: tracker_ingest_prepare::prepare_path(&path)?,
@@ -184,10 +188,10 @@ fn parse_import_local_args(args: &[String]) -> Result<WorkerCommand> {
 }
 
 fn parse_dir_import_args(args: &[String]) -> Result<WorkerCommand> {
-    if let [flag, path] = args {
-        if flag == "--prepare-only" {
-            return Ok(WorkerCommand::DirImportPrepare { path: path.clone() });
-        }
+    if let [flag, path] = args
+        && flag == "--prepare-only"
+    {
+        return Ok(WorkerCommand::DirImportPrepare { path: path.clone() });
     }
 
     let mut player_profile_id = None;
@@ -471,7 +475,9 @@ mod tests {
                 finalize_ms: 27,
             },
         };
-        let output = WorkerOutput::DirImport { report };
+        let output = WorkerOutput::DirImport {
+            report: Box::new(report),
+        };
 
         let value = serde_json::to_value(output).expect("worker output must serialize");
         assert_eq!(

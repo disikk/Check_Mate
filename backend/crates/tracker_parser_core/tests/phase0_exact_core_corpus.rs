@@ -120,24 +120,15 @@ fn normalizes_phase0_exact_core_edge_matrix_with_reason_coded_contracts() {
     assert!(settlement_issue_codes(dead_blind_with_ante).is_empty());
 
     let hu_preflop_illegal = normalized.get("BRLEGAL2").unwrap();
-    assert!(
-        invariant_issue_codes(hu_preflop_illegal)
-            .iter()
-            .any(|issue| *issue == "illegal_actor_order")
-    );
+    assert!(invariant_issue_codes(hu_preflop_illegal).contains(&"illegal_actor_order"));
 
     let hu_postflop_illegal = normalized.get("BRLEGAL3").unwrap();
-    assert!(
-        invariant_issue_codes(hu_postflop_illegal)
-            .iter()
-            .any(|issue| *issue == "illegal_actor_order")
-    );
+    assert!(invariant_issue_codes(hu_postflop_illegal).contains(&"illegal_actor_order"));
 
     let short_all_in_non_reopen = normalized.get("BRLEGAL4").unwrap();
     assert!(
         invariant_issue_codes(short_all_in_non_reopen)
-            .iter()
-            .any(|issue| *issue == "action_not_reopened_after_short_all_in")
+            .contains(&"action_not_reopened_after_short_all_in")
     );
 
     let sidepot_ko = normalized.get("BRSIDE1").unwrap();
@@ -328,6 +319,18 @@ type ReturnContract = (&'static str, i64, &'static str);
 type FinalPotContract = (u8, i64, bool);
 type PotContributionContract = (u8, &'static str, i64);
 type PotEligibilityContract = (u8, &'static str);
+type MaterializedActionContract = (
+    usize,
+    Street,
+    Option<String>,
+    ActionType,
+    bool,
+    bool,
+    Option<AllInReason>,
+    bool,
+    Option<i64>,
+    Option<i64>,
+);
 
 struct EdgeParseContract {
     actions: Vec<ActionContract>,
@@ -2086,20 +2089,7 @@ fn expected_normalization_contracts() -> BTreeMap<&'static str, EdgeNormalizatio
     .collect()
 }
 
-fn action_contracts(
-    hand: &CanonicalParsedHand,
-) -> Vec<(
-    usize,
-    Street,
-    Option<String>,
-    ActionType,
-    bool,
-    bool,
-    Option<AllInReason>,
-    bool,
-    Option<i64>,
-    Option<i64>,
-)> {
+fn action_contracts(hand: &CanonicalParsedHand) -> Vec<MaterializedActionContract> {
     hand.actions
         .iter()
         .map(|event| {
@@ -2563,20 +2553,7 @@ fn pot_settlement_issue_code(issue: &PotSettlementIssue) -> &'static str {
     }
 }
 
-fn materialize_action_contracts(
-    contracts: &[ActionContract],
-) -> Vec<(
-    usize,
-    Street,
-    Option<String>,
-    ActionType,
-    bool,
-    bool,
-    Option<AllInReason>,
-    bool,
-    Option<i64>,
-    Option<i64>,
-)> {
+fn materialize_action_contracts(contracts: &[ActionContract]) -> Vec<MaterializedActionContract> {
     contracts
         .iter()
         .map(
@@ -2650,7 +2627,7 @@ fn materialize_str_contract(contracts: &[&'static str]) -> Vec<String> {
         .collect()
 }
 
-fn action_raw_line<'a>(parsed_hand: &'a CanonicalParsedHand, seq: usize) -> &'a str {
+fn action_raw_line(parsed_hand: &CanonicalParsedHand, seq: usize) -> &str {
     parsed_hand
         .actions
         .iter()

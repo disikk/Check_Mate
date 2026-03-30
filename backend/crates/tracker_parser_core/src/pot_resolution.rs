@@ -9,7 +9,7 @@ use crate::{
         SettlementCollectEvent, SettlementIssue, SettlementPot, SettlementShare,
         SettlementShowHand, SettlementSummaryOutcome, SummarySeatOutcomeKind,
     },
-    street_strength::evaluate_street_hand_strength,
+    street_strength::evaluate_river_showdown_ranks,
 };
 
 #[derive(Debug, Clone)]
@@ -638,38 +638,7 @@ fn pot_contenders(hand: &CanonicalParsedHand, eligible_players: &[String]) -> Ve
 }
 
 fn showdown_rank_map(hand: &CanonicalParsedHand) -> Result<BTreeMap<String, i64>, ParserError> {
-    let mut settlement_hand = hand.clone();
-    for outcome in &hand.summary_seat_outcomes {
-        let summary_shows_cards = matches!(
-            outcome.outcome_kind,
-            SummarySeatOutcomeKind::ShowedWon | SummarySeatOutcomeKind::ShowedLost
-        );
-        if summary_shows_cards
-            && let Some(cards) = &outcome.shown_cards
-            && cards.len() == 2
-        {
-            settlement_hand
-                .showdown_hands
-                .entry(outcome.player_name.clone())
-                .or_insert_with(|| cards.clone());
-        }
-    }
-
-    let player_by_seat = hand
-        .seats
-        .iter()
-        .map(|seat| (seat.seat_no, seat.player_name.clone()))
-        .collect::<BTreeMap<_, _>>();
-
-    Ok(evaluate_street_hand_strength(&settlement_hand)?
-        .into_iter()
-        .filter(|row| row.street == crate::models::Street::River)
-        .filter_map(|row| {
-            player_by_seat
-                .get(&row.seat_no)
-                .map(|player| (player.clone(), row.best_hand_rank_value))
-        })
-        .collect())
+    evaluate_river_showdown_ranks(hand)
 }
 
 fn search_settlement_combinations(
@@ -757,6 +726,75 @@ fn combinations_recursive(
         current.push(items[index].clone());
         combinations_recursive(items, k, index + 1, current, result);
         current.pop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        parsers::hand_history::parse_canonical_hand, street_strength::evaluate_river_showdown_ranks,
+    };
+
+    #[test]
+    fn showdown_rank_map_uses_river_showdown_kernel_and_keeps_summary_reveal_semantics() {
+        let hand = parse_canonical_hand(&showdown_hand_with_summary_reveal()).unwrap();
+
+        let actual = showdown_rank_map(&hand).unwrap();
+        let expected = evaluate_river_showdown_ranks(&hand).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn showdown_hand_with_summary_reveal() -> String {
+        let flop = ["Kd", "7h", "2h"];
+        let turn = Some("4c");
+        let river = Some("3s");
+        let turn_line = turn
+            .map(|card| {
+                format!(
+                    "*** TURN *** [{} {} {}] [{}]\nVillain: checks\nHero: checks\n",
+                    flop[0], flop[1], flop[2], card
+                )
+            })
+            .unwrap_or_default();
+        let board_after_turn = turn
+            .map(|card| format!("{} {} {} {}", flop[0], flop[1], flop[2], card))
+            .unwrap_or_else(|| format!("{} {} {}", flop[0], flop[1], flop[2]));
+        let river_line = river
+            .map(|card| format!("*** RIVER *** [{board_after_turn}] [{card}]\n"))
+            .unwrap_or_default();
+
+        format!(
+            "Poker Hand #BRSTRPARTIALSUMMARY: Tournament #999001, Mystery Battle Royale $25 Hold'em No Limit - Level1(50/100(0)) - 2026/03/16 12:00:00\n\
+Table '1' 9-max Seat #1 is the button\n\
+Seat 1: Villain (1,000 in chips)\n\
+Seat 2: Hero (1,000 in chips)\n\
+Villain: posts small blind 50\n\
+Hero: posts big blind 100\n\
+*** HOLE CARDS ***\n\
+Dealt to Hero [Ah Kh]\n\
+Villain: calls 50\n\
+Hero: checks\n\
+*** FLOP *** [{flop0} {flop1} {flop2}]\n\
+Villain: checks\n\
+Hero: checks\n\
+{turn_line}\
+{river_line}\
+*** SHOWDOWN ***\n\
+Villain: shows [Qc]\n\
+Hero: shows [Ah Kh]\n\
+Hero collected 200 from pot\n\
+*** SUMMARY ***\n\
+Total pot 200 | Rake 0 | Jackpot 0 | Bingo 0 | Fortune 0 | Tax 0\n\
+Board [Kd 7h 2h 4c 3s]\n\
+Seat 1: Villain (small blind) showed [Qc Qd] and lost with a pair of Queens\n\
+Seat 2: Hero (big blind) showed [Ah Kh] and collected (200) with a pair of Kings",
+            flop0 = flop[0],
+            flop1 = flop[1],
+            flop2 = flop[2],
+        )
     }
 }
 
