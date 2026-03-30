@@ -12,7 +12,7 @@ use mbr_stats_runtime::{
     GG_MBR_FT_MAX_PLAYERS, load_bundle_tournament_ids, materialize_player_hand_features,
     materialize_player_hand_features_for_tournaments,
 };
-use postgres::{Client, NoTls, Transaction};
+use postgres::{Client, NoTls, Transaction, binary_copy::BinaryCopyInWriter, types::Type};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracker_ingest_prepare::{
@@ -2274,9 +2274,13 @@ fn persist_prepared_hand_history_registered(
     bulk_delete_hand_children(tx, source_file_id, &updated_fragment_ids, &updated_hand_ids)?;
     let delete_ms = t_delete.elapsed().as_millis() as u64;
 
+    // Nested transaction (savepoint) to access COPY FROM STDIN protocol,
+    // which requires Transaction<'_> (not available on GenericClient trait).
+    let mut copy_tx = tx.transaction()?;
+
     let t_canonical = Instant::now();
     bulk_insert_canonical_hand_rows(
-        tx,
+        &mut copy_tx,
         context,
         source_file_id,
         &hand_ids,
@@ -2286,20 +2290,27 @@ fn persist_prepared_hand_history_registered(
     let canonical_ms = t_canonical.elapsed().as_millis() as u64;
 
     let t_normalized = Instant::now();
-    bulk_insert_normalized_hand_rows(tx, &hand_ids, &prepared.hand_local_outputs)?;
+    bulk_insert_normalized_hand_rows(&mut copy_tx, &hand_ids, &prepared.hand_local_outputs)?;
     let normalized_ms = t_normalized.elapsed().as_millis() as u64;
 
     let t_derived = Instant::now();
     bulk_insert_hand_ko_event_rows(
-        tx,
+        &mut copy_tx,
         context.player_profile_id,
         &hand_ids,
         &prepared.hand_local_outputs,
     )?;
-    bulk_insert_preflop_starting_hand_rows(tx, &hand_ids, &prepared.hand_local_outputs)?;
-    bulk_insert_street_hand_strength_rows(tx, &hand_ids, &prepared.hand_local_outputs)?;
-    bulk_upsert_mbr_stage_resolution_rows(tx, &hand_ids, &prepared.ordered_stage_resolutions)?;
+    bulk_insert_preflop_starting_hand_rows(&mut copy_tx, &hand_ids, &prepared.hand_local_outputs)?;
+    bulk_insert_street_hand_strength_rows(&mut copy_tx, &hand_ids, &prepared.hand_local_outputs)?;
+    // mbr_stage_resolution uses UPSERT (ON CONFLICT), stays on batched INSERT
+    bulk_upsert_mbr_stage_resolution_rows(
+        &mut copy_tx,
+        &hand_ids,
+        &prepared.ordered_stage_resolutions,
+    )?;
     let derived_ms = t_derived.elapsed().as_millis() as u64;
+
+    copy_tx.commit()?;
 
     // tournament_hand_order + FT helper deferred to bundle_finalize to avoid
     // row lock contention when multiple workers process files from the same tournament.
@@ -2926,6 +2937,28 @@ fn persist_preflop_starting_hands(
 
 const PERSIST_BATCH_INSERT_CHUNK_SIZE: usize = 256;
 
+/// Write rows to a PostgreSQL table using binary COPY FROM STDIN protocol.
+/// Callback-based API avoids boxing per-row values. Skips COPY if write_fn
+/// writes zero rows. Returns the number of rows written.
+fn copy_in_binary<F>(
+    tx: &mut Transaction<'_>,
+    table_name: &str,
+    columns: &[&str],
+    types: &[Type],
+    write_fn: F,
+) -> Result<u64>
+where
+    F: FnOnce(&mut BinaryCopyInWriter<'_>) -> Result<()>,
+{
+    let col_list = columns.join(", ");
+    let copy_stmt = format!("COPY {table_name} ({col_list}) FROM STDIN (FORMAT binary)");
+    let writer = tx.copy_in(&copy_stmt)?;
+    let mut binary_writer = BinaryCopyInWriter::new(writer, types);
+    write_fn(&mut binary_writer)?;
+    let count = binary_writer.finish()?;
+    Ok(count)
+}
+
 fn execute_batched_insert(
     tx: &mut impl postgres::GenericClient,
     insert_prefix: &str,
@@ -3015,7 +3048,7 @@ fn build_batched_values_clause(row_count: usize, column_patterns: &[&str]) -> St
 }
 
 fn bulk_insert_canonical_hand_rows(
-    tx: &mut impl postgres::GenericClient,
+    tx: &mut Transaction<'_>,
     context: &ImportContext,
     source_file_id: Uuid,
     hand_ids: &[Uuid],
@@ -3025,318 +3058,338 @@ fn bulk_insert_canonical_hand_rows(
     debug_assert_eq!(hand_ids.len(), outputs.len());
     debug_assert_eq!(fragment_ids.len(), outputs.len());
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_seats (        hand_id,        seat_no,        player_name,        player_profile_id,        starting_stack,        is_hero,        is_button,        is_sitting_out    )";
-        let mut buffered_rows: Vec<(Uuid, Option<Uuid>, HandSeatRow)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE);
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for seat in &output.canonical_persistence.seats {
-                if buffered_rows.len() == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-                        Vec::with_capacity(buffered_rows.len() * COLUMN_PATTERNS.len());
-                    for (buffered_hand_id, mapped_profile_id, buffered_seat) in &buffered_rows {
-                        params.push(buffered_hand_id);
-                        params.push(&buffered_seat.seat_no);
-                        params.push(&buffered_seat.player_name);
-                        params.push(mapped_profile_id);
-                        params.push(&buffered_seat.starting_stack);
-                        params.push(&buffered_seat.is_hero);
-                        params.push(&buffered_seat.is_button);
-                        params.push(&buffered_seat.is_sitting_out);
-                    }
-                    execute_batched_insert(
-                        tx,
-                        INSERT_PREFIX,
-                        COLUMN_PATTERNS,
-                        buffered_rows.len(),
-                        &params,
-                    )?;
-                    buffered_rows.clear();
-                }
-                buffered_rows.push((
-                    *hand_id,
-                    context
+    // core.hand_seats — 8 columns, requires player_profile_id alias resolution
+    copy_in_binary(
+        tx,
+        "core.hand_seats",
+        &[
+            "hand_id",
+            "seat_no",
+            "player_name",
+            "player_profile_id",
+            "starting_stack",
+            "is_hero",
+            "is_button",
+            "is_sitting_out",
+        ],
+        &[
+            Type::UUID,
+            Type::INT4,
+            Type::TEXT,
+            Type::UUID,
+            Type::INT8,
+            Type::BOOL,
+            Type::BOOL,
+            Type::BOOL,
+        ],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for seat in &output.canonical_persistence.seats {
+                    let mapped_profile_id: Option<Uuid> = context
                         .player_aliases
                         .iter()
                         .any(|alias| alias == &seat.player_name)
-                        .then_some(context.player_profile_id),
-                    seat.clone(),
-                ));
-            }
-        }
-        if !buffered_rows.is_empty() {
-            let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-                Vec::with_capacity(buffered_rows.len() * COLUMN_PATTERNS.len());
-            for (buffered_hand_id, mapped_profile_id, buffered_seat) in &buffered_rows {
-                params.push(buffered_hand_id);
-                params.push(&buffered_seat.seat_no);
-                params.push(&buffered_seat.player_name);
-                params.push(mapped_profile_id);
-                params.push(&buffered_seat.starting_stack);
-                params.push(&buffered_seat.is_hero);
-                params.push(&buffered_seat.is_button);
-                params.push(&buffered_seat.is_sitting_out);
-            }
-            execute_batched_insert(
-                tx,
-                INSERT_PREFIX,
-                COLUMN_PATTERNS,
-                buffered_rows.len(),
-                &params,
-            )?;
-        }
-    }
-
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_positions (        hand_id,        seat_no,        position_index,        position_label,        preflop_act_order_index,        postflop_act_order_index    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.canonical_persistence.positions {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+                        .then_some(context.player_profile_id);
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &seat.seat_no,
+                        &seat.player_name,
+                        &mapped_profile_id,
+                        &seat.starting_stack,
+                        &seat.is_hero,
+                        &seat.is_button,
+                        &seat.is_sitting_out,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.seat_no);
-                params.push(&row.position_index);
-                params.push(&row.position_label);
-                params.push(&row.preflop_act_order_index);
-                params.push(&row.postflop_act_order_index);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_hole_cards (        hand_id,        seat_no,        card1,        card2,        known_to_hero,        known_at_showdown    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.canonical_persistence.hole_cards {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_positions — 6 columns
+    copy_in_binary(
+        tx,
+        "core.hand_positions",
+        &[
+            "hand_id",
+            "seat_no",
+            "position_index",
+            "position_label",
+            "preflop_act_order_index",
+            "postflop_act_order_index",
+        ],
+        &[
+            Type::UUID,
+            Type::INT4,
+            Type::INT4,
+            Type::TEXT,
+            Type::INT4,
+            Type::INT4,
+        ],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.canonical_persistence.positions {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.seat_no,
+                        &row.position_index,
+                        &row.position_label,
+                        &row.preflop_act_order_index,
+                        &row.postflop_act_order_index,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.seat_no);
-                params.push(&row.card1);
-                params.push(&row.card2);
-                params.push(&row.known_to_hero);
-                params.push(&row.known_at_showdown);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &[
-            "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}",
-        ];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_actions (        hand_id,        sequence_no,        street,        seat_no,        action_type,        raw_amount,        to_amount,        is_all_in,        all_in_reason,        forced_all_in_preflop,        references_previous_bet,        raw_line    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.canonical_persistence.actions {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_hole_cards — 6 columns
+    copy_in_binary(
+        tx,
+        "core.hand_hole_cards",
+        &[
+            "hand_id",
+            "seat_no",
+            "card1",
+            "card2",
+            "known_to_hero",
+            "known_at_showdown",
+        ],
+        &[
+            Type::UUID,
+            Type::INT4,
+            Type::TEXT,
+            Type::TEXT,
+            Type::BOOL,
+            Type::BOOL,
+        ],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.canonical_persistence.hole_cards {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.seat_no,
+                        &row.card1,
+                        &row.card2,
+                        &row.known_to_hero,
+                        &row.known_at_showdown,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.sequence_no);
-                params.push(&row.street);
-                params.push(&row.seat_no);
-                params.push(&row.action_type);
-                params.push(&row.raw_amount);
-                params.push(&row.to_amount);
-                params.push(&row.is_all_in);
-                params.push(&row.all_in_reason);
-                params.push(&row.forced_all_in_preflop);
-                params.push(&row.references_previous_bet);
-                params.push(&row.raw_line);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_boards (        hand_id,        flop1,        flop2,        flop3,        turn,        river    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            if let Some(board) = &output.canonical_persistence.board {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_actions — 12 columns, largest child table (~15-30 rows/hand)
+    copy_in_binary(
+        tx,
+        "core.hand_actions",
+        &[
+            "hand_id",
+            "sequence_no",
+            "street",
+            "seat_no",
+            "action_type",
+            "raw_amount",
+            "to_amount",
+            "is_all_in",
+            "all_in_reason",
+            "forced_all_in_preflop",
+            "references_previous_bet",
+            "raw_line",
+        ],
+        &[
+            Type::UUID,
+            Type::INT4,
+            Type::TEXT,
+            Type::INT4,
+            Type::TEXT,
+            Type::INT8,
+            Type::INT8,
+            Type::BOOL,
+            Type::TEXT,
+            Type::BOOL,
+            Type::BOOL,
+            Type::TEXT,
+        ],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.canonical_persistence.actions {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.sequence_no,
+                        &row.street,
+                        &row.seat_no,
+                        &row.action_type,
+                        &row.raw_amount,
+                        &row.to_amount,
+                        &row.is_all_in,
+                        &row.all_in_reason,
+                        &row.forced_all_in_preflop,
+                        &row.references_previous_bet,
+                        &row.raw_line,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&board.flop1);
-                params.push(&board.flop2);
-                params.push(&board.flop3);
-                params.push(&board.turn);
-                params.push(&board.river);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_showdowns (        hand_id,        seat_no,        shown_cards    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.canonical_persistence.showdowns {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_boards — 6 columns, optional (only hands that reach flop+)
+    copy_in_binary(
+        tx,
+        "core.hand_boards",
+        &["hand_id", "flop1", "flop2", "flop3", "turn", "river"],
+        &[
+            Type::UUID,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT,
+        ],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                if let Some(board) = &output.canonical_persistence.board {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &board.flop1,
+                        &board.flop2,
+                        &board.flop3,
+                        &board.turn,
+                        &board.river,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.seat_no);
-                params.push(&row.shown_cards);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] =
-            &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_summary_results (        hand_id,        seat_no,        player_name,        position_marker,        outcome_kind,        folded_street,        shown_cards,        won_amount,        hand_class,        raw_line    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.canonical_persistence.summary_seat_outcomes {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_showdowns — 3 columns
+    copy_in_binary(
+        tx,
+        "core.hand_showdowns",
+        &["hand_id", "seat_no", "shown_cards"],
+        &[Type::UUID, Type::INT4, Type::TEXT_ARRAY],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.canonical_persistence.showdowns {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.seat_no,
+                        &row.shown_cards,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.seat_no);
-                params.push(&row.player_name);
-                params.push(&row.position_marker);
-                params.push(&row.outcome_kind);
-                params.push(&row.folded_street);
-                params.push(&row.shown_cards);
-                params.push(&row.won_amount);
-                params.push(&row.hand_class);
-                params.push(&row.raw_line);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.parse_issues (        source_file_id,        fragment_id,        hand_id,        severity,        code,        message,        raw_line,        payload    )";
-        let mut buffered_rows: Vec<(Uuid, Uuid, Uuid, ParseIssueRow, serde_json::Value)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE);
-        for ((hand_id, fragment_id), output) in
-            hand_ids.iter().zip(fragment_ids.iter()).zip(outputs.iter())
-        {
-            for row in &output.canonical_persistence.parse_issues {
-                if buffered_rows.len() == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-                        Vec::with_capacity(buffered_rows.len() * COLUMN_PATTERNS.len());
-                    for (
-                        buffered_source_file_id,
-                        buffered_fragment_id,
-                        buffered_hand_id,
-                        buffered_issue,
-                        payload_json,
-                    ) in &buffered_rows
-                    {
-                        params.push(buffered_source_file_id);
-                        params.push(buffered_fragment_id);
-                        params.push(buffered_hand_id);
-                        params.push(&buffered_issue.severity);
-                        params.push(&buffered_issue.code);
-                        params.push(&buffered_issue.message);
-                        params.push(&buffered_issue.raw_line);
-                        params.push(payload_json);
-                    }
-                    execute_batched_insert(
-                        tx,
-                        INSERT_PREFIX,
-                        COLUMN_PATTERNS,
-                        buffered_rows.len(),
-                        &params,
-                    )?;
-                    buffered_rows.clear();
+    // core.hand_summary_results — 10 columns
+    copy_in_binary(
+        tx,
+        "core.hand_summary_results",
+        &[
+            "hand_id",
+            "seat_no",
+            "player_name",
+            "position_marker",
+            "outcome_kind",
+            "folded_street",
+            "shown_cards",
+            "won_amount",
+            "hand_class",
+            "raw_line",
+        ],
+        &[
+            Type::UUID,
+            Type::INT4,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT_ARRAY,
+            Type::INT8,
+            Type::TEXT,
+            Type::TEXT,
+        ],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.canonical_persistence.summary_seat_outcomes {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.seat_no,
+                        &row.player_name,
+                        &row.position_marker,
+                        &row.outcome_kind,
+                        &row.folded_street,
+                        &row.shown_cards,
+                        &row.won_amount,
+                        &row.hand_class,
+                        &row.raw_line,
+                    ])?;
                 }
-                buffered_rows.push((
-                    source_file_id,
-                    *fragment_id,
-                    *hand_id,
-                    row.clone(),
-                    row.payload.clone(),
-                ));
             }
-        }
-        if !buffered_rows.is_empty() {
-            let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-                Vec::with_capacity(buffered_rows.len() * COLUMN_PATTERNS.len());
-            for (
-                buffered_source_file_id,
-                buffered_fragment_id,
-                buffered_hand_id,
-                buffered_issue,
-                payload_json,
-            ) in &buffered_rows
+            Ok(())
+        },
+    )?;
+
+    // core.parse_issues — 8 columns, payload is JSONB
+    copy_in_binary(
+        tx,
+        "core.parse_issues",
+        &[
+            "source_file_id",
+            "fragment_id",
+            "hand_id",
+            "severity",
+            "code",
+            "message",
+            "raw_line",
+            "payload",
+        ],
+        &[
+            Type::UUID,
+            Type::UUID,
+            Type::UUID,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT,
+            Type::JSONB,
+        ],
+        |writer| {
+            for ((hand_id, fragment_id), output) in
+                hand_ids.iter().zip(fragment_ids.iter()).zip(outputs.iter())
             {
-                params.push(buffered_source_file_id);
-                params.push(buffered_fragment_id);
-                params.push(buffered_hand_id);
-                params.push(&buffered_issue.severity);
-                params.push(&buffered_issue.code);
-                params.push(&buffered_issue.message);
-                params.push(&buffered_issue.raw_line);
-                params.push(payload_json);
+                for row in &output.canonical_persistence.parse_issues {
+                    writer.write(&[
+                        &source_file_id as &(dyn postgres::types::ToSql + Sync),
+                        fragment_id,
+                        hand_id,
+                        &row.severity,
+                        &row.code,
+                        &row.message,
+                        &row.raw_line,
+                        &row.payload,
+                    ])?;
+                }
             }
-            execute_batched_insert(
-                tx,
-                INSERT_PREFIX,
-                COLUMN_PATTERNS,
-                buffered_rows.len(),
-                &params,
-            )?;
-        }
-    }
+            Ok(())
+        },
+    )?;
 
     Ok(())
 }
 
 fn bulk_insert_normalized_hand_rows(
-    tx: &mut impl postgres::GenericClient,
+    tx: &mut Transaction<'_>,
     hand_ids: &[Uuid],
     outputs: &[HandLocalComputeOutput],
 ) -> Result<()> {
     debug_assert_eq!(hand_ids.len(), outputs.len());
 
-    // Batched UPSERT for hand_state_resolutions (serde_json::Value binds as jsonb
-    // directly via postgres feature `with-serde_json-1`).
+    // hand_state_resolutions — UPSERT (ON CONFLICT), stays on batched INSERT
     {
         const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
         const INSERT_PREFIX: &str = "INSERT INTO derived.hand_state_resolutions (        hand_id,        resolution_version,        chip_conservation_ok,        pot_conservation_ok,        settlement_state,        rake_amount,        final_stacks,        settlement,        invariant_issues    )";
@@ -3421,357 +3474,382 @@ fn bulk_insert_normalized_hand_rows(
         }
     }
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_pots (        hand_id,        pot_no,        pot_type,        amount    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.normalized_persistence.pot_rows {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_pots — binary COPY
+    copy_in_binary(
+        tx,
+        "core.hand_pots",
+        &["hand_id", "pot_no", "pot_type", "amount"],
+        &[Type::UUID, Type::INT4, Type::TEXT, Type::INT8],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.normalized_persistence.pot_rows {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.pot_no,
+                        &row.pot_type,
+                        &row.amount,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.pot_no);
-                params.push(&row.pot_type);
-                params.push(&row.amount);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_pot_eligibility (        hand_id,        pot_no,        seat_no    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.normalized_persistence.eligibility_rows {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_pot_eligibility — binary COPY
+    copy_in_binary(
+        tx,
+        "core.hand_pot_eligibility",
+        &["hand_id", "pot_no", "seat_no"],
+        &[Type::UUID, Type::INT4, Type::INT4],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.normalized_persistence.eligibility_rows {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.pot_no,
+                        &row.seat_no,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.pot_no);
-                params.push(&row.seat_no);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_pot_contributions (        hand_id,        pot_no,        seat_no,        amount    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.normalized_persistence.contribution_rows {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_pot_contributions — binary COPY
+    copy_in_binary(
+        tx,
+        "core.hand_pot_contributions",
+        &["hand_id", "pot_no", "seat_no", "amount"],
+        &[Type::UUID, Type::INT4, Type::INT4, Type::INT8],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.normalized_persistence.contribution_rows {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.pot_no,
+                        &row.seat_no,
+                        &row.amount,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.pot_no);
-                params.push(&row.seat_no);
-                params.push(&row.amount);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_pot_winners (        hand_id,        pot_no,        seat_no,        share_amount    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.normalized_persistence.winner_rows {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_pot_winners — binary COPY
+    copy_in_binary(
+        tx,
+        "core.hand_pot_winners",
+        &["hand_id", "pot_no", "seat_no", "share_amount"],
+        &[Type::UUID, Type::INT4, Type::INT4, Type::INT8],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.normalized_persistence.winner_rows {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.pot_no,
+                        &row.seat_no,
+                        &row.share_amount,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.pot_no);
-                params.push(&row.seat_no);
-                params.push(&row.share_amount);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO core.hand_returns (        hand_id,        seat_no,        amount,        reason    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.normalized_persistence.return_rows {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // core.hand_returns — binary COPY
+    copy_in_binary(
+        tx,
+        "core.hand_returns",
+        &["hand_id", "seat_no", "amount", "reason"],
+        &[Type::UUID, Type::INT4, Type::INT8, Type::TEXT],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.normalized_persistence.return_rows {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.seat_no,
+                        &row.amount,
+                        &row.reason,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&row.seat_no);
-                params.push(&row.amount);
-                params.push(&row.reason);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-        for row in &output.normalized_persistence.elimination_rows {
-            let ko_share_fraction_by_winner_json =
-                serde_json::to_string(&row.ko_share_fraction_by_winner)?;
-            tx.execute(
-                "INSERT INTO derived.hand_eliminations (
-                    hand_id,
-                    eliminated_seat_no,
-                    eliminated_player_name,
-                    pots_participated_by_busted,
-                    pots_causing_bust,
-                    last_busting_pot_no,
-                    ko_winner_set,
-                    ko_share_fraction_by_winner,
-                    elimination_certainty_state,
-                    ko_certainty_state
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, ($8::text)::jsonb, $9, $10)",
-                &[
-                    hand_id,
+    // derived.hand_eliminations — binary COPY (was per-row INSERT loop!)
+    // ko_share_fraction_by_winner must be pre-serialized to serde_json::Value for JSONB COPY.
+    let elimination_jsons: Vec<(Uuid, &HandEliminationRow, serde_json::Value)> = hand_ids
+        .iter()
+        .zip(outputs.iter())
+        .flat_map(|(hand_id, output)| {
+            output
+                .normalized_persistence
+                .elimination_rows
+                .iter()
+                .map(move |row| {
+                    (
+                        *hand_id,
+                        row,
+                        serde_json::to_value(&row.ko_share_fraction_by_winner)
+                            .unwrap_or(serde_json::Value::Null),
+                    )
+                })
+        })
+        .collect();
+    copy_in_binary(
+        tx,
+        "derived.hand_eliminations",
+        &[
+            "hand_id",
+            "eliminated_seat_no",
+            "eliminated_player_name",
+            "pots_participated_by_busted",
+            "pots_causing_bust",
+            "last_busting_pot_no",
+            "ko_winner_set",
+            "ko_share_fraction_by_winner",
+            "elimination_certainty_state",
+            "ko_certainty_state",
+        ],
+        &[
+            Type::UUID,
+            Type::INT4,
+            Type::TEXT,
+            Type::INT4_ARRAY,
+            Type::INT4_ARRAY,
+            Type::INT4,
+            Type::TEXT_ARRAY,
+            Type::JSONB,
+            Type::TEXT,
+            Type::TEXT,
+        ],
+        |writer| {
+            for (hand_id, row, share_json) in &elimination_jsons {
+                writer.write(&[
+                    hand_id as &(dyn postgres::types::ToSql + Sync),
                     &row.eliminated_seat_no,
                     &row.eliminated_player_name,
                     &row.pots_participated_by_busted,
                     &row.pots_causing_bust,
                     &row.last_busting_pot_no,
                     &row.ko_winner_set,
-                    &ko_share_fraction_by_winner_json,
+                    share_json,
                     &row.elimination_certainty_state,
                     &row.ko_certainty_state,
-                ],
-            )?;
-        }
-    }
-
-    if false {
-        const COLUMN_PATTERNS: &[&str] =
-            &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO derived.hand_eliminations (        hand_id,        eliminated_seat_no,        eliminated_player_name,        pots_participated_by_busted,        pots_causing_bust,        last_busting_pot_no,        ko_winner_set,        ko_share_fraction_by_winner,        elimination_certainty_state,        ko_certainty_state    )";
-        let mut buffered_rows: Vec<(Uuid, HandEliminationRow, serde_json::Value)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE);
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.normalized_persistence.elimination_rows {
-                if buffered_rows.len() == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-                        Vec::with_capacity(buffered_rows.len() * COLUMN_PATTERNS.len());
-                    for (buffered_hand_id, elimination_row, share_json) in &buffered_rows {
-                        params.push(buffered_hand_id);
-                        params.push(&elimination_row.eliminated_seat_no);
-                        params.push(&elimination_row.eliminated_player_name);
-                        params.push(&elimination_row.pots_participated_by_busted);
-                        params.push(&elimination_row.pots_causing_bust);
-                        params.push(&elimination_row.last_busting_pot_no);
-                        params.push(&elimination_row.ko_winner_set);
-                        params.push(share_json);
-                        params.push(&elimination_row.elimination_certainty_state);
-                        params.push(&elimination_row.ko_certainty_state);
-                    }
-                    execute_batched_insert(
-                        tx,
-                        INSERT_PREFIX,
-                        COLUMN_PATTERNS,
-                        buffered_rows.len(),
-                        &params,
-                    )?;
-                    buffered_rows.clear();
-                }
-                buffered_rows.push((
-                    *hand_id,
-                    row.clone(),
-                    serde_json::to_value(&row.ko_share_fraction_by_winner)?,
-                ));
+                ])?;
             }
-        }
-        if !buffered_rows.is_empty() {
-            let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-                Vec::with_capacity(buffered_rows.len() * COLUMN_PATTERNS.len());
-            for (buffered_hand_id, elimination_row, share_json) in &buffered_rows {
-                params.push(buffered_hand_id);
-                params.push(&elimination_row.eliminated_seat_no);
-                params.push(&elimination_row.eliminated_player_name);
-                params.push(&elimination_row.pots_participated_by_busted);
-                params.push(&elimination_row.pots_causing_bust);
-                params.push(&elimination_row.last_busting_pot_no);
-                params.push(&elimination_row.ko_winner_set);
-                params.push(share_json);
-                params.push(&elimination_row.elimination_certainty_state);
-                params.push(&elimination_row.ko_certainty_state);
-            }
-            execute_batched_insert(
-                tx,
-                INSERT_PREFIX,
-                COLUMN_PATTERNS,
-                buffered_rows.len(),
-                &params,
-            )?;
-        }
-    }
+            Ok(())
+        },
+    )?;
 
     Ok(())
 }
 
 fn bulk_insert_hand_ko_event_rows(
-    tx: &mut impl postgres::GenericClient,
+    tx: &mut Transaction<'_>,
     player_profile_id: Uuid,
     hand_ids: &[Uuid],
     outputs: &[HandLocalComputeOutput],
 ) -> Result<()> {
     debug_assert_eq!(hand_ids.len(), outputs.len());
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO derived.hand_ko_attempts (        hand_id,        player_profile_id,        hero_seat_no,        target_seat_no,        target_player_name,        attempt_kind,        street,        source_sequence_no,        is_forced_all_in    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.ko_attempt_rows {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // derived.hand_ko_attempts — binary COPY
+    copy_in_binary(
+        tx,
+        "derived.hand_ko_attempts",
+        &[
+            "hand_id",
+            "player_profile_id",
+            "hero_seat_no",
+            "target_seat_no",
+            "target_player_name",
+            "attempt_kind",
+            "street",
+            "source_sequence_no",
+            "is_forced_all_in",
+        ],
+        &[
+            Type::UUID,
+            Type::UUID,
+            Type::INT4,
+            Type::INT4,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT,
+            Type::INT4,
+            Type::BOOL,
+        ],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.ko_attempt_rows {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &player_profile_id,
+                        &row.hero_seat_no,
+                        &row.target_seat_no,
+                        &row.target_player_name,
+                        &row.attempt_kind,
+                        &row.street,
+                        &row.source_sequence_no,
+                        &row.is_forced_all_in,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&player_profile_id);
-                params.push(&row.hero_seat_no);
-                params.push(&row.target_seat_no);
-                params.push(&row.target_player_name);
-                params.push(&row.attempt_kind);
-                params.push(&row.street);
-                params.push(&row.source_sequence_no);
-                params.push(&row.is_forced_all_in);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
-    {
-        const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}"];
-        const INSERT_PREFIX: &str = "INSERT INTO derived.hand_ko_opportunities (        hand_id,        player_profile_id,        hero_seat_no,        target_seat_no,        target_player_name,        opportunity_kind,        street,        source_sequence_no,        is_forced_all_in    )";
-        let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-        let mut row_count = 0usize;
-        for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-            for row in &output.ko_opportunity_rows {
-                if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                    params.clear();
-                    row_count = 0;
+    // derived.hand_ko_opportunities — binary COPY
+    copy_in_binary(
+        tx,
+        "derived.hand_ko_opportunities",
+        &[
+            "hand_id",
+            "player_profile_id",
+            "hero_seat_no",
+            "target_seat_no",
+            "target_player_name",
+            "opportunity_kind",
+            "street",
+            "source_sequence_no",
+            "is_forced_all_in",
+        ],
+        &[
+            Type::UUID,
+            Type::UUID,
+            Type::INT4,
+            Type::INT4,
+            Type::TEXT,
+            Type::TEXT,
+            Type::TEXT,
+            Type::INT4,
+            Type::BOOL,
+        ],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.ko_opportunity_rows {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &player_profile_id,
+                        &row.hero_seat_no,
+                        &row.target_seat_no,
+                        &row.target_player_name,
+                        &row.opportunity_kind,
+                        &row.street,
+                        &row.source_sequence_no,
+                        &row.is_forced_all_in,
+                    ])?;
                 }
-                params.push(hand_id);
-                params.push(&player_profile_id);
-                params.push(&row.hero_seat_no);
-                params.push(&row.target_seat_no);
-                params.push(&row.target_player_name);
-                params.push(&row.opportunity_kind);
-                params.push(&row.street);
-                params.push(&row.source_sequence_no);
-                params.push(&row.is_forced_all_in);
-                row_count += 1;
             }
-        }
-        execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-    }
+            Ok(())
+        },
+    )?;
 
     Ok(())
 }
 
 fn bulk_insert_preflop_starting_hand_rows(
-    tx: &mut impl postgres::GenericClient,
+    tx: &mut Transaction<'_>,
     hand_ids: &[Uuid],
     outputs: &[HandLocalComputeOutput],
 ) -> Result<()> {
     debug_assert_eq!(hand_ids.len(), outputs.len());
 
-    const COLUMN_PATTERNS: &[&str] = &["{}", "{}", "{}", "{}"];
-    const INSERT_PREFIX: &str = "INSERT INTO derived.preflop_starting_hands (        hand_id,        seat_no,        starter_hand_class,        certainty_state    )";
-    let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-        Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-    let mut row_count = 0usize;
-    for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-        for row in &output.preflop_starting_hand_rows {
-            if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                params.clear();
-                row_count = 0;
+    copy_in_binary(
+        tx,
+        "derived.preflop_starting_hands",
+        &[
+            "hand_id",
+            "seat_no",
+            "starter_hand_class",
+            "certainty_state",
+        ],
+        &[Type::UUID, Type::INT4, Type::TEXT, Type::TEXT],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.preflop_starting_hand_rows {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.seat_no,
+                        &row.starter_hand_class,
+                        &row.certainty_state,
+                    ])?;
+                }
             }
-            params.push(hand_id);
-            params.push(&row.seat_no);
-            params.push(&row.starter_hand_class);
-            params.push(&row.certainty_state);
-            row_count += 1;
-        }
-    }
-    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
+            Ok(())
+        },
+    )?;
     Ok(())
 }
 
 fn bulk_insert_street_hand_strength_rows(
-    tx: &mut impl postgres::GenericClient,
+    tx: &mut Transaction<'_>,
     hand_ids: &[Uuid],
     outputs: &[HandLocalComputeOutput],
 ) -> Result<()> {
     debug_assert_eq!(hand_ids.len(), outputs.len());
 
-    const COLUMN_PATTERNS: &[&str] = &[
-        "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}", "{}",
-    ];
-    const INSERT_PREFIX: &str = "INSERT INTO derived.street_hand_strength (        hand_id,        seat_no,        street,        best_hand_class,        best_hand_rank_value,        made_hand_category,        draw_category,        overcards_count,        has_air,        missed_flush_draw,        missed_straight_draw,        is_nut_hand,        is_nut_draw,        certainty_state    )";
-    let mut params: Vec<&(dyn postgres::types::ToSql + Sync)> =
-        Vec::with_capacity(PERSIST_BATCH_INSERT_CHUNK_SIZE * COLUMN_PATTERNS.len());
-    let mut row_count = 0usize;
-    for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
-        for row in &output.street_strength_rows {
-            if row_count == PERSIST_BATCH_INSERT_CHUNK_SIZE {
-                execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
-                params.clear();
-                row_count = 0;
+    copy_in_binary(
+        tx,
+        "derived.street_hand_strength",
+        &[
+            "hand_id",
+            "seat_no",
+            "street",
+            "best_hand_class",
+            "best_hand_rank_value",
+            "made_hand_category",
+            "draw_category",
+            "overcards_count",
+            "has_air",
+            "missed_flush_draw",
+            "missed_straight_draw",
+            "is_nut_hand",
+            "is_nut_draw",
+            "certainty_state",
+        ],
+        &[
+            Type::UUID,
+            Type::INT4,
+            Type::TEXT,
+            Type::TEXT,
+            Type::INT8,
+            Type::TEXT,
+            Type::TEXT,
+            Type::INT4,
+            Type::BOOL,
+            Type::BOOL,
+            Type::BOOL,
+            Type::BOOL,
+            Type::BOOL,
+            Type::TEXT,
+        ],
+        |writer| {
+            for (hand_id, output) in hand_ids.iter().zip(outputs.iter()) {
+                for row in &output.street_strength_rows {
+                    writer.write(&[
+                        hand_id as &(dyn postgres::types::ToSql + Sync),
+                        &row.seat_no,
+                        &row.street,
+                        &row.best_hand_class,
+                        &row.best_hand_rank_value,
+                        &row.made_hand_category,
+                        &row.draw_category,
+                        &row.overcards_count,
+                        &row.has_air,
+                        &row.missed_flush_draw,
+                        &row.missed_straight_draw,
+                        &row.is_nut_hand,
+                        &row.is_nut_draw,
+                        &row.certainty_state,
+                    ])?;
+                }
             }
-            params.push(hand_id);
-            params.push(&row.seat_no);
-            params.push(&row.street);
-            params.push(&row.best_hand_class);
-            params.push(&row.best_hand_rank_value);
-            params.push(&row.made_hand_category);
-            params.push(&row.draw_category);
-            params.push(&row.overcards_count);
-            params.push(&row.has_air);
-            params.push(&row.missed_flush_draw);
-            params.push(&row.missed_straight_draw);
-            params.push(&row.is_nut_hand);
-            params.push(&row.is_nut_draw);
-            params.push(&row.certainty_state);
-            row_count += 1;
-        }
-    }
-    execute_batched_insert(tx, INSERT_PREFIX, COLUMN_PATTERNS, row_count, &params)?;
+            Ok(())
+        },
+    )?;
     Ok(())
 }
 
