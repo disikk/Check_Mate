@@ -5,6 +5,7 @@ use postgres::GenericClient;
 use uuid::Uuid;
 
 use crate::big_ko::{MysteryEnvelope, expected_hero_mystery_cents, posterior_big_ko_bucket_counts};
+use crate::math::{ratio_to_float_f64, roi_from_totals};
 use crate::models::{
     CanonicalStatPoint, CanonicalStatSnapshot, SeedStatCoverage, SeedStatSnapshot, SeedStatsFilters,
 };
@@ -1892,10 +1893,6 @@ fn average_u64(sum: u64, count: u64) -> Option<f64> {
     (count > 0).then_some(sum as f64 / count as f64)
 }
 
-fn ratio_to_float_f64(numerator: f64, denominator: f64) -> Option<f64> {
-    (denominator > 0.0).then_some(numerator / denominator)
-}
-
 fn ratio_to_percent(numerator: u64, denominator: u64) -> Option<f64> {
     (denominator > 0).then_some(numerator as f64 / denominator as f64 * 100.0)
 }
@@ -1910,14 +1907,6 @@ fn portion_to_percent(numerator: i64, denominator: i64) -> Option<f64> {
 
 fn portion_to_percent_f64_f64(numerator: f64, denominator: f64) -> Option<f64> {
     (denominator > 0.0).then_some(numerator / denominator * 100.0)
-}
-
-fn roi_from_totals(total_payout_cents: i64, total_buyin_cents: i64) -> Option<f64> {
-    if total_buyin_cents == 0 {
-        None
-    } else {
-        Some(((total_payout_cents - total_buyin_cents) as f64 / total_buyin_cents as f64) * 100.0)
-    }
 }
 
 fn cents_to_money(cents: i64) -> f64 {

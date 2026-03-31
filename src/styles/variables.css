@@ -1,0 +1,146 @@
+/* ===== CSS Reset & Base ===== */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Light Theme (default) */
+  --bg-primary: #f5f7fb;
+  --bg-gradient-color: rgba(99, 102, 241, 0.15);
+  --surface: rgba(255, 255, 255, 0.65);
+  --surface-hover: rgba(255, 255, 255, 0.85);
+  --border: rgba(255, 255, 255, 0.5);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --text-primary: #0f172a;
+  --text-soft: #475569;
+  --text-muted: #94a3b8;
+  --accent: #6366f1;
+  --accent-soft: rgba(99, 102, 241, 0.12);
+  --success: #10b981;
+  --success-soft: rgba(16, 185, 129, 0.12);
+  --warning: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, 0.12);
+  --danger: #f43f5e;
+  --danger-soft: rgba(244, 63, 94, 0.12);
+  --info: #3b82f6;
+  --info-soft: rgba(59, 130, 246, 0.12);
+
+  --blur: 24px;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-xs: 6px;
+  --sidebar-width: 240px;
+  --topbar-height: 56px;
+
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.1);
+
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #050811;
+  --bg-gradient-color: rgba(99, 102, 241, 0.15);
+  --surface: rgba(15, 23, 42, 0.45);
+  --surface-hover: rgba(15, 23, 42, 0.65);
+  --border: rgba(255, 255, 255, 0.04);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --text-primary: #f8fafc;
+  --text-soft: #cbd5e1;
+  --text-muted: #64748b;
+  --accent: #818cf8;
+  --accent-soft: rgba(129, 140, 248, 0.15);
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.15);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.15);
+  --danger: #fb7185;
+  --danger-soft: rgba(251, 113, 133, 0.15);
+  --info: #60a5fa;
+  --info-soft: rgba(96, 165, 250, 0.15);
+
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.4);
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+[data-theme="dark"] select,
+[data-theme="dark"] input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+[data-theme="light"] select,
+[data-theme="light"] input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+select option,
+select optgroup {
+  background: #ffffff;
+  color: #0f172a;
+  font-family: var(--font);
+}
+
+[data-theme="dark"] select option,
+[data-theme="dark"] select optgroup {
+  background: #161b2e;
+  color: #f8fafc;
+}
+
+/* Background gradient orbs */
+body::before {
+  content: '';
+  position: fixed;
+  top: -20%;
+  left: -10%;
+  width: 60%;
+  height: 60%;
+  background: radial-gradient(circle, var(--bg-gradient-color), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -20%;
+  right: -10%;
+  width: 50%;
+  height: 50%;
+  background: radial-gradient(circle, var(--bg-gradient-color), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-soft);
+}

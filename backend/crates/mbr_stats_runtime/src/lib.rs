@@ -1,5 +1,6 @@
 pub mod big_ko;
 pub mod ft_dashboard;
+pub(crate) mod math;
 pub mod materializer;
 pub mod models;
 pub mod queries;

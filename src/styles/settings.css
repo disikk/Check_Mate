@@ -1,0 +1,112 @@
+/* ===== Settings page ===== */
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 16px;
+}
+
+.settings-form-card,
+.settings-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-field label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.settings-field input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-family: var(--font);
+}
+
+.settings-field-hint {
+  color: var(--text-soft);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.settings-quick-picks,
+.settings-actions,
+.settings-preview-stack,
+.settings-note-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-actions {
+  margin-top: 4px;
+}
+
+.settings-preview-stack,
+.settings-note-list {
+  flex-direction: column;
+}
+
+.settings-preview-item {
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 65%),
+    rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 8px;
+}
+
+.settings-preview-item strong {
+  line-height: 1.5;
+}
+
+.settings-validation {
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  line-height: 1.6;
+}
+
+.settings-validation.valid {
+  background: var(--success-soft);
+  color: var(--text-primary);
+}
+
+.settings-validation.invalid {
+  background: var(--danger-soft);
+  color: var(--text-primary);
+}
+
+/* ===== Responsive: Settings ===== */
+@media (max-width: 1280px) {
+  .settings-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 960px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .settings-actions {
+    width: 100%;
+  }
+}

@@ -1,0 +1,173 @@
+/* ===== Error Cards ===== */
+.error-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.error-card {
+  background: var(--surface);
+  backdrop-filter: blur(var(--blur));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.error-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.error-card-type {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.error-card-count {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.error-card-percent {
+  font-size: 13px;
+  color: var(--text-soft);
+  margin-top: 4px;
+}
+
+.error-card-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.error-card.expanded .error-card-detail {
+  max-height: 400px;
+}
+
+.error-hand {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--text-soft);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.error-hand:last-child {
+  border-bottom: none;
+}
+
+.error-hand-cards {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.error-hand-action {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ===== MBR Grid (5-column layout like ROYAL_Stats) ===== */
+.mbr-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mbr-grid-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.stat-cell {
+  padding: 10px 12px;
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  min-height: 70px;
+}
+
+.stat-cell-empty {
+  background: transparent;
+  border: none;
+}
+
+.stat-cell-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  line-height: 1.3;
+  white-space: pre-line;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.stat-subtitle {
+  font-size: 11px;
+  color: var(--text-soft);
+  margin-top: 4px;
+}
+
+.stat-benchmark {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.stat-benchmark-label {
+  color: var(--text-muted);
+}
+
+.stat-benchmark-value {
+  color: var(--text-soft);
+}
+
+.stat-delta {
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.stat-delta.positive {
+  color: var(--success);
+}
+
+.stat-delta.negative {
+  color: var(--danger);
+}
+
+/* ===== Responsive: Dashboard ===== */
+@media (max-width: 960px) {
+  .mbr-grid-row {
+    grid-template-columns: 1fr;
+  }
+}

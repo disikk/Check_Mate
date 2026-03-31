@@ -25,6 +25,17 @@ struct StreetFeatureRowSummary {
 
 const INSERT_CHUNK_SIZE: usize = 1_000;
 
+/// Trait for feature insert rows that can push their per-row SQL params
+/// and build the corresponding value placeholder tuple.
+/// `fields_per_row()` returns how many $N placeholders each row contributes.
+trait FeatureInsertRow {
+    fn fields_per_row(&self) -> usize;
+    fn push_params<'a>(&'a self, params: &mut Vec<&'a (dyn ToSql + Sync)>);
+    /// Build a single VALUES tuple like `($1, $2, $base, $base+1, ..., $3, $base+N)`.
+    /// `base` is the first placeholder index for this row's own fields.
+    fn value_tuple(&self, base: usize) -> String;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct HandBoolInsertRow {
     hand_id: Uuid,
@@ -71,6 +82,103 @@ struct StreetEnumInsertRow {
     street: String,
     feature_key: String,
     value: String,
+}
+
+// --- Hand-grain FeatureInsertRow impls ---
+// All hand-grain rows contribute 3 fields: hand_id, feature_key, value.
+// Value placeholder: plain `$N` for bool/enum, cast for num.
+
+impl FeatureInsertRow for HandBoolInsertRow {
+    fn fields_per_row(&self) -> usize { 3 }
+    fn push_params<'a>(&'a self, params: &mut Vec<&'a (dyn ToSql + Sync)>) {
+        params.push(&self.hand_id);
+        params.push(&self.feature_key);
+        params.push(&self.value);
+    }
+    fn value_tuple(&self, base: usize) -> String {
+        format!("($1, $2, ${}, ${}, $3, ${})", base, base + 1, base + 2)
+    }
+}
+
+impl FeatureInsertRow for HandNumInsertRow {
+    fn fields_per_row(&self) -> usize { 3 }
+    fn push_params<'a>(&'a self, params: &mut Vec<&'a (dyn ToSql + Sync)>) {
+        params.push(&self.hand_id);
+        params.push(&self.feature_key);
+        params.push(&self.value);
+    }
+    fn value_tuple(&self, base: usize) -> String {
+        format!(
+            "($1, $2, ${}, ${}, $3, (${}::double precision)::numeric(18,6))",
+            base, base + 1, base + 2
+        )
+    }
+}
+
+impl FeatureInsertRow for HandEnumInsertRow {
+    fn fields_per_row(&self) -> usize { 3 }
+    fn push_params<'a>(&'a self, params: &mut Vec<&'a (dyn ToSql + Sync)>) {
+        params.push(&self.hand_id);
+        params.push(&self.feature_key);
+        params.push(&self.value);
+    }
+    fn value_tuple(&self, base: usize) -> String {
+        format!("($1, $2, ${}, ${}, $3, ${})", base, base + 1, base + 2)
+    }
+}
+
+// --- Street-grain FeatureInsertRow impls ---
+// All street-grain rows contribute 5 fields: hand_id, seat_no, street, feature_key, value.
+
+impl FeatureInsertRow for StreetBoolInsertRow {
+    fn fields_per_row(&self) -> usize { 5 }
+    fn push_params<'a>(&'a self, params: &mut Vec<&'a (dyn ToSql + Sync)>) {
+        params.push(&self.hand_id);
+        params.push(&self.seat_no);
+        params.push(&self.street);
+        params.push(&self.feature_key);
+        params.push(&self.value);
+    }
+    fn value_tuple(&self, base: usize) -> String {
+        format!(
+            "($1, $2, ${}, ${}, ${}, ${}, $3, ${})",
+            base, base + 1, base + 2, base + 3, base + 4
+        )
+    }
+}
+
+impl FeatureInsertRow for StreetNumInsertRow {
+    fn fields_per_row(&self) -> usize { 5 }
+    fn push_params<'a>(&'a self, params: &mut Vec<&'a (dyn ToSql + Sync)>) {
+        params.push(&self.hand_id);
+        params.push(&self.seat_no);
+        params.push(&self.street);
+        params.push(&self.feature_key);
+        params.push(&self.value);
+    }
+    fn value_tuple(&self, base: usize) -> String {
+        format!(
+            "($1, $2, ${}, ${}, ${}, ${}, $3, (${}::double precision)::numeric(18,6))",
+            base, base + 1, base + 2, base + 3, base + 4
+        )
+    }
+}
+
+impl FeatureInsertRow for StreetEnumInsertRow {
+    fn fields_per_row(&self) -> usize { 5 }
+    fn push_params<'a>(&'a self, params: &mut Vec<&'a (dyn ToSql + Sync)>) {
+        params.push(&self.hand_id);
+        params.push(&self.seat_no);
+        params.push(&self.street);
+        params.push(&self.feature_key);
+        params.push(&self.value);
+    }
+    fn value_tuple(&self, base: usize) -> String {
+        format!(
+            "($1, $2, ${}, ${}, ${}, ${}, $3, ${})",
+            base, base + 1, base + 2, base + 3, base + 4
+        )
+    }
 }
 
 pub fn materialize_player_hand_features(
@@ -771,138 +879,55 @@ fn persist_feature_rows(
         }
     }
 
-    insert_hand_bool_rows(client, organization_id, player_profile_id, &bool_rows)?;
-    insert_hand_num_rows(client, organization_id, player_profile_id, &num_rows)?;
-    insert_hand_enum_rows(client, organization_id, player_profile_id, &enum_rows)?;
+    insert_feature_rows(client, organization_id, player_profile_id,
+        "analytics.player_hand_bool_features",
+        "organization_id, player_profile_id, hand_id, feature_key, feature_version, value",
+        &bool_rows)?;
+    insert_feature_rows(client, organization_id, player_profile_id,
+        "analytics.player_hand_num_features",
+        "organization_id, player_profile_id, hand_id, feature_key, feature_version, value",
+        &num_rows)?;
+    insert_feature_rows(client, organization_id, player_profile_id,
+        "analytics.player_hand_enum_features",
+        "organization_id, player_profile_id, hand_id, feature_key, feature_version, value",
+        &enum_rows)?;
 
     Ok(())
 }
 
-fn insert_hand_bool_rows(
+/// Generic chunked multi-values INSERT for any feature row type.
+/// `table_name` is the fully-qualified target table.
+/// `columns` is the comma-separated column list matching the VALUES tuple
+/// produced by each row's `value_tuple()` impl.
+/// Shared params $1=organization_id, $2=player_profile_id, $3=FEATURE_VERSION
+/// are reused across all rows; per-row fields start at $4.
+fn insert_feature_rows<R: FeatureInsertRow>(
     client: &mut impl GenericClient,
     organization_id: Uuid,
     player_profile_id: Uuid,
-    rows: &[HandBoolInsertRow],
+    table_name: &str,
+    columns: &str,
+    rows: &[R],
 ) -> Result<()> {
-    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
-        let mut params: Vec<&(dyn ToSql + Sync)> =
-            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
-        let mut values = String::new();
-        for (index, row) in chunk.iter().enumerate() {
-            let base = 4 + index * 3;
-            if !values.is_empty() {
-                values.push_str(", ");
-            }
-            values.push_str(&format!(
-                "($1, $2, ${}, ${}, $3, ${})",
-                base,
-                base + 1,
-                base + 2
-            ));
-            params.push(&row.hand_id);
-            params.push(&row.feature_key);
-            params.push(&row.value);
-        }
-        client.execute(
-            &format!(
-                "INSERT INTO analytics.player_hand_bool_features (
-                    organization_id,
-                    player_profile_id,
-                    hand_id,
-                    feature_key,
-                    feature_version,
-                    value
-                )
-                VALUES {values}"
-            ),
-            &params,
-        )?;
+    if rows.is_empty() {
+        return Ok(());
     }
+    let fields_per_row = rows[0].fields_per_row();
 
-    Ok(())
-}
-
-fn insert_hand_num_rows(
-    client: &mut impl GenericClient,
-    organization_id: Uuid,
-    player_profile_id: Uuid,
-    rows: &[HandNumInsertRow],
-) -> Result<()> {
     for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
         let mut params: Vec<&(dyn ToSql + Sync)> =
             vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
         let mut values = String::new();
         for (index, row) in chunk.iter().enumerate() {
-            let base = 4 + index * 3;
+            let base = 4 + index * fields_per_row;
             if !values.is_empty() {
                 values.push_str(", ");
             }
-            values.push_str(&format!(
-                "($1, $2, ${}, ${}, $3, (${}::double precision)::numeric(18,6))",
-                base,
-                base + 1,
-                base + 2
-            ));
-            params.push(&row.hand_id);
-            params.push(&row.feature_key);
-            params.push(&row.value);
+            values.push_str(&row.value_tuple(base));
+            row.push_params(&mut params);
         }
         client.execute(
-            &format!(
-                "INSERT INTO analytics.player_hand_num_features (
-                    organization_id,
-                    player_profile_id,
-                    hand_id,
-                    feature_key,
-                    feature_version,
-                    value
-                )
-                VALUES {values}"
-            ),
-            &params,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn insert_hand_enum_rows(
-    client: &mut impl GenericClient,
-    organization_id: Uuid,
-    player_profile_id: Uuid,
-    rows: &[HandEnumInsertRow],
-) -> Result<()> {
-    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
-        let mut params: Vec<&(dyn ToSql + Sync)> =
-            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
-        let mut values = String::new();
-        for (index, row) in chunk.iter().enumerate() {
-            let base = 4 + index * 3;
-            if !values.is_empty() {
-                values.push_str(", ");
-            }
-            values.push_str(&format!(
-                "($1, $2, ${}, ${}, $3, ${})",
-                base,
-                base + 1,
-                base + 2
-            ));
-            params.push(&row.hand_id);
-            params.push(&row.feature_key);
-            params.push(&row.value);
-        }
-        client.execute(
-            &format!(
-                "INSERT INTO analytics.player_hand_enum_features (
-                    organization_id,
-                    player_profile_id,
-                    hand_id,
-                    feature_key,
-                    feature_version,
-                    value
-                )
-                VALUES {values}"
-            ),
+            &format!("INSERT INTO {table_name} ({columns})\nVALUES {values}"),
             &params,
         )?;
     }
@@ -967,162 +992,22 @@ fn persist_street_feature_rows(
         }
     }
 
-    insert_street_bool_rows(client, organization_id, player_profile_id, &bool_rows)?;
-    insert_street_num_rows(client, organization_id, player_profile_id, &num_rows)?;
-    insert_street_enum_rows(client, organization_id, player_profile_id, &enum_rows)?;
+    insert_feature_rows(client, organization_id, player_profile_id,
+        "analytics.player_street_bool_features",
+        "organization_id, player_profile_id, hand_id, seat_no, street, feature_key, feature_version, value",
+        &bool_rows)?;
+    insert_feature_rows(client, organization_id, player_profile_id,
+        "analytics.player_street_num_features",
+        "organization_id, player_profile_id, hand_id, seat_no, street, feature_key, feature_version, value",
+        &num_rows)?;
+    insert_feature_rows(client, organization_id, player_profile_id,
+        "analytics.player_street_enum_features",
+        "organization_id, player_profile_id, hand_id, seat_no, street, feature_key, feature_version, value",
+        &enum_rows)?;
 
     Ok(())
 }
 
-fn insert_street_bool_rows(
-    client: &mut impl GenericClient,
-    organization_id: Uuid,
-    player_profile_id: Uuid,
-    rows: &[StreetBoolInsertRow],
-) -> Result<()> {
-    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
-        let mut params: Vec<&(dyn ToSql + Sync)> =
-            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
-        let mut values = String::new();
-        for (index, row) in chunk.iter().enumerate() {
-            let base = 4 + index * 5;
-            if !values.is_empty() {
-                values.push_str(", ");
-            }
-            values.push_str(&format!(
-                "($1, $2, ${}, ${}, ${}, ${}, $3, ${})",
-                base,
-                base + 1,
-                base + 2,
-                base + 3,
-                base + 4
-            ));
-            params.push(&row.hand_id);
-            params.push(&row.seat_no);
-            params.push(&row.street);
-            params.push(&row.feature_key);
-            params.push(&row.value);
-        }
-        client.execute(
-            &format!(
-                "INSERT INTO analytics.player_street_bool_features (
-                    organization_id,
-                    player_profile_id,
-                    hand_id,
-                    seat_no,
-                    street,
-                    feature_key,
-                    feature_version,
-                    value
-                )
-                VALUES {values}"
-            ),
-            &params,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn insert_street_num_rows(
-    client: &mut impl GenericClient,
-    organization_id: Uuid,
-    player_profile_id: Uuid,
-    rows: &[StreetNumInsertRow],
-) -> Result<()> {
-    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
-        let mut params: Vec<&(dyn ToSql + Sync)> =
-            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
-        let mut values = String::new();
-        for (index, row) in chunk.iter().enumerate() {
-            let base = 4 + index * 5;
-            if !values.is_empty() {
-                values.push_str(", ");
-            }
-            values.push_str(&format!(
-                "($1, $2, ${}, ${}, ${}, ${}, $3, (${}::double precision)::numeric(18,6))",
-                base,
-                base + 1,
-                base + 2,
-                base + 3,
-                base + 4
-            ));
-            params.push(&row.hand_id);
-            params.push(&row.seat_no);
-            params.push(&row.street);
-            params.push(&row.feature_key);
-            params.push(&row.value);
-        }
-        client.execute(
-            &format!(
-                "INSERT INTO analytics.player_street_num_features (
-                    organization_id,
-                    player_profile_id,
-                    hand_id,
-                    seat_no,
-                    street,
-                    feature_key,
-                    feature_version,
-                    value
-                )
-                VALUES {values}"
-            ),
-            &params,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn insert_street_enum_rows(
-    client: &mut impl GenericClient,
-    organization_id: Uuid,
-    player_profile_id: Uuid,
-    rows: &[StreetEnumInsertRow],
-) -> Result<()> {
-    for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
-        let mut params: Vec<&(dyn ToSql + Sync)> =
-            vec![&organization_id, &player_profile_id, &FEATURE_VERSION];
-        let mut values = String::new();
-        for (index, row) in chunk.iter().enumerate() {
-            let base = 4 + index * 5;
-            if !values.is_empty() {
-                values.push_str(", ");
-            }
-            values.push_str(&format!(
-                "($1, $2, ${}, ${}, ${}, ${}, $3, ${})",
-                base,
-                base + 1,
-                base + 2,
-                base + 3,
-                base + 4
-            ));
-            params.push(&row.hand_id);
-            params.push(&row.seat_no);
-            params.push(&row.street);
-            params.push(&row.feature_key);
-            params.push(&row.value);
-        }
-        client.execute(
-            &format!(
-                "INSERT INTO analytics.player_street_enum_features (
-                    organization_id,
-                    player_profile_id,
-                    hand_id,
-                    seat_no,
-                    street,
-                    feature_key,
-                    feature_version,
-                    value
-                )
-                VALUES {values}"
-            ),
-            &params,
-        )?;
-    }
-
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {

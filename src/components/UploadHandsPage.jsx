@@ -13,6 +13,9 @@ import {
   initialUploadViewState,
 } from '../services/uploadState'
 
+import FileDropZone from './FileDropZone'
+import UploadProgress from './UploadProgress'
+
 const statusMeta = {
   idle: { label: 'Ожидание', tone: 'neutral' },
   queued: { label: 'В очереди', tone: 'neutral' },
@@ -52,7 +55,6 @@ const REAL_UPLOAD_EVENTS = [
 ]
 
 export default function UploadHandsPage({ timezoneName, onOpenSettings }) {
-  const inputRef = useRef(null)
   const socketDisposeRef = useRef(null)
 
   const [dragActive, setDragActive] = useState(false)
@@ -60,7 +62,7 @@ export default function UploadHandsPage({ timezoneName, onOpenSettings }) {
   const [sessionInfo, setSessionInfo] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
 
-  const { batchState, files, activityLog } = viewState
+  const { batchState, files } = viewState
 
   useEffect(() => {
     let active = true
@@ -134,9 +136,13 @@ export default function UploadHandsPage({ timezoneName, onOpenSettings }) {
     }
   }
 
-  const handleInputChange = (event) => {
-    void beginUpload(Array.from(event.target.files ?? []))
-    event.target.value = ''
+  /* FileDropZone forwards file arrays here; empty array = clear request */
+  const handleFilesSelected = (selectedFiles) => {
+    if (selectedFiles.length === 0) {
+      resetQueue()
+    } else {
+      void beginUpload(selectedFiles)
+    }
   }
 
   const handleDrop = (event) => {
@@ -222,12 +228,9 @@ export default function UploadHandsPage({ timezoneName, onOpenSettings }) {
       )}
 
       <div className="upload-top-grid">
-        <section
-          className={`bento-card upload-dropzone ${dragActive ? 'dragging' : ''}`}
-          onDragOver={(event) => {
-            event.preventDefault()
-            setDragActive(true)
-          }}
+        <FileDropZone
+          onFilesSelected={handleFilesSelected}
+          dragActive={dragActive}
           onDragEnter={(event) => {
             event.preventDefault()
             setDragActive(true)
@@ -238,46 +241,13 @@ export default function UploadHandsPage({ timezoneName, onOpenSettings }) {
               setDragActive(false)
             }
           }}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setDragActive(true)
+          }}
           onDrop={handleDrop}
-        >
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            accept=".txt,.hh,.zip"
-            hidden
-            onChange={handleInputChange}
-          />
-
-          <div className="upload-dropzone-icon">HH</div>
-          <h2 className="upload-dropzone-title">Перетащите hand history сюда</h2>
-          <p className="upload-dropzone-text">
-            Поддерживаются `.txt`, `.hh` и `.zip`. ZIP может содержать mix из HH/TS,
-            а неподдержанные members будут пропущены с видимыми diagnostics.
-          </p>
-
-          <div className="upload-dropzone-actions">
-            <button
-              className="action-btn action-btn-primary"
-              type="button"
-              onClick={() => inputRef.current?.click()}
-            >
-              Выбрать файлы
-            </button>
-            <button
-              className="action-btn action-btn-secondary"
-              type="button"
-              onClick={resetQueue}
-              disabled={!files.length && batchState.status === 'idle'}
-            >
-              Очистить
-            </button>
-          </div>
-
-          <div className="upload-helper-text">
-            {errorMessage || 'Остановка server-side ещё не подключена в этом срезе.'}
-          </div>
-        </section>
+          disabled={!files.length && batchState.status === 'idle'}
+        />
 
         <aside className="bento-card upload-contract-card">
           <div className="card-header">
@@ -312,91 +282,10 @@ export default function UploadHandsPage({ timezoneName, onOpenSettings }) {
         </aside>
       </div>
 
-      <section className="upload-summary-grid">
-        <div className="bento-card upload-summary-card">
-          <span className="summary-label">Файлов в партии</span>
-          <strong>{batchState.totalFiles}</strong>
-        </div>
-        <div className="bento-card upload-summary-card">
-          <span className="summary-label">Завершено</span>
-          <strong>{batchState.completedFiles}/{batchState.totalFiles}</strong>
-        </div>
-        <div className="bento-card upload-summary-card">
-          <span className="summary-label">Общий прогресс</span>
-          <strong>{batchState.progress}%</strong>
-        </div>
-        <div className="bento-card upload-summary-card">
-          <span className="summary-label">Текущая стадия</span>
-          <strong>{batchState.currentStage}</strong>
-        </div>
-      </section>
+      <UploadProgress viewState={viewState} />
 
-      <div className="upload-bottom-grid">
-        <section className="bento-card upload-list-card">
-          <div className="card-header">
-            <span className="card-title">Очередь файлов</span>
-            <span className="upload-helper-text">Живой статус по каждому ingest member</span>
-          </div>
-
-          {!files.length && (
-            <div className="empty-state">
-              Выберите или перетащите файлы, чтобы увидеть реальный upload/status flow.
-            </div>
-          )}
-
-          {!!files.length && (
-            <div className="upload-file-list">
-              {files.map((file) => (
-                <div key={file.id} className="upload-file-item">
-                  <div className="upload-file-top">
-                    <div>
-                      <div className="upload-file-name">{file.name}</div>
-                      <div className="upload-file-meta">
-                        {file.readableSize || 'Размер уточняется после spool/scan'}
-                      </div>
-                    </div>
-                    <span className={`status-chip tone-${statusMeta[file.status]?.tone ?? 'neutral'}`}>
-                      {statusMeta[file.status]?.label ?? file.status}
-                    </span>
-                  </div>
-
-                  <div className="upload-file-stage">{file.stageLabel}</div>
-                  <div className="upload-progress-track">
-                    <div
-                      className="upload-progress-fill"
-                      style={{ width: `${file.progress}%` }}
-                    />
-                  </div>
-                  <div className="upload-file-meta">{file.progress}%</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="bento-card upload-log-card">
-          <div className="card-header">
-            <span className="card-title">Журнал событий</span>
-            <span className="upload-helper-text">Persisted ingest events и diagnostics</span>
-          </div>
-
-          {!activityLog.length && (
-            <div className="empty-state">
-              После старта загрузки здесь появятся реальные backend-события.
-            </div>
-          )}
-
-          {!!activityLog.length && (
-            <div className="activity-log">
-              {activityLog.map((entry) => (
-                <div key={entry.id} className={`activity-log-item tone-${entry.tone}`}>
-                  <span className="activity-log-time">{entry.time}</span>
-                  <span className="activity-log-message">{entry.message}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+      <div className="upload-helper-text">
+        {errorMessage || 'Остановка server-side ещё не подключена в этом срезе.'}
       </div>
     </div>
   )

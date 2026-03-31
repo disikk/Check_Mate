@@ -5,6 +5,7 @@ use postgres::GenericClient;
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::math::{ratio_to_float_f64, roi_from_totals};
 use crate::models::{CanonicalStatNumericValue, CanonicalStatPoint, CanonicalStatSnapshot};
 use crate::queries::{
     CanonicalQueryInputs, CanonicalQueryScope, TournamentKoEventFact, TournamentStageAttemptFact,
@@ -1354,14 +1355,6 @@ fn stat_to_f64(point: Option<&CanonicalStatPoint>) -> Option<f64> {
         Some(CanonicalStatNumericValue::Float(value)) => Some(*value),
         None => None,
     }
-}
-
-fn ratio_to_float_f64(numerator: f64, denominator: f64) -> Option<f64> {
-    (denominator > 0.0).then_some(numerator / denominator)
-}
-
-fn roi_from_totals(payout_cents: i64, buyin_cents: i64) -> Option<f64> {
-    (buyin_cents > 0).then_some(((payout_cents - buyin_cents) as f64 / buyin_cents as f64) * 100.0)
 }
 
 #[cfg(test)]
